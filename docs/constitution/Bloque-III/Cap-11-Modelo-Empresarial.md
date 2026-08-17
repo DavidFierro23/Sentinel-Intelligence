@@ -5,9 +5,9 @@
 ────────────────────────────────────────────────────────
   Capítulo      : 11 — Modelo Empresarial
   Bloque        : III — Negocio y Mercado
-  Versión       : v1.0
-  Fecha         : 2026-08-14
-  Estado        : Draft
+  Versión       : v1.1
+  Fecha         : 2026-08-17
+  Estado        : Approved
   Autor         : Comité Fundador de Sentinel Intelligence
   Founder       : Patricio David Fierro (Product Owner principal)
   Confidencial. : CONFIDENCIAL — Uso interno fundacional
@@ -399,28 +399,28 @@ flowchart TB
 - **Contexto:** La empresa puede monetizarse como consultora, como software a medida o como plataforma. La arquitectura aprobada (Core + módulos, API First, multitenancy) apunta inequívocamente a plataforma, pero la presión de caja temprana empuja hacia servicios.
 - **Decisión:** Adoptar el **modelo de empresa de plataforma SaaS modular multi-tenant** como modelo empresarial oficial. Los servicios profesionales existen únicamente como **habilitadores** de la suscripción.
 - **Alternativas descartadas:** consultora de análisis (no escala); software a medida (sin reutilización ni recurrencia).
-- **Estado:** Propuesta (fundacional) — pendiente de aprobación del Product Owner.
+- **Estado:** Aprobada (fundacional) — 2026-08-17, Patricio David Fierro.
 - **Consecuencias:** (+) Escalabilidad, recurrencia, valoración alta, coherencia con Visión y Misión; (−) mayor inversión inicial y retorno más lento antes de que el Core madure.
 - **Principios aplicados:** Arquitectura modular · API First · Multitenancy (DT1).
 
 ### ADR-011-02 — El Core es el activo; los módulos son la unidad de monetización
 - **Contexto:** Es necesario definir dónde reside el valor de la empresa y qué se le vende al cliente.
 - **Decisión:** **Sentinel Core** es el activo permanente y no se comercializa de forma aislada por defecto; el cliente adquiere **módulos** sobre una organización (**tenant**). La inversión se concentra en el Core y se recupera vía módulos.
-- **Estado:** Propuesta (fundacional).
+- **Estado:** Aprobada (fundacional) — 2026-08-17, Patricio David Fierro.
 - **Consecuencias:** (+) Costo marginal decreciente por módulo y aprendizaje compartido; (−) exige disciplina para no ceder el Core en negociaciones puntuales.
 - **Principios aplicados:** Sentinel Core como núcleo permanente · Arquitectura modular.
 
 ### ADR-011-03 — Prohibición de bifurcar el producto por cliente (configuración sobre personalización)
 - **Contexto:** Las personalizaciones por cliente son la causa más frecuente de que una plataforma degenere en fábrica de proyectos.
 - **Decisión:** **No se bifurca el código por cliente.** Toda necesidad se resuelve por **configuración**; si una necesidad se repite dos veces, se absorbe como **requerimiento de producto** del Core o del módulo.
-- **Estado:** Propuesta (fundacional).
+- **Estado:** Aprobada (fundacional) — 2026-08-17, Patricio David Fierro.
 - **Consecuencias:** (+) Producto único, margen y mantenibilidad preservados; (−) se perderán oportunidades puntuales que exijan un producto distinto.
 - **Principios aplicados:** Filosofía de Ingeniería (Cap. 8) · RN3.
 
 ### ADR-011-04 — Jerarquía de líneas de ingreso con predominio de la suscripción
 - **Contexto:** La empresa puede facturar por suscripción, consumo, API, informes, habilitación y licenciamiento. Sin jerarquía explícita, el ingreso puntual desplaza al recurrente.
 - **Decisión:** Establecer las líneas **LI-1 a LI-6** con **LI-1 (suscripción) como línea principal**; LI-4 y LI-5 se consideran **puertas de entrada** y no fines en sí mismos. El umbral cuantitativo se fija en el Cap. 17.
-- **Estado:** Propuesta (fundacional).
+- **Estado:** Aprobada (fundacional) — 2026-08-17, Patricio David Fierro.
 - **Consecuencias:** (+) Protege el carácter recurrente del negocio y su valoración; (−) puede exigir rechazar ingresos inmediatos que no conduzcan a suscripción.
 - **Principios aplicados:** RN2 · RN6.
 
@@ -461,20 +461,21 @@ flowchart TB
 | Versión | Fecha | Cambio | Autor |
 |---|---|---|---|
 | v1.0 | 2026-08-14 | Creación del Capítulo 11 (Modelo Empresarial). Apertura del Bloque III. Define naturaleza de empresa de plataforma, lógica Core + Módulos, cadena de valor, capacidades, líneas de ingreso LI-1…LI-6, reglas RN1–RN6 y ADR-011-01…04. | Comité Fundador |
+| v1.1 | 2026-08-17 | Capítulo **Approved** por el Product Owner. ADR-011-01…04 ratificados como decisiones oficiales; RN1–RN6 elevadas a reglas de negocio inmutables. | Patricio David Fierro |
 
 ---
 
 ## 15. Estado del Documento
 
-**Draft** → Review → Approved
+Draft → Review → **Approved**
 
-*Estado actual: **Draft** (pendiente de revisión y aprobación del Product Owner).*
+*Estado actual: **Approved** por el Product Owner (2026-08-17).*
 
 ---
 
 ## 16. Versión
 
-**v1.0** — versión inicial del capítulo.
+**v1.1** — capítulo aprobado.
 
 ---
 
