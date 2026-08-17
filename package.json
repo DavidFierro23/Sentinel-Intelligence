@@ -1,0 +1,23 @@
+{
+  "name": "sentinel-intelligence-platform",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Sentinel Intelligence Platform - AI Intelligence Platform",
+  "author": "Patricio David Fierro",
+  "license": "Proprietary",
+  "packageManager": "npm@11.17.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "echo \"Frontend y Backend iniciarán aquí\"",
+    "build": "echo \"Build del ecosistema\"",
+    "test": "echo \"Tests de Sentinel\"",
+    "lint": "echo \"Lint del ecosistema\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DavidFierro23/Sentinel-Intelligence.git"
+  }
+}
