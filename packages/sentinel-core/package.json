@@ -1,0 +1,9 @@
+{
+  "name": "@sentinel/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sentinel Core - Observe, Understand and Explain Engine",
+  "type": "module",
+  "main": "src/index.js",
+  "license": "Proprietary"
+}
