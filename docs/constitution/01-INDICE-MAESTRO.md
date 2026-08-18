@@ -13,7 +13,7 @@
 |---|---|---|---|---|
 | I | ADN e Identidad | 1–7 | **v1.0** | ✅ Approved (bloque cerrado) |
 | II | Filosofía y Tecnología | 8–10 | **v1.0** | ✅ Approved (bloque cerrado) |
-| III | Negocio y Mercado | 11–20 | v0.1 | 🚧 En desarrollo |
+| III | Negocio y Mercado | 11–20 | v0.3 | 🚧 En desarrollo (Cap. 11–12 Approved) |
 | IV | Arquitectura y Gobierno | 21–33 | — | Pendiente |
 
 **Convención:** cada bloque recibe una versión propia (`vX.Y`). El bloque se cierra en `v1.0` al aprobarse todos sus capítulos. La versión global de la Constitución avanzará al completarse los cuatro bloques.
@@ -61,13 +61,13 @@
 
 ---
 
-### BLOQUE III — NEGOCIO Y MERCADO · v0.1 🚧
+### BLOQUE III — NEGOCIO Y MERCADO · v0.3 🚧
 
 | Cap. | Título | Archivo (previsto) | Versión | Estado |
 |---|---|---|---|---|
 | 11 | Modelo Empresarial | `Bloque-III/Cap-11-Modelo-Empresarial.md` | v1.1 | ✅ Approved |
-| 12 | Modelo SaaS | `Bloque-III/Cap-12-Modelo-SaaS.md` | v1.0 | 🚧 Draft (en revisión) |
-| 13 | Modelo Comercial | `Bloque-III/Cap-13-Modelo-Comercial.md` | — | Pendiente |
+| 12 | Modelo SaaS | `Bloque-III/Cap-12-Modelo-SaaS.md` | v1.1 | ✅ Approved |
+| 13 | Modelo Comercial | `Bloque-III/Cap-13-Modelo-Comercial.md` | v1.0 | 🚧 Draft (en revisión) |
 | 14 | Mercado Objetivo | `Bloque-III/Cap-14-Mercado-Objetivo.md` | — | Pendiente |
 | 15 | Propuesta de Valor | `Bloque-III/Cap-15-Propuesta-Valor.md` | — | Pendiente |
 | 16 | Análisis Competitivo y Benchmarking 🆕 | `Bloque-III/Cap-16-Analisis-Competitivo.md` | — | Pendiente |
@@ -104,7 +104,7 @@
 
 ---
 
-*🆕 = capítulo añadido en la revisión del índice. Versión de índice: 1.3 — 2026-08-17.*
+*🆕 = capítulo añadido en la revisión del índice. Versión de índice: 1.4 — 2026-08-17.*
 
 ---
 

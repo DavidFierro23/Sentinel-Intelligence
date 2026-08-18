@@ -5,9 +5,9 @@
 ────────────────────────────────────────────────────────
   Capítulo      : 12 — Modelo SaaS
   Bloque        : III — Negocio y Mercado
-  Versión       : v1.0
+  Versión       : v1.1
   Fecha         : 2026-08-17
-  Estado        : Draft
+  Estado        : Approved
   Autor         : Comité Fundador de Sentinel Intelligence
   Founder       : Patricio David Fierro (Product Owner principal)
   Confidencial. : CONFIDENCIAL — Uso interno fundacional
@@ -443,35 +443,35 @@ flowchart LR
 - **Contexto:** LI-1 requiere una estructura de cobro concreta. El cobro por usuario es habitual pero desalienta difundir la inteligencia; el cobro puro por consumo hace impredecible el ingreso y frena la exploración del cliente.
 - **Decisión:** Adoptar un modelo **híbrido**: cuota recurrente por **tenant** según **plan**, multiplicada por los **módulos activos**, más **capacidad contratada** (usuarios, fuentes, cuota UIS) y **add-ons**; con consumo excedente facturable (LI-2).
 - **Alternativas descartadas:** per-seat como métrica principal; consumo puro; licencia perpetua.
-- **Estado:** Propuesta (fundacional) — pendiente de aprobación del Product Owner.
+- **Estado:** Aprobada (fundacional) — 2026-08-17, Patricio David Fierro.
 - **Consecuencias:** (+) Ingreso recurrente predecible con cobertura del costo variable de IA; (−) exige un motor de medición y facturación más sofisticado en el Core.
 - **Principios aplicados:** RN2 · SA2 · SA5 · DT1.
 
 ### ADR-012-02 — El usuario individual no es la métrica principal de cobro
 - **Contexto:** La misión de Sentinel es que las organizaciones decidan mejor; cobrar por asiento incentiva restringir el acceso interno a la inteligencia y contradice el propósito del producto.
 - **Decisión:** El **número de usuarios no es la métrica de cobro principal**. Se usa únicamente como **parámetro de capacidad** dentro del plan.
-- **Estado:** Propuesta (fundacional).
+- **Estado:** Aprobada (fundacional) — 2026-08-17, Patricio David Fierro.
 - **Consecuencias:** (+) Fomenta la difusión interna de la inteligencia y la adopción real; (−) desalinea parcialmente el precio del número de personas beneficiadas.
 - **Principios aplicados:** Misión (Cap. 5) · SA2 · SA3.
 
 ### ADR-012-03 — Unidad de Inteligencia Sentinel (UIS) como métrica de consumo
 - **Contexto:** El costo dominante es la inferencia de IA, cuyo precio varía por proveedor y en el tiempo. Facturar en unidades de un proveedor (tokens, llamadas) trasladaría al cliente la volatilidad ajena y ataría el modelo comercial a ese proveedor, contradiciendo IA3.
 - **Decisión:** Definir la **UIS** como unidad **propia, interna y estable** de medida del trabajo de inteligencia. Toda cuota y todo excedente se expresan en UIS, con independencia del modelo que ejecute la operación.
-- **Estado:** Propuesta (fundacional).
+- **Estado:** Aprobada (fundacional) — 2026-08-17, Patricio David Fierro.
 - **Consecuencias:** (+) Estabilidad de precio para el cliente, agnosticidad real y captura de la mejora de eficiencia como margen; (−) requiere definir, calibrar y gobernar la equivalencia UIS ↔ costo real.
 - **Principios aplicados:** IA3 · IA6 · SA5.
 
 ### ADR-012-04 — Explicabilidad, HITL, trazabilidad y exportación nunca se monetizan
 - **Contexto:** Es comercialmente tentador reservar la explicación de la IA, la auditoría o la exportación de datos para los planes superiores.
 - **Decisión:** **Prohibido monetizar o restringir por plan** la IA explicable (IA1), el human-in-the-loop en decisiones críticas (IA2), la trazabilidad y auditoría (IA4) y la exportación de los datos propios del cliente (SA7). Están incluidos en **todos** los planes, incluida la evaluación.
-- **Estado:** Propuesta (fundacional).
+- **Estado:** Aprobada (fundacional) — 2026-08-17, Patricio David Fierro.
 - **Consecuencias:** (+) Coherencia ética total y diferenciación creíble frente a competidores; (−) se renuncia a una palanca de upsell habitual en la industria.
 - **Principios aplicados:** IA1 · IA2 · IA4 · RN4 · SA4 · SA7.
 
 ### ADR-012-05 — La cuota agotada degrada, nunca destruye ni bloquea el histórico
 - **Contexto:** Debe definirse el comportamiento al agotarse la capacidad contratada. El corte total de servicio dañaría la confianza y podría interrumpir decisiones en curso.
 - **Decisión:** Al alcanzar el 100 % de la cuota, y según configuración del tenant, se factura **excedente** o se aplica **degradación controlada**: se pausan los análisis nuevos de IA, preservando consulta, lectura, histórico y trazabilidad. **Nunca** se borra dato ni se revoca el acceso al histórico. Aviso obligatorio al 80 %.
-- **Estado:** Propuesta (fundacional).
+- **Estado:** Aprobada (fundacional) — 2026-08-17, Patricio David Fierro.
 - **Consecuencias:** (+) Confianza y previsibilidad para el cliente; (−) el ingreso por excedente es menos automático que con un corte duro.
 - **Principios aplicados:** SA5 · SA7 · DT2.
 
@@ -515,20 +515,21 @@ flowchart LR
 | Versión | Fecha | Cambio | Autor |
 |---|---|---|---|
 | v1.0 | 2026-08-17 | Creación del Capítulo 12 (Modelo SaaS). Define principios SA1–SA7, unidad de cobro, empaquetado en tres dimensiones, Unidad de Inteligencia Sentinel (UIS), cuatro planes oficiales, add-ons, política de cuotas, ciclo de vida de la suscripción, SLA, métricas SaaS y ADR-012-01…05. | Comité Fundador |
+| v1.1 | 2026-08-17 | Capítulo **Approved** por el Product Owner. ADR-012-01…05 ratificados; principios SA1–SA7 y la UIS adoptados como estándar oficial del modelo SaaS. | Patricio David Fierro |
 
 ---
 
 ## 15. Estado del Documento
 
-**Draft** → Review → Approved
+Draft → Review → **Approved**
 
-*Estado actual: **Draft** (pendiente de revisión y aprobación del Product Owner).*
+*Estado actual: **Approved** por el Product Owner (2026-08-17).*
 
 ---
 
 ## 16. Versión
 
-**v1.0** — versión inicial del capítulo.
+**v1.1** — capítulo aprobado.
 
 ---
 

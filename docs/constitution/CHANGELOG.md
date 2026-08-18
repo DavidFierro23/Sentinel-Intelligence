@@ -10,7 +10,7 @@ Versionado documental: **vX.0** cambio mayor · **vX.Y** cambio menor.
 |---|---|---|---|---|
 | I | ADN e Identidad | 1–7 | **v1.0** | ✅ Approved (2026-08-14) |
 | II | Filosofía y Tecnología | 8–10 | **v1.0** | ✅ Approved (2026-08-14) |
-| III | Negocio y Mercado | 11–20 | v0.2 | 🚧 En desarrollo (Cap. 11 Approved) |
+| III | Negocio y Mercado | 11–20 | v0.3 | 🚧 En desarrollo (Cap. 11–12 Approved) |
 | IV | Arquitectura y Gobierno | 21–33 | — | Pendiente |
 
 *Cada bloque se cierra en v1.0 al aprobarse todos sus capítulos. La versión global de la Constitución (Foundation) se elevará a v1.0 al completarse los cuatro bloques.*
@@ -63,6 +63,11 @@ Versionado documental: **vX.0** cambio mayor · **vX.Y** cambio menor.
 - **[2026-08-17] —** **UNIFICACIÓN DE LA CONSTITUCIÓN EN EL REPOSITORIO GIT** (decisión del Founder). La Constitución pasa a residir únicamente en `Sentinel-Intelligence/docs/constitution/` y se declara **documento fuente oficial** del proyecto. Versionado en Git con **un commit por capítulo**. La ruta anterior (`C:\Users\David\SentinelIntelligence\`) queda **archivada** sin validez normativa. Registrado como **ADR-000-01**. — *Patricio David Fierro*
 - **[2026-08-17] v1.3** — Índice Maestro actualizado: ubicación oficial única, Cap. 11 Approved, Cap. 12 en Draft. — *Comité Fundador*
 - **[2026-08-17] v1.0** — Capítulo 12 (Modelo SaaS) generado en estado **Draft** (ADR-012-01…05): planes, empaquetado por módulo, métricas de uso, ciclo de vida de la suscripción y SLA. Archivo `Bloque-III/Cap-12-Modelo-SaaS.md`. — *Comité Fundador*
+
+- **[2026-08-17] v1.1** — Capítulo 12 (Modelo SaaS) **Approved**; ADR-012-01…05 ratificados. Se adoptan como estándar oficial los principios **SA1–SA7**, el empaquetado ortogonal plan/módulo/add-on, los cuatro planes (Essential, Professional, Enterprise, Sovereign) y la **Unidad de Inteligencia Sentinel (UIS)** como métrica de consumo. — *Patricio David Fierro*
+- **[2026-08-17] —** Constitución publicada en el remoto (`origin/dev`) tras confirmarse que el repositorio es **privado** (requisito del nivel CONFIDENCIAL, ADR-000-01). Carpeta anterior **conservada como respaldo** por decisión del Founder. — *Patricio David Fierro*
+- **[2026-08-17] v1.0** — Capítulo 13 (Modelo Comercial) generado en estado **Draft** (ADR-013-01…06): arquitectura de precios en USD, valores de referencia por plan, bloques de UIS, cifras de SLA, canales de venta, política de descuentos y reglas de contratación pública. Archivo `Bloque-III/Cap-13-Modelo-Comercial.md`. — *Comité Fundador*
+- **[2026-08-17] v1.4** — Índice Maestro actualizado: Cap. 12 Approved, Cap. 13 Draft, Bloque III v0.3. — *Comité Fundador*
 
 ---
 
