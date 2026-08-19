@@ -10,7 +10,7 @@ Versionado documental: **vX.0** cambio mayor · **vX.Y** cambio menor.
 |---|---|---|---|---|
 | I | ADN e Identidad | 1–7 | **v1.0** | ✅ Approved (2026-08-14) |
 | II | Filosofía y Tecnología | 8–10 | **v1.0** | ✅ Approved (2026-08-14) |
-| III | Negocio y Mercado | 11–20 | v0.3 | 🚧 En desarrollo (Cap. 11–12 Approved) |
+| III | Negocio y Mercado | 11–20 | v0.4 | 🚧 En desarrollo (Cap. 11–13 Approved) |
 | IV | Arquitectura y Gobierno | 21–33 | — | Pendiente |
 
 *Cada bloque se cierra en v1.0 al aprobarse todos sus capítulos. La versión global de la Constitución (Foundation) se elevará a v1.0 al completarse los cuatro bloques.*
@@ -68,6 +68,13 @@ Versionado documental: **vX.0** cambio mayor · **vX.Y** cambio menor.
 - **[2026-08-17] —** Constitución publicada en el remoto (`origin/dev`) tras confirmarse que el repositorio es **privado** (requisito del nivel CONFIDENCIAL, ADR-000-01). Carpeta anterior **conservada como respaldo** por decisión del Founder. — *Patricio David Fierro*
 - **[2026-08-17] v1.0** — Capítulo 13 (Modelo Comercial) generado en estado **Draft** (ADR-013-01…06): arquitectura de precios en USD, valores de referencia por plan, bloques de UIS, cifras de SLA, canales de venta, política de descuentos y reglas de contratación pública. Archivo `Bloque-III/Cap-13-Modelo-Comercial.md`. — *Comité Fundador*
 - **[2026-08-17] v1.4** — Índice Maestro actualizado: Cap. 12 Approved, Cap. 13 Draft, Bloque III v0.3. — *Comité Fundador*
+
+## 2026-08-18
+
+- **[2026-08-18] v1.1** — Capítulo 13 (Modelo Comercial) **Approved**; ADR-013-01…06 ratificados. Se adoptan como normativa oficial los principios **CO1–CO7**, la arquitectura de precios en USD, el **módulo adicional al 40 %**, la **regla 4×** de piso de margen de la UIS, las cifras de SLA con créditos de servicio y la **matriz de autoridad comercial** con sus tres prohibiciones absolutas. Los valores numéricos quedan como versión de calibración (P13-1, P13-2). — *Patricio David Fierro*
+- **[2026-08-18] —** Reafirmadas las **reglas de gobierno documental**: la Constitución en `docs/constitution/` es la **única fuente de verdad**; la trazabilidad se mantiene mediante ADR, versionado por capítulo y este CHANGELOG; **ningún capítulo aprobado se modifica salvo mediante un nuevo ADR que lo supersede** (ADR-000-01). — *Patricio David Fierro*
+- **[2026-08-18] v1.0** — Capítulo 14 (Mercado Objetivo) generado en estado **Draft** (ADR-014-01…05): segmentación oficial, perfil de cliente ideal, metodología de dimensionamiento TAM/SAM/SOM, secuencia geográfica Ecuador → LATAM → global, mapa segmento↔módulo↔plan y criterios de exclusión. Archivo `Bloque-III/Cap-14-Mercado-Objetivo.md`. — *Comité Fundador*
+- **[2026-08-18] v1.5** — Índice Maestro actualizado: Cap. 13 Approved, Cap. 14 Draft, Bloque III v0.4. — *Comité Fundador*
 
 ---
 

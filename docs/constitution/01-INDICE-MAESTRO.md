@@ -2,7 +2,7 @@
 ## Índice Maestro (con trazabilidad)
 
 > Constitución oficial de **Sentinel Intelligence Platform**. Desarrollo **bloque por bloque**, **capítulo por capítulo**, entrega en archivos `.md`. 33 capítulos + Sección de Autoría + Anexos + Decisiones Fundacionales Aprobadas.
-> Este índice referencia cada capítulo por archivo y estado para mantener **trazabilidad** y facilitar futuras actualizaciones. Actualizado: 2026-08-17.
+> Este índice referencia cada capítulo por archivo y estado para mantener **trazabilidad** y facilitar futuras actualizaciones. Actualizado: 2026-08-18.
 > **Repositorio oficial único:** `Sentinel-Intelligence/docs/constitution/` (versionado en Git, commit por capítulo).
 
 ---
@@ -13,7 +13,7 @@
 |---|---|---|---|---|
 | I | ADN e Identidad | 1–7 | **v1.0** | ✅ Approved (bloque cerrado) |
 | II | Filosofía y Tecnología | 8–10 | **v1.0** | ✅ Approved (bloque cerrado) |
-| III | Negocio y Mercado | 11–20 | v0.3 | 🚧 En desarrollo (Cap. 11–12 Approved) |
+| III | Negocio y Mercado | 11–20 | v0.4 | 🚧 En desarrollo (Cap. 11–13 Approved) |
 | IV | Arquitectura y Gobierno | 21–33 | — | Pendiente |
 
 **Convención:** cada bloque recibe una versión propia (`vX.Y`). El bloque se cierra en `v1.0` al aprobarse todos sus capítulos. La versión global de la Constitución avanzará al completarse los cuatro bloques.
@@ -61,14 +61,14 @@
 
 ---
 
-### BLOQUE III — NEGOCIO Y MERCADO · v0.3 🚧
+### BLOQUE III — NEGOCIO Y MERCADO · v0.4 🚧
 
 | Cap. | Título | Archivo (previsto) | Versión | Estado |
 |---|---|---|---|---|
 | 11 | Modelo Empresarial | `Bloque-III/Cap-11-Modelo-Empresarial.md` | v1.1 | ✅ Approved |
 | 12 | Modelo SaaS | `Bloque-III/Cap-12-Modelo-SaaS.md` | v1.1 | ✅ Approved |
-| 13 | Modelo Comercial | `Bloque-III/Cap-13-Modelo-Comercial.md` | v1.0 | 🚧 Draft (en revisión) |
-| 14 | Mercado Objetivo | `Bloque-III/Cap-14-Mercado-Objetivo.md` | — | Pendiente |
+| 13 | Modelo Comercial | `Bloque-III/Cap-13-Modelo-Comercial.md` | v1.1 | ✅ Approved |
+| 14 | Mercado Objetivo | `Bloque-III/Cap-14-Mercado-Objetivo.md` | v1.0 | 🚧 Draft (en revisión) |
 | 15 | Propuesta de Valor | `Bloque-III/Cap-15-Propuesta-Valor.md` | — | Pendiente |
 | 16 | Análisis Competitivo y Benchmarking 🆕 | `Bloque-III/Cap-16-Analisis-Competitivo.md` | — | Pendiente |
 | 17 | Modelo Financiero y Proyecciones 🆕 | `Bloque-III/Cap-17-Modelo-Financiero.md` | — | Pendiente |
@@ -104,7 +104,7 @@
 
 ---
 
-*🆕 = capítulo añadido en la revisión del índice. Versión de índice: 1.4 — 2026-08-17.*
+*🆕 = capítulo añadido en la revisión del índice. Versión de índice: 1.5 — 2026-08-18.*
 
 ---
 

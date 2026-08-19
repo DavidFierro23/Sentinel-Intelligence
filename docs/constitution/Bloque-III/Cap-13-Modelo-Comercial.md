@@ -5,9 +5,9 @@
 ────────────────────────────────────────────────────────
   Capítulo      : 13 — Modelo Comercial
   Bloque        : III — Negocio y Mercado
-  Versión       : v1.0
-  Fecha         : 2026-08-17
-  Estado        : Draft
+  Versión       : v1.1
+  Fecha         : 2026-08-18
+  Estado        : Approved
   Autor         : Comité Fundador de Sentinel Intelligence
   Founder       : Patricio David Fierro (Product Owner principal)
   Confidencial. : CONFIDENCIAL — Uso interno fundacional
@@ -493,42 +493,42 @@ flowchart TD
 - **Contexto:** El mercado inicial (Ecuador) opera en dólares estadounidenses; la expansión a LATAM implica múltiples monedas. Además, debe decidirse si las tarifas son públicas u ocultas.
 - **Decisión:** Adoptar el **USD** como moneda oficial de referencia y contrato. Publicar tarifa de **Essential y Professional**; **Enterprise y Sovereign por cotización**. La **estructura** de precios es siempre pública, aunque la cifra sea negociada.
 - **Alternativas descartadas:** opacidad total (genera desconfianza institucional y alarga el ciclo); publicación total (impide adaptar la cotización a implantaciones complejas).
-- **Estado:** Propuesta (fundacional) — pendiente de aprobación del Product Owner.
+- **Estado:** Aprobada (fundacional) — 2026-08-18, Patricio David Fierro.
 - **Consecuencias:** (+) Simplicidad contable, comparabilidad y confianza; (−) exposición de tarifas a competidores y necesidad de cláusula de tipo de cambio fuera de economías dolarizadas.
 - **Principios aplicados:** CO2 · CO4.
 
 ### ADR-013-02 — El módulo adicional se tarifa al 40 % del plan base
 - **Contexto:** Cobrar cada módulo a precio completo contradiría la realidad del costo marginal decreciente y frenaría la expansión intra-cuenta, que es el principal motor de crecimiento del Cap. 11.
 - **Decisión:** El **segundo módulo y siguientes** se tarifan al **40 % del plan base** cada uno.
-- **Estado:** Propuesta (fundacional).
+- **Estado:** Aprobada (fundacional) — 2026-08-18, Patricio David Fierro.
 - **Consecuencias:** (+) Traduce la ventaja arquitectónica en ventaja comercial y acelera la expansión de cuenta; (−) reduce el ingreso por módulo aislado y exige que el plan base cubra el costo fijo de servir el tenant.
 - **Principios aplicados:** Cap. 11 §5.2 · CO1 · SA3.
 
 ### ADR-013-03 — Regla 4×: piso de margen innegociable para la UIS
 - **Contexto:** El consumo real de UIS es desconocido (supuesto S4) y el costo de inferencia es volátil. Fijar un precio absoluto sin datos sería arbitrario; no fijar nada dejaría el margen a merced del proveedor de IA.
 - **Decisión:** El precio de la UIS **nunca** puede ser inferior a **4× su costo medio real** (inferencia + cómputo + almacenamiento + trazabilidad). Verificación **mensual** con el medidor del Core. Ninguna autoridad comercial —incluido el Founder— puede cotizar bajo este piso.
-- **Estado:** Propuesta (fundacional).
+- **Estado:** Aprobada (fundacional) — 2026-08-18, Patricio David Fierro.
 - **Consecuencias:** (+) Protege el margen aun con supuestos erróneos y convierte la mejora del AI Router en beneficio; (−) puede impedir ganar oportunidades muy sensibles al precio y exige medición fiable del costo real desde el día uno.
 - **Principios aplicados:** CO1 · CO5 · IA6 · ADR-012-03.
 
 ### ADR-013-04 — Topes de descuento y autoridad de aprobación escalonada
 - **Contexto:** Sin límites explícitos, el descuento se convierte en la herramienta de venta por defecto y erosiona la tarifa de forma irreversible (R13-2).
 - **Decisión:** Establecer un **tope ordinario del 25 %** (Dirección Comercial), un **techo absoluto del 35 %** reservado al **Founder** con justificación escrita, y la **prohibición** de todo descuento superior. Todo descuento exige **contrapartida verificable**, se documenta y se revisa en cada renovación.
-- **Estado:** Propuesta (fundacional).
+- **Estado:** Aprobada (fundacional) — 2026-08-18, Patricio David Fierro.
 - **Consecuencias:** (+) Disciplina de precios, equidad entre clientes (CO4) y trazabilidad de excepciones; (−) rigidez ante competidores agresivos y posible pérdida de oportunidades muy sensibles al precio.
 - **Principios aplicados:** CO3 · CO4 · CO5.
 
 ### ADR-013-05 — Facturación anual anticipada preferente
 - **Contexto:** Una empresa en Release Alpha necesita previsibilidad de caja; el cliente necesita un incentivo para comprometerse.
 - **Decisión:** Ofrecer **15 % de descuento** por facturación anual anticipada y **22 %** por compromiso de 24 meses, dentro de los topes de ADR-013-04.
-- **Estado:** Propuesta (fundacional).
+- **Estado:** Aprobada (fundacional) — 2026-08-18, Patricio David Fierro.
 - **Consecuencias:** (+) Caja anticipada, menor churn y menor costo de cobranza; (−) menor ingreso nominal y compromiso de servicio de largo plazo asumido por adelantado.
 - **Principios aplicados:** RN2 · CO3.
 
 ### ADR-013-06 — Créditos de servicio como único remedio por incumplimiento de SLA
 - **Contexto:** El incumplimiento de disponibilidad exige un remedio definido. Las indemnizaciones abiertas exponen a la empresa a un riesgo desproporcionado frente al valor del contrato.
 - **Decisión:** El **crédito de servicio** (5 % / 15 % / 30 % del cargo mensual, según severidad) es el **único remedio** por incumplimiento de disponibilidad. Tras **tres meses consecutivos** incumplidos, el cliente adquiere derecho a **terminación sin penalidad**.
-- **Estado:** Propuesta (fundacional).
+- **Estado:** Aprobada (fundacional) — 2026-08-18, Patricio David Fierro.
 - **Consecuencias:** (+) Riesgo acotado y previsible, con una salida justa para el cliente; (−) puede resultar insuficiente para clientes institucionales que exijan penalidades mayores — decisión escalable al Founder caso por caso.
 - **Principios aplicados:** CO6 · SA7.
 
@@ -570,21 +570,24 @@ flowchart TD
 
 | Versión | Fecha | Cambio | Autor |
 |---|---|---|---|
+| v1.1 | 2026-08-18 | Capítulo **Approved** por el Product Owner. ADR-013-01…06 ratificados; principios CO1–CO7, **regla 4×** y matriz de autoridad comercial adoptados como normativa oficial. Las cifras quedan como versión de calibración (P13-1, P13-2). | Patricio David Fierro |
 | v1.0 | 2026-08-17 | Creación del Capítulo 13 (Modelo Comercial). Define principios CO1–CO7, supuestos declarados S1–S6, arquitectura de precios en USD, valores de referencia por plan y add-on, regla 4× de margen de la UIS, cifras de SLA y créditos de servicio, política de descuentos con topes y autoridad de aprobación, canales de venta, ciclo de venta, reglas de contratación pública y ADR-013-01…06. | Comité Fundador |
 
 ---
 
 ## 15. Estado del Documento
 
-**Draft** → Review → Approved
+Draft → Review → **Approved**
 
-*Estado actual: **Draft** (pendiente de revisión y aprobación del Product Owner).*
+*Estado actual: **Approved** por el Product Owner (2026-08-18).*
+
+> **Nota de aprobación:** la aprobación consolida como **normativas** la arquitectura de precios, la regla 4× (ADR-013-03), los topes de descuento y la matriz de autoridad. Los **valores numéricos** de §5.4–§5.7 permanecen como **versión de calibración** y se revisarán conforme a P13-1 y P13-2, sin requerir un nuevo ADR mientras no se altere ninguna regla.
 
 ---
 
 ## 16. Versión
 
-**v1.0** — versión inicial del capítulo.
+**v1.1** — capítulo aprobado.
 
 ---
 

@@ -25,7 +25,7 @@
 |---|---|---|---|---|
 | I | ADN e Identidad | 1–7 | **v1.0** | ✅ Approved |
 | II | Filosofía y Tecnología | 8–10 | **v1.0** | ✅ Approved |
-| III | Negocio y Mercado | 11–20 | v0.3 | 🚧 En desarrollo (Cap. 11–12 Approved) |
+| III | Negocio y Mercado | 11–20 | v0.4 | 🚧 En desarrollo (Cap. 11–13 Approved) |
 | IV | Arquitectura y Gobierno | 21–33 | — | Pendiente |
 
 *Un bloque se cierra en `v1.0` al aprobarse todos sus capítulos. La Constitución alcanzará `v1.0` global al completarse los cuatro bloques.*
