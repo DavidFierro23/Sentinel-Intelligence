@@ -2,7 +2,7 @@
 ## Índice Maestro (con trazabilidad)
 
 > Constitución oficial de **Sentinel Intelligence Platform**. Desarrollo **bloque por bloque**, **capítulo por capítulo**, entrega en archivos `.md`. 33 capítulos + Sección de Autoría + Anexos + Decisiones Fundacionales Aprobadas.
-> Este índice referencia cada capítulo por archivo y estado para mantener **trazabilidad** y facilitar futuras actualizaciones. Actualizado: 2026-08-18.
+> Este índice referencia cada capítulo por archivo y estado para mantener **trazabilidad** y facilitar futuras actualizaciones. Actualizado: 2026-08-19.
 > **Repositorio oficial único:** `Sentinel-Intelligence/docs/constitution/` (versionado en Git, commit por capítulo).
 
 ---
@@ -104,7 +104,7 @@
 
 ---
 
-*🆕 = capítulo añadido en la revisión del índice. Versión de índice: 1.5 — 2026-08-18.*
+*🆕 = capítulo añadido en la revisión del índice. Versión de índice: 1.6 — 2026-08-19.*
 
 ---
 
