@@ -1,0 +1,373 @@
+import { buscarGoogle } from "./googleService.js";
+import { buscarGoogleNews } from "./googleNewsService.js";
+import { buscarWayback } from "./waybackService.js";
+import { buscarWhois } from "./whoisService.js";
+import { obtenerAvatar } from "./avatarService.js";
+import { correlacionarIdentidades } from "./identityCorrelationService.js";
+
+function construirEntidades(resultados) {
+  const mapa = new Map();
+
+  resultados.forEach((item) => {
+    const texto = `${item.titulo || ""} ${item.descripcion || ""}`.toLowerCase();
+
+    let nombre = "Web";
+    let tipo = "web";
+
+    if (texto.includes("facebook")) {
+      nombre = "Facebook";
+      tipo = "social";
+    } else if (texto.includes("instagram")) {
+      nombre = "Instagram";
+      tipo = "social";
+    } else if (texto.includes("tiktok")) {
+      nombre = "TikTok";
+      tipo = "social";
+    } else if (texto.includes("youtube")) {
+      nombre = "YouTube";
+      tipo = "video";
+    } else if (texto.includes("linkedin")) {
+      nombre = "LinkedIn";
+      tipo = "social";
+    } else if (
+      texto.includes("x.com") ||
+      texto.includes("twitter")
+    ) {
+      nombre = "X";
+      tipo = "social";
+    } else if (texto.includes("news")) {
+      nombre = "Google News";
+      tipo = "news";
+    } else if (texto.includes("wayback")) {
+      nombre = "Wayback";
+      tipo = "archive";
+    }
+
+    if (!mapa.has(nombre)) {
+      mapa.set(nombre, {
+        id: nombre.toLowerCase().replace(/\s+/g, "-"),
+        nombre,
+        tipo,
+        evidencias: 1
+      });
+    } else {
+      mapa.get(nombre).evidencias++;
+    }
+  });
+
+  return [...mapa.values()];
+}
+
+/*
+  Avatar de respaldo LOCAL.
+  No utiliza ui-avatars.com ni ningún servicio externo.
+*/
+function crearAvatarFallback(nombre = "") {
+  const limpio = String(nombre)
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const partes = limpio
+    .split(" ")
+    .filter(Boolean);
+
+  let iniciales = "OS";
+
+  if (partes.length === 1) {
+    iniciales = partes[0]
+      .substring(0, 2)
+      .toUpperCase();
+  } else if (partes.length > 1) {
+    iniciales = (
+      partes[0].charAt(0) +
+      partes[partes.length - 1].charAt(0)
+    ).toUpperCase();
+  }
+
+  const svg = `
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="256"
+      height="256"
+      viewBox="0 0 256 256"
+    >
+      <rect
+        width="256"
+        height="256"
+        rx="128"
+        fill="#0B1738"
+      />
+
+      <circle
+        cx="128"
+        cy="128"
+        r="116"
+        fill="none"
+        stroke="#3B82F6"
+        stroke-width="8"
+      />
+
+      <text
+        x="128"
+        y="145"
+        text-anchor="middle"
+        font-family="Arial, Helvetica, sans-serif"
+        font-size="76"
+        font-weight="700"
+        fill="#FFFFFF"
+      >
+        ${iniciales}
+      </text>
+    </svg>
+  `;
+
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+export async function investigarObjetivo(objetivo) {
+  const inicio = Date.now();
+
+  const [
+    avatar,
+    google,
+    noticias,
+    wayback,
+    whois
+  ] = await Promise.allSettled([
+    obtenerAvatar(objetivo),
+    buscarGoogle(objetivo),
+    buscarGoogleNews(objetivo),
+    buscarWayback(objetivo),
+    buscarWhois(objetivo)
+  ]);
+
+  const resultados = [];
+
+  /*
+    GOOGLE
+  */
+  if (
+    google.status === "fulfilled" &&
+    Array.isArray(google.value.resultados)
+  ) {
+    resultados.push(...google.value.resultados);
+  }
+
+  /*
+    GOOGLE NEWS
+  */
+  if (
+    noticias.status === "fulfilled" &&
+    Array.isArray(noticias.value.resultados)
+  ) {
+    resultados.push(...noticias.value.resultados);
+  }
+
+  /*
+    WAYBACK
+  */
+  if (
+    wayback.status === "fulfilled" &&
+    Array.isArray(wayback.value.resultados)
+  ) {
+    resultados.push(...wayback.value.resultados);
+  }
+
+  /*
+    WHOIS
+  */
+  if (
+    whois.status === "fulfilled" &&
+    Array.isArray(whois.value.resultados)
+  ) {
+    resultados.push(...whois.value.resultados);
+  }
+
+  /*
+    ENTIDADES DEL GRAFO
+  */
+  const entidades = construirEntidades(resultados);
+
+  /*
+    MOTOR DE CORRELACIÓN DE IDENTIDAD
+  */
+  let identidadesDescubiertas = [];
+
+  try {
+    const correlacion =
+      correlacionarIdentidades(resultados);
+
+    if (Array.isArray(correlacion)) {
+      identidadesDescubiertas = correlacion;
+    }
+  } catch (error) {
+    console.error(
+      "Error en correlacionarIdentidades:",
+      error
+    );
+
+    identidadesDescubiertas = [];
+  }
+
+  /*
+    TIEMPO DE INVESTIGACIÓN
+  */
+  const tiempo =
+    ((Date.now() - inicio) / 1000).toFixed(2);
+
+  /*
+    IDENTIDAD PRINCIPAL
+
+    Primero utilizamos avatarService.js.
+
+    Si por alguna razón falla, utilizamos
+    un avatar SVG LOCAL.
+
+    Nunca se utiliza ui-avatars.com.
+  */
+  const identidad =
+    avatar.status === "fulfilled" &&
+    avatar.value
+      ? avatar.value
+      : {
+          nombre: objetivo,
+          tipo: "objetivo",
+          avatar: crearAvatarFallback(objetivo),
+          confianza: 70,
+          fuente: "local"
+        };
+
+  /*
+    RESULTADO FINAL
+  */
+  return {
+    objetivo,
+
+    identidad,
+
+    estado: "Conectado",
+
+    tiempo: `${tiempo}s`,
+
+    total: resultados.length,
+
+    fuentes: ["Fusion Engine"],
+
+    /*
+      ESTADO DE LOS MOTORES
+    */
+    motores: [
+      {
+        nombre: "Google",
+        estado:
+          google.status === "fulfilled"
+            ? "success"
+            : "error",
+        hallazgos:
+          google.status === "fulfilled"
+            ? Number(google.value.total) || 0
+            : 0
+      },
+
+      {
+        nombre: "Google News",
+        estado:
+          noticias.status === "fulfilled"
+            ? "success"
+            : "error",
+        hallazgos:
+          noticias.status === "fulfilled"
+            ? Number(noticias.value.total) || 0
+            : 0
+      },
+
+      {
+        nombre: "Wayback",
+        estado:
+          wayback.status === "fulfilled"
+            ? "success"
+            : "error",
+        hallazgos:
+          wayback.status === "fulfilled"
+            ? Number(wayback.value.total) || 0
+            : 0
+      },
+
+      {
+        nombre: "Whois",
+        estado:
+          whois.status === "fulfilled"
+            ? "success"
+            : "error",
+        hallazgos:
+          whois.status === "fulfilled"
+            ? Number(whois.value.total) || 0
+            : 0
+      }
+    ],
+
+    /*
+      ENTIDADES PARA EL GRAFO
+    */
+    entidades,
+
+    /*
+      IDENTIDADES PARA IDENTITY
+      CORRELATION ENGINE
+    */
+    identidadesDescubiertas,
+
+    /*
+      TIMELINE
+    */
+    timeline: [
+      {
+        etapa: "Objetivo identificado",
+        detalle: objetivo
+      },
+
+      {
+        etapa: "Google",
+        detalle:
+          google.status === "fulfilled"
+            ? `${google.value.total} resultados`
+            : "Sin respuesta"
+      },
+
+      {
+        etapa: "Google News",
+        detalle:
+          noticias.status === "fulfilled"
+            ? `${noticias.value.total} noticias`
+            : "Sin respuesta"
+      },
+
+      {
+        etapa: "Wayback",
+        detalle:
+          wayback.status === "fulfilled"
+            ? `${wayback.value.total || 0} registros`
+            : "Sin respuesta"
+      },
+
+      {
+        etapa: "Whois",
+        detalle:
+          whois.status === "fulfilled"
+            ? `${whois.value.total || 0} registros`
+            : "Sin respuesta"
+      },
+
+      {
+        etapa: "Correlación",
+        detalle:
+          `${identidadesDescubiertas.length} identidades detectadas`
+      }
+    ],
+
+    /*
+      TODAS LAS EVIDENCIAS
+    */
+    resultados
+  };
+}
