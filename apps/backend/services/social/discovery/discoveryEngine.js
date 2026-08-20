@@ -109,6 +109,7 @@ function registrarCandidato(mapa, datos) {
       tipoPlataforma: plataforma.tipo,
 
       handle,
+      handleTipo: datos.handleTipo || "extraido",
       url,
       urlNormalizada,
       dominio: extraerDominio(url),
@@ -193,9 +194,90 @@ function candidatoDesdeResultado(resultado, via, contexto = {}) {
 
   if (!TIPOS_CON_IDENTIDAD.includes(plataforma.tipo)) return null;
 
-  const handle = extraerHandle(enlace);
+  let handle = extraerHandle(enlace);
 
-  if (!handle) return null;
+  let handleTipo = "extraido";
+
+  /*
+    ---------------------------------------------------------
+    SPRINT 3.2.1 · objetivo 3 — NO PERDER URLS CORROBORADAS
+    ---------------------------------------------------------
+
+    Antes, si extraerHandle fallaba el candidato se descartaba
+    en silencio. Se perdian asi URLs publicas y corroboradas
+    de las plataformas exactamente en los casos mas
+    frecuentes:
+
+        facebook.com/profile.php?id=100001234
+        facebook.com/UnaPagina-123456789
+        youtube.com/channel/UCxxxxxxxx
+
+    Descartarlas hacia que el grafo no tuviera nodo para una
+    plataforma donde SI hay presencia publica documentada.
+
+    Ahora se conserva la URL con un identificador derivado de
+    su ruta y se marca `handleTipo` para que ni el Identity
+    Matcher ni el panel la traten como un handle real: S2
+    (coincidencia de usuario) no debe premiar un
+    "profile.php" ni un identificador de canal.
+
+    Las rutas que NO son perfiles (watch, results, status...)
+    se siguen descartando: son contenido, no cuentas.
+  */
+  if (!handle) {
+    const normalizada = normalizarUrl(enlace);
+
+    const ruta = (normalizada || "").split("?")[0].split("/").slice(1);
+
+    const primerSegmento = ruta[0] || "";
+
+    /*
+      Sin ningun segmento de ruta es la portada de la
+      plataforma, no una cuenta.
+    */
+    if (!primerSegmento) return null;
+
+    /*
+      DEFECTO CORREGIDO EN LA PRUEBA DEL SPRINT:
+
+      Este respaldo burlaba el filtro que lo precede.
+      `extraerHandle` rechaza correctamente youtube.com/watch
+      porque "watch" no es un usuario; el respaldo lo recuperaba
+      derivando el handle "watch" de la ruta, reintroduciendo
+      justo lo que se acaba de descartar.
+
+      El respaldo solo debe actuar cuando la ruta SI podria ser
+      una cuenta y el handle no es extraible por su forma
+      (profile.php, /channel/UCxxx), nunca cuando la ruta es
+      contenido.
+    */
+    const adaptadorRuta = adaptadorPorPlataforma(plataforma.id);
+
+    if (adaptadorRuta && !esRutaDePerfil(adaptadorRuta, primerSegmento)) {
+      /*
+        No es un candidato, pero tampoco desaparece: se
+        devuelve el motivo para que quede en el registro de
+        descartes. Nada se pierde en silencio.
+      */
+      return {
+        descartado: true,
+        motivo:
+          adaptadorRuta.soloPaginasPublicas && primerSegmento === "profile.php"
+            ? `Perfil personal de Facebook (profile.php). El adaptador atiende solo PAGINAS publicas: los perfiles personales quedan fuera por acceso y por EX1 del Cap. 14.`
+            : `La ruta "/${primerSegmento}" es contenido de la plataforma, no una cuenta.`,
+        plataforma: plataforma.nombre,
+        url: enlace
+      };
+    }
+
+    const derivado = ruta.join("-").replace(/[^a-z0-9._-]/g, "").slice(0, 60);
+
+    if (!derivado) return null;
+
+    handle = derivado;
+
+    handleTipo = "derivado_de_url";
+  }
 
   const urlNormalizada = normalizarUrl(enlace);
 
@@ -208,6 +290,7 @@ function candidatoDesdeResultado(resultado, via, contexto = {}) {
       tipo: plataforma.tipo
     },
     handle,
+    handleTipo,
     url: enlace,
     urlNormalizada,
     via,
@@ -353,12 +436,21 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
 
   const antesDeVia2 = mapa.size;
 
+  const descartados = [];
+
   evidenciasPrevias.forEach((ev) => {
     const datos = candidatoDesdeResultado(ev, "evidencia_fusion", {
       proveedor: (ev.motores || []).map((m) => m.nombre).join(" + ") || null
     });
 
-    if (datos) registrarCandidato(mapa, datos);
+    if (!datos) return;
+
+    if (datos.descartado) {
+      descartados.push(datos);
+      return;
+    }
+
+    registrarCandidato(mapa, datos);
   });
 
   trazas.push({
@@ -422,6 +514,11 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
       });
 
       if (!datos) return;
+
+      if (datos.descartado) {
+        descartados.push(datos);
+        return;
+      }
 
       /*
         Filtro por adaptador: descarta rutas que caen en la
@@ -593,6 +690,12 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
 
     intentos,
 
+    /*
+      URLS DE PLATAFORMA DESCARTADAS, con su motivo.
+      Un descarte silencioso haria creer que la URL no existia.
+    */
+    descartados,
+
     trazas,
 
     proveedores: resumen,
@@ -630,6 +733,7 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
         (c) => c.estadoPresencia === ESTADOS_PRESENCIA.NO_COMPROBADA
       ).length,
       consultasEjecutadas: intentos.length,
+      urlsDescartadas: descartados.length,
       tiempo: `${((Date.now() - inicio) / 1000).toFixed(2)}s`
     },
 

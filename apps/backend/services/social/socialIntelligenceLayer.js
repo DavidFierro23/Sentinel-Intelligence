@@ -163,6 +163,7 @@ export async function ejecutarSocialIntelligence(perfil, opciones = {}) {
       anclas: descubrimiento.anclas,
       anclasUsadas: descubrimiento.anclasUsadas,
       adaptadores: descubrimiento.adaptadores,
+      descartados: descubrimiento.descartados || [],
       intentos: descubrimiento.intentos,
       trazas: descubrimiento.trazas,
       proveedores: descubrimiento.proveedores
@@ -186,6 +187,7 @@ export async function ejecutarSocialIntelligence(perfil, opciones = {}) {
       vetadasPorContexto: correlacion?.metricas.vetadasPorContexto || 0,
       consultasAncladas: descubrimiento.consultasAncladas ?? 0,
       consultasPorNombre: descubrimiento.consultasPorNombre ?? 0,
+      urlsDescartadas: descubrimiento.metricas.urlsDescartadas ?? 0,
       puntuacionMaxima: correlacion?.metricas.puntuacionMaxima || 0,
       porCalidad: evidencia?.metricas.porCalidad || {},
       plataformasNoComprobadas:

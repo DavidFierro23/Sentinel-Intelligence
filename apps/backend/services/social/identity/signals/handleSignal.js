@@ -102,6 +102,22 @@ export function evaluarS2(candidato, perfil) {
     };
   }
 
+  /*
+    SPRINT 3.2.1 — un identificador derivado de la URL
+    (profile.php, channel/UCxxx) NO es un handle: premiar su
+    parecido con el nombre seria comparar contra algo que la
+    persona no eligio.
+  */
+  if (candidato.handleTipo === "derivado_de_url") {
+    return {
+      ...base,
+      activa: false,
+      puntos: 0,
+      detalle: `El identificador "${candidato.handle}" se derivó de la ruta de la URL, no es un nombre de usuario elegido. No se puntúa.`,
+      evidencias: []
+    };
+  }
+
   let mejor = { puntos: 0, tipo: null, variante: null, similitud: 0 };
 
   variantes.forEach((variante) => {

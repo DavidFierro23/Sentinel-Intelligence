@@ -2,6 +2,7 @@
 
 import { normalizarTexto, tokenizar, limpiarHtml } from "../textUtils.js";
 import { obtenerAvatar as avatarLocalDeRespaldo } from "../avatarService.js";
+import { construirRutaProxy, absolutizar } from "./avatarProxy.js";
 
 /*
 ===========================================================
@@ -1080,9 +1081,29 @@ export async function obtenerAvatarInteligente(objetivo, contexto = {}) {
 function componer(resultado, nivel, nombre, tipoObjetivo, traza, inicio, oficial) {
   const nivelConfianza = nivelDe(resultado.confianza || 0);
 
+  /*
+    SPRINT 3.2.1 · B1 — el frontend no debe cargar la imagen
+    desde Wikimedia. Se calcula la ruta del proxy propio; la
+    URL de la fuente se CONSERVA para atribucion y auditoria.
+  */
+  const rutaProxy = construirRutaProxy(resultado.imageUrl);
+
   return {
     /* ---- CAMPOS EXIGIDOS ---- */
-    imageUrl: resultado.imageUrl,
+
+    /*
+      `imageUrl` es lo que el frontend debe cargar: la ruta del
+      proxy si la imagen es remota, o el data: URI local si es
+      un respaldo generado.
+    */
+    imageUrl: rutaProxy || resultado.imageUrl,
+
+    /*
+      La URL original NO se pierde: es la atribucion.
+    */
+    imageUrlOriginal: resultado.imageUrl,
+    servidaPorProxy: Boolean(rutaProxy),
+    rutaProxy,
     fuente: resultado.fuente,
     tipoFuente: resultado.tipoFuente,
     confianza: resultado.confianza,
@@ -1151,6 +1172,55 @@ fuente}, con el resultado completo anexado.
 ===========================================================
 */
 
+/*
+===========================================================
+ABSOLUTIZAR AVATARES DE UNA RESPUESTA
+
+Recorre la respuesta de investigarObjetivo y convierte las
+rutas de proxy relativas en URLs absolutas con el host de la
+peticion. Lo llama la capa de rutas, que es la unica que
+conoce ese host.
+
+Se mantienen intactos fuente, licencia y confianza: solo
+cambia el localizador que el navegador debe pedir.
+===========================================================
+*/
+
+export function absolutizarAvatares(resultado, req) {
+  if (!resultado || typeof resultado !== "object") return resultado;
+
+  const absolutizarUno = (obj) => {
+    if (!obj) return;
+
+    const ruta = obj.rutaProxy || obj.inteligencia?.rutaProxy;
+
+    if (!ruta) return;
+
+    const url = absolutizar(ruta, req);
+
+    if (obj.avatar !== undefined) obj.avatar = url;
+
+    if (obj.imageUrl !== undefined) obj.imageUrl = url;
+  };
+
+  /* identidad.avatar — lo que consume el grafo. */
+  absolutizarUno(resultado.identidad);
+
+  if (resultado.identidad?.inteligencia) {
+    absolutizarUno(resultado.identidad.inteligencia);
+  }
+
+  /* ficha consolidada. */
+  if (resultado.fichaObjetivo) {
+    const ruta = resultado.identidad?.inteligencia?.rutaProxy;
+
+    if (ruta) resultado.fichaObjetivo.avatar = absolutizar(ruta, req);
+  }
+
+  return resultado;
+}
+
+
 export async function obtenerAvatarCompatible(objetivo, contexto = {}) {
   const resultado = await obtenerAvatarInteligente(objetivo, contexto);
 
@@ -1160,6 +1230,10 @@ export async function obtenerAvatarCompatible(objetivo, contexto = {}) {
     avatar: resultado.imageUrl,
     confianza: resultado.confianza,
     fuente: resultado.fuente,
+
+    /* Para que la capa de rutas pueda absolutizar. */
+    rutaProxy: resultado.rutaProxy || null,
+    imageUrlOriginal: resultado.imageUrlOriginal || null,
 
     /* Resultado completo, para quien lo necesite. */
     inteligencia: resultado

@@ -278,6 +278,13 @@ export function construirFicha(candidato, correspondencia, opciones = {}) {
 
     handle: candidato.handle,
 
+    /*
+      Sprint 3.2.1 — distingue un handle elegido por la persona
+      de un identificador derivado de la ruta de la URL.
+      El panel y S2 lo necesitan para no tratarlos igual.
+    */
+    handleTipo: candidato.handleTipo || "extraido",
+
     url,
 
     dominio: url.canonica ? extraerDominio(url.canonica) : candidato.dominio,

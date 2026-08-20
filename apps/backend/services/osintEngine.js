@@ -440,22 +440,86 @@ export async function investigarObjetivo(objetivo) {
   const entidades = construirEntidades(resultados, social);
 
   /*
-    MOTOR DE CORRELACIÓN DE IDENTIDAD
+    IDENTIDADES DESCUBIERTAS — orden de autoridad
+    (corregido en el Sprint 3.2.1)
 
-    Si el Fusion Engine se ejecutó, ya correlacionó sobre el
-    conjunto fusionado (más amplio y sin duplicados). En ese
-    caso se reutiliza su resultado en lugar de recalcular
-    sobre el descubrimiento general.
+    Antes se daba prioridad a `fusion.identidades`, que
+    proviene del servicio de correlación del Sprint 2: una
+    heurística fija de 80+3 por evidencia, SIN Context Boost,
+    SIN explicación desglosada y SIN el veto por contexto
+    incompatible.
+
+    El resultado era que el panel mostraba la correlación
+    antigua y más débil, mientras las fichas del Social
+    Evidence Engine —con CB-1 y veto— quedaban relegadas. Un
+    homónimo vetado por CB-1 podía seguir apareciendo en
+    primer plano por la vía antigua.
+
+    Orden correcto:  Social Evidence  >  Fusion  >  legacy.
   */
   let identidadesDescubiertas = [];
 
-  try {
-    const correlacion = fusion?.identidades?.length
-      ? fusion.identidades
-      : correlacionarIdentidades(resultados);
+  let origenIdentidades = "ninguno";
 
-    if (Array.isArray(correlacion)) {
-      identidadesDescubiertas = correlacion;
+  try {
+    if (social?.fichas?.length) {
+      /*
+        Se traduce la ficha al contrato que ya consume
+        IdentityCorrelationPanel, conservando lo que aporta el
+        Sprint 3.2: correspondencia explicada y veredicto de
+        contexto.
+      */
+      identidadesDescubiertas = social.fichas.map((f) => {
+        const c = f.correspondencia;
+
+        const cb = c?.explicacion?.contextBoost || null;
+
+        return {
+          plataforma: f.plataforma,
+          plataformaId: f.platform,
+          usuario: f.handle,
+          enlace: f.url?.canonica || null,
+          urlNormalizada: f.url?.clave || null,
+
+          /* Confianza = correspondencia del Identity Matcher. */
+          confianza: c?.puntuacion ?? null,
+          nivel: c?.nivel || null,
+          etiqueta: c?.etiqueta || null,
+          estado: c?.estado || null,
+
+          evidencias: (f.origenes || []).length,
+          motores: f.proveedores || [],
+          totalMotores: (f.proveedores || []).length,
+          corroboracionMultiMotor: (f.proveedores || []).length > 1,
+
+          /* IA1 — nunca confirmado, siempre explicado. */
+          verificado: false,
+          requiereRevisionHumana: true,
+          explicacion: c?.explicacion?.resumen || null,
+
+          /* Sprint 3.2 — contexto. */
+          contextoVeredicto: cb?.veredicto || null,
+          contextoAjuste: cb?.ajuste ?? null,
+          vetadoPorContexto: cb?.vetoAplicado === true,
+
+          calidad: f.quality?.nivel || null,
+          origen: "social_evidence_engine"
+        };
+      });
+
+      origenIdentidades = "social_evidence_engine";
+    } else if (fusion?.identidades?.length) {
+      identidadesDescubiertas = fusion.identidades;
+
+      origenIdentidades = "fusion_engine";
+    } else {
+      const correlacion = correlacionarIdentidades(resultados);
+
+      if (Array.isArray(correlacion)) {
+        identidadesDescubiertas = correlacion;
+
+        origenIdentidades = "correlacion_legacy";
+      }
     }
   } catch (error) {
     console.error(
@@ -548,6 +612,20 @@ export async function investigarObjetivo(objetivo) {
       que `confianza: null` no se lea como un fallo silencioso.
     */
     confianzaEvaluada: Boolean(inteligenciaAvatar),
+
+    /*
+      SPRINT 3.2.1 · B1 — ruta del proxy propio. La capa de
+      rutas la absolutiza con el host de la petición. La URL de
+      la fuente se conserva aparte para la atribución.
+    */
+    rutaProxy:
+      inteligenciaAvatar && inteligenciaAvatar.esRespaldo === false
+        ? inteligenciaAvatar.rutaProxy || null
+        : null,
+
+    imageUrlOriginal: inteligenciaAvatar?.imageUrlOriginal || null,
+    licencia: inteligenciaAvatar?.licencia || null,
+    urlFuente: inteligenciaAvatar?.urlFuente || null,
 
     /*
       Aunque se conserve el avatar local, se adjunta la
@@ -672,6 +750,13 @@ export async function investigarObjetivo(objetivo) {
       CORRELATION ENGINE
     */
     identidadesDescubiertas,
+
+    /*
+      De qué motor provienen las identidades mostradas. Sin
+      esto, dos ejecuciones podrían mostrar cifras distintas
+      sin explicación visible.
+    */
+    origenIdentidades,
 
     /*
       TIMELINE
