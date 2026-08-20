@@ -160,6 +160,9 @@ export async function ejecutarSocialIntelligence(perfil, opciones = {}) {
 
     descubrimiento: {
       plan: descubrimiento.plan,
+      anclas: descubrimiento.anclas,
+      anclasUsadas: descubrimiento.anclasUsadas,
+      adaptadores: descubrimiento.adaptadores,
       intentos: descubrimiento.intentos,
       trazas: descubrimiento.trazas,
       proveedores: descubrimiento.proveedores
@@ -175,6 +178,14 @@ export async function ejecutarSocialIntelligence(perfil, opciones = {}) {
       probables: correlacion?.metricas.probables || 0,
       candidatas: correlacion?.metricas.candidatas || 0,
       conPresenciaCruzada: correlacion?.metricas.conPresenciaCruzada || 0,
+
+      /* Sprint 3.2 — CB-1 */
+      contextoCompatible: descubrimiento.metricas.contextoCompatible ?? 0,
+      contextoIncompatible: descubrimiento.metricas.contextoIncompatible ?? 0,
+      contextoNeutro: descubrimiento.metricas.contextoNeutro ?? 0,
+      vetadasPorContexto: correlacion?.metricas.vetadasPorContexto || 0,
+      consultasAncladas: descubrimiento.consultasAncladas ?? 0,
+      consultasPorNombre: descubrimiento.consultasPorNombre ?? 0,
       puntuacionMaxima: correlacion?.metricas.puntuacionMaxima || 0,
       porCalidad: evidencia?.metricas.porCalidad || {},
       plataformasNoComprobadas:

@@ -61,7 +61,7 @@ function etiquetarOrigen(items, origen, motorId) {
   El contrato de salida no cambia — {id, nombre, tipo,
   evidencias} — para no romper KnowledgeGraph.jsx.
 */
-function construirEntidades(resultados) {
+function construirEntidades(resultados, social = null) {
   const mapa = new Map();
 
   const lista = Array.isArray(resultados) ? resultados : [];
@@ -112,6 +112,72 @@ function construirEntidades(resultados) {
     } else {
       mapa.get(nombre).evidencias += 1;
     }
+  });
+
+  /*
+    SPRINT 3.2 · punto 8 — UN NODO POR PLATAFORMA DESCUBIERTA
+
+    Las entidades anteriores salen de las URLs del
+    descubrimiento general. Las cuentas que el Social
+    Intelligence Layer identifico merecen nodo propio aunque
+    su URL no apareciera en `resultados`: son el hallazgo
+    principal de la investigacion.
+
+    Se anaden con la correspondencia y el veredicto de
+    contexto, para que el grafo pueda distinguir visualmente
+    un perfil probable de un homonimo vetado.
+  */
+  (social?.fichas || []).forEach((ficha) => {
+    const nombre = ficha.plataforma;
+
+    if (!nombre) return;
+
+    const c = ficha.correspondencia;
+
+    const id = `plataforma-${String(ficha.platform || nombre)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")}`;
+
+    if (!mapa.has(nombre)) {
+      mapa.set(nombre, {
+        id,
+        nombre,
+        tipo: ficha.tipoPlataforma || "social",
+        evidencias: 0
+      });
+    }
+
+    const nodo = mapa.get(nombre);
+
+    nodo.evidencias += 1;
+
+    /*
+      Datos de identidad en el nodo: el grafo deja de mostrar
+      solo "hay algo en Facebook" y pasa a mostrar QUE cuenta
+      y con cuanta correspondencia.
+    */
+    nodo.plataformaId = ficha.platform;
+
+    nodo.cuentas = [...(nodo.cuentas || []), {
+      handle: ficha.handle,
+      url: ficha.url?.canonica || null,
+      correspondencia: c?.puntuacion ?? null,
+      nivel: c?.nivel || null,
+      estado: c?.estado || null,
+      vetadoPorContexto: c?.explicacion?.contextBoost?.vetoAplicado === true,
+      veredictoContexto: c?.explicacion?.contextBoost?.veredicto || null
+    }];
+
+    /*
+      La mejor correspondencia de la plataforma define el nodo.
+    */
+    const mejor = nodo.cuentas
+      .filter((x) => x.correspondencia != null)
+      .sort((a, b) => b.correspondencia - a.correspondencia)[0];
+
+    nodo.mejorCorrespondencia = mejor?.correspondencia ?? null;
+    nodo.estadoIdentidad = mejor?.estado || null;
+    nodo.origenNodo = "social_intelligence_layer";
   });
 
   return [...mapa.values()].sort((a, b) => b.evidencias - a.evidencias);
@@ -371,7 +437,7 @@ export async function investigarObjetivo(objetivo) {
   /*
     ENTIDADES DEL GRAFO
   */
-  const entidades = construirEntidades(resultados);
+  const entidades = construirEntidades(resultados, social);
 
   /*
     MOTOR DE CORRELACIÓN DE IDENTIDAD

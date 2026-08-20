@@ -20,6 +20,17 @@ import {
   catalogoPlataformas
 } from "../socialContracts.js";
 
+/* Sprint 3.2 — Identity First Search */
+import {
+  ADAPTADORES,
+  adaptadorPorPlataforma,
+  planificarConsultasDerivadas,
+  esRutaDePerfil
+} from "./platformAdapters.js";
+
+import { contextBoostDeCandidato } from "../identity/contextBoost.js";
+import { DOMINIO_POLITICA_EC } from "../identity/contextBoost.js";
+
 /*
 ===========================================================
 DISCOVERY ENGINE
@@ -361,9 +372,25 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
     VÍA 3 — CONSULTAS DIRIGIDAS VÍA SEARCH PROVIDER LAYER
     ---------------------------------------------------------
   */
-  const plan = opciones.omitirConsultas
-    ? []
-    : planificarConsultasSociales(perfil, plataformasObjetivo);
+  /*
+    SPRINT 3.2 — el plan ya no se construye desde el nombre,
+    sino desde el Perfil de Referencia: consultas acotadas por
+    dominio de plataforma y ANCLADAS al contexto del objetivo.
+
+    Medido en el caso real: «Juan Carlos Vega» devuelve un
+    artista fotografico en las tres primeras posiciones;
+    «Juan Carlos Vega Cuenca alcalde» devuelve 8 de 8
+    resultados del candidato. La diferencia esta en la
+    consulta, no en el motor.
+  */
+  const planificacion = opciones.omitirConsultas
+    ? { plan: [], anclas: [], anclasUsadas: [], advertencia: null }
+    : planificarConsultasDerivadas(perfil, {
+        dominio: opciones.dominio || DOMINIO_POLITICA_EC,
+        adaptadores: opciones.adaptadores || ADAPTADORES
+      });
+
+  const plan = planificacion.plan;
 
   const sesion = opciones.sesion || crearSesion({ tipo: "web" });
 
@@ -394,7 +421,24 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
         etiqueta: entrada.etiqueta
       });
 
-      if (datos) registrarCandidato(mapa, datos);
+      if (!datos) return;
+
+      /*
+        Filtro por adaptador: descarta rutas que caen en la
+        plataforma pero no son perfiles (x.com/status,
+        facebook.com/watch, youtube.com/results...).
+      */
+      const adaptador = adaptadorPorPlataforma(datos.plataforma.id);
+
+      if (adaptador && !esRutaDePerfil(adaptador, datos.handle)) return;
+
+      datos.adaptadorId = adaptador?.id || null;
+
+      datos.consultaAnclada = entrada.anclada === true;
+
+      datos.anclas = entrada.anclas || [];
+
+      registrarCandidato(mapa, datos);
     });
   }
 
@@ -411,6 +455,22 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
   */
   const candidatos = [...mapa.values()].map((c) => ({
     ...c,
+
+    /*
+      CONTEXT BOOST (CB-1) — evalua si el contexto de esta
+      cuenta es compatible con el del objetivo. Es lo que
+      distingue al homonimo de la persona buscada cuando el
+      nombre coincide igual de bien en ambos.
+    */
+    contextBoost: contextBoostDeCandidato(c, perfil, {
+      dominio: opciones.dominioId || "politica_ec",
+      /*
+        Todas las evidencias del descubrimiento: permiten a CB-1
+        relacionar el contexto de un dominio propio con la cuenta
+        social que comparte su handle.
+      */
+      evidencias: evidenciasPrevias
+    }),
 
     /*
       Se limpia la clave interna del origen.
@@ -511,6 +571,26 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
 
     plan,
 
+    /*
+      Anclas de identidad usadas para derivar las consultas.
+    */
+    anclas: planificacion.anclas,
+    anclasUsadas: planificacion.anclasUsadas,
+    consultasAncladas: plan.filter((p) => p.anclada).length,
+    consultasPorNombre: plan.filter((p) => !p.anclada).length,
+
+    /*
+      Adaptadores publicos ejercitados.
+    */
+    adaptadores: (opciones.adaptadores || ADAPTADORES).map((a) => ({
+      id: a.id,
+      nombre: a.nombre,
+      plataformaId: a.plataformaId,
+      publico: a.publico,
+      consultas: plan.filter((p) => p.adaptadorId === a.id).length,
+      advertencia: a.advertencia || null
+    })),
+
     intentos,
 
     trazas,
@@ -518,6 +598,7 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
     proveedores: resumen,
 
     advertencias: [
+      ...(planificacion.advertencia ? [planificacion.advertencia] : []),
       ...(resumen?.advertencias || []),
       ...(intentos.some((i) => i.estado !== "OK")
         ? [
@@ -535,6 +616,15 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
 
     metricas: {
       candidatosUnicos: candidatos.length,
+      contextoCompatible: candidatos.filter((c) =>
+        ["compatible", "compatible_con_ruido"].includes(c.contextBoost?.veredicto)
+      ).length,
+      contextoIncompatible: candidatos.filter(
+        (c) => c.contextBoost?.veredicto === "incompatible"
+      ).length,
+      contextoNeutro: candidatos.filter(
+        (c) => c.contextBoost?.veredicto === "neutro"
+      ).length,
       plataformasConCandidatos: cobertura.filter((c) => c.candidatos > 0).length,
       plataformasNoComprobadas: cobertura.filter(
         (c) => c.estadoPresencia === ESTADOS_PRESENCIA.NO_COMPROBADA

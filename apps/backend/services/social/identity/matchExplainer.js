@@ -31,7 +31,10 @@ export function construirExplicacion({
   bruto,
   topeAplicado,
   puntuacionFinal,
-  senalesActivas
+  senalesActivas,
+  contextBoost = null,
+  trasTope = null,
+  vetoPorContexto = false
 }) {
   const nivel = nivelDeCorrespondencia(puntuacionFinal);
 
@@ -135,6 +138,45 @@ export function construirExplicacion({
       : `El subtotal no alcanza el tope de ${topeAplicado} para ${senalesActivas} señal(es); no se recorta.`
   });
 
+  /*
+    CONTEXT BOOST (CB-1) — Sprint 3.2.
+    Se muestra como paso propio: no es una senal de identidad,
+    es un modulador de contexto, y confundirlos haria
+    inexplicable la cifra.
+  */
+  if (contextBoost) {
+    contextBoost.bonificaciones.forEach((b) => {
+      pasos.push({
+        paso: `CB-1 · contexto afin "${b.termino}"`,
+        operacion: `+${b.puntos}`,
+        detalle: `${b.tipo} (origen: ${b.origen})`
+      });
+    });
+
+    contextBoost.penalizaciones.forEach((p) => {
+      pasos.push({
+        paso: `CB-1 · contexto ajeno "${p.termino}"`,
+        operacion: `${p.puntos}`,
+        detalle: `${p.tipo} (origen: ${p.origen})`
+      });
+    });
+
+    pasos.push({
+      paso: `CB-1 · ajuste de contexto (${contextBoost.veredicto})`,
+      operacion: `${contextBoost.ajuste >= 0 ? "+" : ""}${contextBoost.ajuste}`,
+      detalle: contextBoost.motivo
+    });
+  }
+
+  if (vetoPorContexto) {
+    pasos.push({
+      paso: "VETO POR CONTEXTO INCOMPATIBLE",
+      operacion: "→ máx 29",
+      detalle:
+        "El contexto no es compatible con el del objetivo: la coincidencia de nombre no sostiene la identidad, por perfecta que sea. Se degrada, no se elimina: el hallazgo sigue siendo auditable."
+    });
+  }
+
   pasos.push({
     paso: "PUNTUACIÓN FINAL",
     operacion: `${puntuacionFinal}/100`,
@@ -162,7 +204,30 @@ export function construirExplicacion({
     : `${puntuacionFinal}/100 — ${nivel.etiqueta}. Ninguna señal se activó.`;
 
   return {
-    resumen,
+    resumen:
+      resumen +
+      (contextBoost && contextBoost.ajuste !== 0
+        ? ` Contexto (CB-1): ${contextBoost.ajuste >= 0 ? "+" : ""}${
+            contextBoost.ajuste
+          } — ${contextBoost.veredicto}.`
+        : "") +
+      (vetoPorContexto
+        ? " VETADA por contexto incompatible: probablemente otra persona con el mismo nombre."
+        : ""),
+
+    contextBoost: contextBoost
+      ? {
+          version: contextBoost.version,
+          ajuste: contextBoost.ajuste,
+          veredicto: contextBoost.veredicto,
+          motivo: contextBoost.motivo,
+          bonificaciones: contextBoost.bonificaciones,
+          penalizaciones: contextBoost.penalizaciones,
+          dominiosAjenos: contextBoost.dominiosAjenos,
+          vetoAplicado: vetoPorContexto,
+          puntuacionAntesDeContexto: trasTope
+        }
+      : null,
 
     nivel: nivel.id,
     etiquetaNivel: nivel.etiqueta,

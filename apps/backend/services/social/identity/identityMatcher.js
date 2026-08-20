@@ -98,7 +98,52 @@ export function evaluarCandidato(candidato, perfil, contexto = {}) {
   */
   const topeAplicado = topeDeConcurrencia(senalesActivas);
 
-  const puntuacionFinal = Math.min(bruto, topeAplicado);
+  const trasTope = Math.min(bruto, topeAplicado);
+
+  /*
+    ---------------------------------------------------------
+    CONTEXT BOOST (CB-1) — Sprint 3.2
+    ---------------------------------------------------------
+
+    Se aplica DESPUES del tope, no antes, y por una razon:
+
+    El tope existe para que ninguna senal aislada confirme una
+    identidad. CB-1 no es una senal de identidad: es un
+    modulador de CONTEXTO. Si se sumara antes, podria empujar
+    un candidato de una sola senal por encima de su tope, que
+    es exactamente lo que el tope impide.
+
+    Aplicado despues, CB-1 solo puede reordenar dentro de lo
+    que las senales ya sostienen, o hundir a un homonimo cuyo
+    contexto es ajeno.
+
+    Caso que motivo el sprint: el artista fotografico
+    @juancarlosvega obtiene S1=25 y S2=25 (coincidencia
+    perfecta de nombre y handle) y sin CB-1 quedaria a la
+    cabeza. Con CB-1 su contexto ajeno lo desplaza.
+  */
+  const cb = candidato.contextBoost || null;
+
+  const ajusteContexto = cb ? cb.ajuste : 0;
+
+  let puntuacionFinal = Math.max(0, Math.min(100, trasTope + ajusteContexto));
+
+  /*
+    VETO DE CONTEXTO INCOMPATIBLE
+
+    Cuando CB-1 declara el contexto incompatible —ningun
+    termino afin y varios de otra esfera— la coincidencia de
+    nombre no puede sostener la identidad por muy perfecta que
+    sea. Se limita el resultado al nivel de «descubierto».
+
+    No se pone a cero: el hallazgo existe y hay que poder
+    auditarlo. Se degrada para que no ocupe el primer plano.
+  */
+  const vetoPorContexto = cb?.veredicto === "incompatible";
+
+  if (vetoPorContexto) {
+    puntuacionFinal = Math.min(puntuacionFinal, 29);
+  }
 
   const nivel = nivelDeCorrespondencia(puntuacionFinal);
 
@@ -110,7 +155,10 @@ export function evaluarCandidato(candidato, perfil, contexto = {}) {
     bruto,
     topeAplicado,
     puntuacionFinal,
-    senalesActivas
+    senalesActivas,
+    contextBoost: cb,
+    trasTope,
+    vetoPorContexto
   });
 
   const correspondencia = {
@@ -153,6 +201,12 @@ export function evaluarCandidato(candidato, perfil, contexto = {}) {
     })),
 
     explicacion,
+
+    /*
+      CB-1 completo: veredicto, terminos y ajuste.
+    */
+    contextBoost: cb,
+    vetadoPorContexto: vetoPorContexto,
 
     senalesImplementadas: SENALES_IMPLEMENTADAS,
 
@@ -243,6 +297,13 @@ export function correlacionarCandidatos(candidatos = [], perfil = null) {
       ).length,
       conPresenciaCruzada: correspondencias.filter((c) =>
         c.senales.some((s) => s.id === "S7" && s.activa)
+      ).length,
+      vetadasPorContexto: correspondencias.filter((c) => c.vetadoPorContexto)
+        .length,
+      contextoCompatible: correspondencias.filter((c) =>
+        ["compatible", "compatible_con_ruido"].includes(
+          c.contextBoost?.veredicto
+        )
       ).length,
       puntuacionMaxima: correspondencias[0]?.puntuacion ?? 0,
       violacionesDelTopeHumano: violaciones.length
