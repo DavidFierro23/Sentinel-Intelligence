@@ -1,6 +1,16 @@
 // apps/backend/services/social/evidence/socialEvidenceEngine.js
 
-import { createHash } from "node:crypto";
+/*
+  HASH UNIFICADO (Sprint 4)
+
+  La implementacion canonica vive en el Knowledge Lake. Antes
+  habia una copia local aqui: dos implementaciones del mismo
+  hash acabarian divergiendo, y en ese momento la verificacion
+  de inmutabilidad dejaria de significar nada sin que nadie lo
+  notase. Verificado byte a byte antes de unificar: los hashes
+  ya emitidos no cambian.
+*/
+import { calcularHash } from "../../knowledgeLake/lakeHash.js";
 
 import {
   normalizarTexto,
@@ -111,60 +121,10 @@ export function construirUrlCanonica(plataformaId, handle, urlObservada) {
 
 
 /*
------------------------------------------------------------
-HASH ESTABLE
-
-Requisito: el mismo contenido produce el mismo hash en
-cualquier ejecución. Por tanto:
-
-  · se serializa con claves ORDENADAS (JSON.stringify no
-    garantiza orden entre motores ni entre construcciones);
-  · se EXCLUYEN los campos volátiles (timestamps de
-    generación, identificadores de sesión), que cambiarían el
-    hash sin que cambie el contenido.
-
-Sin estas dos precauciones el hash sería inútil para
-verificar inmutabilidad.
------------------------------------------------------------
+  El hash estable se importa del Knowledge Lake (lakeHash.js)
+  y se reexporta para no romper a quien ya lo importaba de aqui.
 */
-
-const CAMPOS_VOLATILES = new Set([
-  "generadoEn",
-  "evaluadoEn",
-  "capturadoEn",
-  "emitidoEn",
-  "registradoEn",
-  "descubiertoEn",
-  "obtenidoEn",
-  "hash",
-  "tiempo"
-]);
-
-
-function serializarEstable(valor) {
-  if (valor === null || valor === undefined) return "null";
-
-  if (Array.isArray(valor)) {
-    return `[${valor.map(serializarEstable).join(",")}]`;
-  }
-
-  if (typeof valor === "object") {
-    const claves = Object.keys(valor)
-      .filter((k) => !CAMPOS_VOLATILES.has(k))
-      .sort();
-
-    return `{${claves
-      .map((k) => `${JSON.stringify(k)}:${serializarEstable(valor[k])}`)
-      .join(",")}}`;
-  }
-
-  return JSON.stringify(valor);
-}
-
-
-export function calcularHash(objeto) {
-  return createHash("sha256").update(serializarEstable(objeto)).digest("hex");
-}
+export { calcularHash };
 
 
 /*
