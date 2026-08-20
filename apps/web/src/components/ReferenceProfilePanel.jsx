@@ -84,7 +84,15 @@ function Chip({ texto, detalle, color = "#1E3A8A" }) {
   );
 }
 
-export default function ReferenceProfilePanel({ perfil }) {
+/*
+  Sprint 3.1 — el panel acepta además la FICHA CONSOLIDADA
+  (`ficha`), que une Perfil de Referencia + Fusion Engine +
+  Social Intelligence Layer.
+
+  `ficha` es opcional: sin ella el panel funciona igual que
+  antes, mostrando solo el Perfil de Referencia.
+*/
+export default function ReferenceProfilePanel({ perfil, ficha = null }) {
   const [abierto, setAbierto] = useState(false);
 
   if (!perfil || typeof perfil !== "object") return null;
@@ -350,6 +358,74 @@ export default function ReferenceProfilePanel({ perfil }) {
           </div>
         )}
       </div>
+
+      {/* MOTORES UTILIZADOS · de la ficha consolidada */}
+
+      {ficha?.motores && (
+        <div style={{ ...caja, marginBottom: "16px" }}>
+          <div style={etiquetaSeccion}>Motores utilizados</div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+              gap: "10px"
+            }}
+          >
+            {[
+              ...(ficha.motores.proveedoresWeb || []),
+              ...(ficha.motores.fusion || []).filter(
+                (m) => m.tipo === "noticias"
+              )
+            ].map((m, i) => (
+              <div
+                key={`${m.id}-${i}`}
+                style={{
+                  border: `1px solid ${m.disponible ? "#1E3A8A" : "#92400E"}`,
+                  borderRadius: "10px",
+                  padding: "10px 12px"
+                }}
+              >
+                <div style={{ color: "#E2E8F0", fontSize: "13px" }}>
+                  {m.nombre}
+                </div>
+
+                <div
+                  style={{
+                    color: m.disponible ? "#22C55E" : "#F59E0B",
+                    fontSize: "11px",
+                    marginTop: "3px"
+                  }}
+                >
+                  {m.estado}
+                  {m.implementado === false ? " · no implementado" : ""}
+                </div>
+
+                {m.detalle && (
+                  <div
+                    style={{ color: "#64748B", fontSize: "10px", marginTop: "5px" }}
+                  >
+                    {m.detalle}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {ficha.evidencias && (
+            <div style={{ color: "#64748B", fontSize: "11px", marginTop: "12px" }}>
+              Evidencias reunidas:{" "}
+              <strong style={{ color: "#93C5FD" }}>
+                {ficha.evidencias.web?.length || 0} web
+              </strong>{" "}
+              ·{" "}
+              <strong style={{ color: "#93C5FD" }}>
+                {ficha.evidencias.sociales?.length || 0} sociales
+              </strong>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* DETALLE PLEGABLE */}
 

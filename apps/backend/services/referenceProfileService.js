@@ -2,6 +2,14 @@
 
 import { normalizarObjetivo } from "./identityService.js";
 
+/*
+  Sprint 3.1 — el Reference Profile Service es el punto de
+  entrada único de la ficha del objetivo. La consolidación
+  vive en su propio módulo (no se reescribe este archivo) y
+  se reexporta aquí.
+*/
+export { consolidarFichaObjetivo } from "./social/objectiveProfileConsolidator.js";
+
 import {
   normalizarTexto,
   tokenizar,

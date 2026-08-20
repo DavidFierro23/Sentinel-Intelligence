@@ -10,6 +10,7 @@ import {
 import KnowledgeGraph from "./KnowledgeGraph";
 import IdentityCorrelationPanel from "./IdentityCorrelationPanel";
 import ReferenceProfilePanel from "./ReferenceProfilePanel";
+import SocialAccountsPanel from "./SocialAccountsPanel";
 
 export default function OSINT() {
   const [consulta, setConsulta] = useState("");
@@ -253,9 +254,21 @@ export default function OSINT() {
               </div>
             </div>
 
-            {/* PERFIL DE REFERENCIA */}
+            {/* PERFIL DE REFERENCIA + FICHA CONSOLIDADA */}
 
-            <ReferenceProfilePanel perfil={resultado.perfilReferencia} />
+            <ReferenceProfilePanel
+              perfil={resultado.perfilReferencia}
+              ficha={resultado.fichaObjetivo}
+            />
+
+            {/* CUENTAS CANDIDATAS · Social Intelligence Layer */}
+
+            <SocialAccountsPanel
+              cuentas={resultado.fichaObjetivo?.cuentas || []}
+              cobertura={resultado.fichaObjetivo?.coberturaPlataformas || []}
+              limites={resultado.fichaObjetivo?.limites || null}
+              metricas={resultado.fichaObjetivo?.metricas || null}
+            />
 
             {/* GRAFO */}
 

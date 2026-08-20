@@ -6,6 +6,8 @@ import { obtenerAvatar } from "./avatarService.js";
 import { correlacionarIdentidades } from "./identityCorrelationService.js";
 import { construirPerfilReferencia } from "./referenceProfileService.js";
 import { ejecutarFusion } from "./fusionSearchEngine.js";
+import { ejecutarSocialIntelligence } from "./social/socialIntelligenceLayer.js";
+import { consolidarFichaObjetivo } from "./referenceProfileService.js";
 
 import {
   obtenerEnlace,
@@ -314,6 +316,31 @@ export async function investigarObjetivo(objetivo) {
   }
 
   /*
+    SOCIAL INTELLIGENCE LAYER  (Sprint 3.1)
+
+    Descubre cuentas candidatas, calcula su correspondencia
+    explicada y emite fichas unicas con linaje y hash.
+
+    Reutiliza las evidencias que el Fusion Engine ya obtuvo,
+    para no repetir consultas. Si falla, devuelve null y la
+    investigacion continua igual.
+  */
+  let social = null;
+
+  if (perfilReferencia) {
+    try {
+      social = await ejecutarSocialIntelligence(perfilReferencia, {
+        evidenciasPrevias: fusion?.evidencias || resultados,
+        objetivo
+      });
+    } catch (error) {
+      console.error("Error en ejecutarSocialIntelligence:", error);
+
+      social = null;
+    }
+  }
+
+  /*
     ENTIDADES DEL GRAFO
   */
   const entidades = construirEntidades(resultados);
@@ -457,6 +484,28 @@ export async function investigarObjetivo(objetivo) {
     fusion,
 
     /*
+      SOCIAL INTELLIGENCE LAYER (Sprint 3.1)
+    */
+    social,
+
+    /*
+      FICHA CONSOLIDADA DEL OBJETIVO
+
+      Une Perfil de Referencia + Fusion + Social en la vista
+      que consume ReferenceProfilePanel. Aditivo: los campos
+      anteriores siguen presentes.
+    */
+    fichaObjetivo: perfilReferencia
+      ? consolidarFichaObjetivo({
+          objetivo,
+          perfil: perfilReferencia,
+          identidad,
+          fusion,
+          social
+        })
+      : null,
+
+    /*
       ENTIDADES PARA EL GRAFO
     */
     entidades,
@@ -524,6 +573,16 @@ export async function investigarObjetivo(objetivo) {
             `${fusion.metricas.resultadosBrutos} resultados brutos → ` +
             `${fusion.metricas.evidenciasUnicas} evidencias únicas ` +
             `(${fusion.metricas.duplicadosFusionados} fusionados)`
+          : "No disponible"
+      },
+
+      {
+        etapa: "Social Intelligence",
+        detalle: social
+          ? `${social.metricas.candidatos} candidatos → ` +
+            `${social.metricas.fichasUnicas} fichas únicas · ` +
+            `${social.metricas.probables} probables · ` +
+            `máx ${social.metricas.puntuacionMaxima}/100`
           : "No disponible"
       },
 
