@@ -9,6 +9,7 @@ import {
 
 import KnowledgeGraph from "./KnowledgeGraph";
 import IdentityCorrelationPanel from "./IdentityCorrelationPanel";
+import ReferenceProfilePanel from "./ReferenceProfilePanel";
 
 export default function OSINT() {
   const [consulta, setConsulta] = useState("");
@@ -251,6 +252,10 @@ export default function OSINT() {
                 Conectado
               </div>
             </div>
+
+            {/* PERFIL DE REFERENCIA */}
+
+            <ReferenceProfilePanel perfil={resultado.perfilReferencia} />
 
             {/* GRAFO */}
 

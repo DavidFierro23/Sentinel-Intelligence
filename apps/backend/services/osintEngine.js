@@ -4,6 +4,23 @@ import { buscarWayback } from "./waybackService.js";
 import { buscarWhois } from "./whoisService.js";
 import { obtenerAvatar } from "./avatarService.js";
 import { correlacionarIdentidades } from "./identityCorrelationService.js";
+import { construirPerfilReferencia } from "./referenceProfileService.js";
+
+/*
+  Etiqueta cada resultado con el motor que lo encontró.
+
+  No modifica los servicios de búsqueda: añade el campo
+  interno `__origen` en la agregación. Es lo que permite al
+  Perfil de Referencia declarar la FUENTE de cada evidencia,
+  y será la base de la corroboración multi-motor del
+  Fusion Engine.
+*/
+function etiquetarOrigen(items, origen) {
+  return (Array.isArray(items) ? items : []).map((item) => ({
+    ...item,
+    __origen: item?.__origen || origen
+  }));
+}
 
 function construirEntidades(resultados) {
   const mapa = new Map();
@@ -150,7 +167,12 @@ export async function investigarObjetivo(objetivo) {
     google.status === "fulfilled" &&
     Array.isArray(google.value.resultados)
   ) {
-    resultados.push(...google.value.resultados);
+    resultados.push(
+      ...etiquetarOrigen(
+        google.value.resultados,
+        google.value.motor || "Google"
+      )
+    );
   }
 
   /*
@@ -160,7 +182,12 @@ export async function investigarObjetivo(objetivo) {
     noticias.status === "fulfilled" &&
     Array.isArray(noticias.value.resultados)
   ) {
-    resultados.push(...noticias.value.resultados);
+    resultados.push(
+      ...etiquetarOrigen(
+        noticias.value.resultados,
+        noticias.value.motor || "Google News"
+      )
+    );
   }
 
   /*
@@ -170,7 +197,12 @@ export async function investigarObjetivo(objetivo) {
     wayback.status === "fulfilled" &&
     Array.isArray(wayback.value.resultados)
   ) {
-    resultados.push(...wayback.value.resultados);
+    resultados.push(
+      ...etiquetarOrigen(
+        wayback.value.resultados,
+        wayback.value.motor || "Wayback Machine"
+      )
+    );
   }
 
   /*
@@ -180,7 +212,31 @@ export async function investigarObjetivo(objetivo) {
     whois.status === "fulfilled" &&
     Array.isArray(whois.value.resultados)
   ) {
-    resultados.push(...whois.value.resultados);
+    resultados.push(
+      ...etiquetarOrigen(
+        whois.value.resultados,
+        whois.value.motor || "Whois Intelligence"
+      )
+    );
+  }
+
+  /*
+    PERFIL DE REFERENCIA
+
+    Se construye a partir del DESCUBRIMIENTO GENERAL ya
+    obtenido. No consulta fuentes externas.
+
+    Si falla, devuelve null y la investigación continúa
+    exactamente como antes.
+  */
+  let perfilReferencia = null;
+
+  try {
+    perfilReferencia = construirPerfilReferencia(objetivo, resultados);
+  } catch (error) {
+    console.error("Error en construirPerfilReferencia:", error);
+
+    perfilReferencia = null;
   }
 
   /*
@@ -307,6 +363,13 @@ export async function investigarObjetivo(objetivo) {
     ],
 
     /*
+      PERFIL DE REFERENCIA
+
+      Puede ser null: el frontend debe tolerarlo.
+    */
+    perfilReferencia,
+
+    /*
       ENTIDADES PARA EL GRAFO
     */
     entidades,
@@ -356,6 +419,15 @@ export async function investigarObjetivo(objetivo) {
           whois.status === "fulfilled"
             ? `${whois.value.total || 0} registros`
             : "Sin respuesta"
+      },
+
+      {
+        etapa: "Perfil de Referencia",
+        detalle: perfilReferencia
+          ? `${perfilReferencia.terminosDiscriminantes.length} términos discriminantes · ` +
+            `${perfilReferencia.handlesObservados.length} handles observados · ` +
+            `confianza ${perfilReferencia.confianza.global}/100`
+          : "No disponible"
       },
 
       {
