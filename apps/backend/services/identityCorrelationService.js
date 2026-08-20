@@ -1,100 +1,181 @@
 // apps/backend/services/identityCorrelationService.js
 
-const plataformas = [
-  {
-    nombre: "Facebook",
-    dominio: "facebook.com",
-    color: "#1877F2",
-    icono: "facebook"
-  },
-  {
-    nombre: "Instagram",
-    dominio: "instagram.com",
-    color: "#E1306C",
-    icono: "instagram"
-  },
-  {
-    nombre: "X",
-    dominio: "x.com",
-    color: "#111827",
-    icono: "x"
-  },
-  {
-    nombre: "Twitter",
-    dominio: "twitter.com",
-    color: "#1DA1F2",
-    icono: "twitter"
-  },
-  {
-    nombre: "TikTok",
-    dominio: "tiktok.com",
-    color: "#25F4EE",
-    icono: "music"
-  },
-  {
-    nombre: "LinkedIn",
-    dominio: "linkedin.com",
-    color: "#0A66C2",
-    icono: "linkedin"
-  },
-  {
-    nombre: "YouTube",
-    dominio: "youtube.com",
-    color: "#FF0000",
-    icono: "youtube"
-  }
-];
+import {
+  obtenerEnlace,
+  normalizarUrl,
+  detectarPlataformaPorUrl,
+  extraerHandle
+} from "./textUtils.js";
 
-function extraerUsuario(url) {
-  try {
-    const u = new URL(url);
+/*
+===========================================================
+IDENTITY CORRELATION SERVICE
 
-    const partes = u.pathname.split("/").filter(Boolean);
+Agrupa las evidencias en identidades (perfil/cuenta) por
+plataforma + usuario.
 
-    if (!partes.length) return null;
+CORRECCIÓN (Sprint 2, defecto B):
 
-    return partes[0];
-  } catch {
-    return null;
-  }
+La versión anterior leía `item.enlace` en crudo. Cuando el
+buscador devolvía una redirección
+(//duckduckgo.com/l/?uddg=...), el dominio detectado era el
+del BUSCADOR, nunca el de la red social. Resultado: este
+motor devolvía 0 identidades de forma silenciosa.
+
+Ahora:
+
+1. Se resuelve el enlace con obtenerEnlace() de textUtils,
+   que desenvuelve la redirección.
+2. La plataforma se detecta por DOMINIO de la URL, nunca por
+   el título o la descripción.
+3. El usuario se extrae con extraerHandle(), que descarta
+   segmentos que no son usuarios (watch, profile.php...).
+4. Se registran los MOTORES que aportaron cada identidad,
+   para corroboración multi-motor.
+
+NOTA sobre `confianza`:
+Se conserva la heurística existente (base + evidencias) para
+no romper el panel actual. La puntuación definitiva es
+trabajo del Confidence Engine (sprint siguiente).
+===========================================================
+*/
+
+/*
+  Presentación por plataforma. La detección NO depende de
+  esta tabla: se usa solo para color e icono en la interfaz.
+
+  twitter.com se normaliza a "X" en textUtils, por lo que
+  ambos dominios convergen en una sola identidad en lugar de
+  producir dos.
+*/
+const PRESENTACION = {
+  Facebook:  { color: "#1877F2", icono: "facebook" },
+  Instagram: { color: "#E1306C", icono: "instagram" },
+  X:         { color: "#111827", icono: "x" },
+  Twitter:   { color: "#1DA1F2", icono: "twitter" },
+  TikTok:    { color: "#25F4EE", icono: "music" },
+  LinkedIn:  { color: "#0A66C2", icono: "linkedin" },
+  YouTube:   { color: "#FF0000", icono: "youtube" },
+  Wikipedia: { color: "#CBD5E1", icono: "book" }
+};
+
+/*
+  Plataformas que representan una CUENTA de una persona u
+  organización. Wikipedia o Wayback no son identidades.
+*/
+const TIPOS_CON_IDENTIDAD = new Set(["social", "video"]);
+
+
+function presentacionDe(nombre) {
+  return PRESENTACION[nombre] || { color: "#60A5FA", icono: "globe" };
 }
 
+
 export function correlacionarIdentidades(resultados = []) {
+  const lista = Array.isArray(resultados) ? resultados : [];
+
   const mapa = new Map();
 
-  resultados.forEach((item) => {
-    const enlace = item.enlace || "";
+  lista.forEach((item) => {
+    if (!item) return;
 
-    plataformas.forEach((p) => {
-      if (!enlace.toLowerCase().includes(p.dominio)) return;
+    /*
+      1. Enlace REAL (redirección desenvuelta).
+    */
+    const enlace = obtenerEnlace(item);
 
-      const usuario = extraerUsuario(enlace);
+    if (!enlace) return;
 
-      if (!usuario) return;
+    /*
+      2. Plataforma por DOMINIO.
+    */
+    const plataforma = detectarPlataformaPorUrl(enlace);
 
-      const clave = `${p.nombre}:${usuario.toLowerCase()}`;
+    if (!plataforma) return;
 
-      if (!mapa.has(clave)) {
-        mapa.set(clave, {
-          plataforma: p.nombre,
-          usuario,
-          enlace,
-          color: p.color,
-          icono: p.icono,
-          confianza: 80,
-          evidencias: 1,
-          origen: item.origenPivot ? "Pivot Search" : "Google Discovery",
-          verificado: false
-        });
-      } else {
-        const actual = mapa.get(clave);
+    if (!TIPOS_CON_IDENTIDAD.has(plataforma.tipo)) return;
 
-        actual.evidencias++;
+    /*
+      3. Usuario / handle.
+    */
+    const usuario = extraerHandle(enlace);
 
-        actual.confianza = Math.min(99, actual.confianza + 3);
-      }
-    });
+    if (!usuario) return;
+
+    const clave = `${plataforma.nombre}:${usuario.toLowerCase()}`;
+
+    const presentacion = presentacionDe(plataforma.nombre);
+
+    /*
+      Motor que aportó esta evidencia.
+    */
+    const motor =
+      item.__origen ||
+      item.motor ||
+      (item.origenPivot ? "Pivot Search" : "Descubrimiento general");
+
+    if (!mapa.has(clave)) {
+      mapa.set(clave, {
+        plataforma: plataforma.nombre,
+        plataformaId: plataforma.id,
+        usuario,
+        enlace,
+        urlNormalizada: normalizarUrl(enlace),
+        dominio: plataforma.dominio,
+        color: presentacion.color,
+        icono: presentacion.icono,
+
+        confianza: 80,
+        evidencias: 1,
+
+        /*
+          Corroboración: qué motores y qué URLs distintas
+          apuntan a esta misma identidad.
+        */
+        motores: new Set([motor]),
+        urls: new Set([normalizarUrl(enlace)].filter(Boolean)),
+
+        /*
+          Compatibilidad con el panel actual.
+        */
+        origen: motor,
+        verificado: false
+      });
+
+      return;
+    }
+
+    const actual = mapa.get(clave);
+
+    actual.evidencias += 1;
+
+    actual.motores.add(motor);
+
+    const normalizada = normalizarUrl(enlace);
+
+    if (normalizada) actual.urls.add(normalizada);
+
+    /*
+      Heurística provisional, se conserva tal cual.
+      El Confidence Engine la sustituirá.
+    */
+    actual.confianza = Math.min(99, actual.confianza + 3);
   });
 
-  return [...mapa.values()].sort((a, b) => b.confianza - a.confianza);
+  return [...mapa.values()]
+    .map((identidad) => ({
+      ...identidad,
+
+      /*
+        Set no es serializable a JSON.
+      */
+      motores: [...identidad.motores],
+      urls: [...identidad.urls],
+      totalMotores: identidad.motores.size,
+      corroboracionMultiMotor: identidad.motores.size > 1
+    }))
+    .sort((a, b) => {
+      if (b.totalMotores !== a.totalMotores) return b.totalMotores - a.totalMotores;
+      return b.confianza - a.confianza;
+    });
 }

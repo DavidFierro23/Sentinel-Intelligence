@@ -5,6 +5,7 @@ import { buscarWhois } from "./whoisService.js";
 import { obtenerAvatar } from "./avatarService.js";
 import { correlacionarIdentidades } from "./identityCorrelationService.js";
 import { construirPerfilReferencia } from "./referenceProfileService.js";
+import { ejecutarFusion } from "./fusionSearchEngine.js";
 
 /*
   Etiqueta cada resultado con el motor que lo encontró.
@@ -15,10 +16,21 @@ import { construirPerfilReferencia } from "./referenceProfileService.js";
   y será la base de la corroboración multi-motor del
   Fusion Engine.
 */
-function etiquetarOrigen(items, origen) {
+function etiquetarOrigen(items, origen, motorId) {
   return (Array.isArray(items) ? items : []).map((item) => ({
     ...item,
-    __origen: item?.__origen || origen
+    __origen: item?.__origen || origen,
+
+    /*
+      IDENTIFICADOR ESTABLE DEL MOTOR.
+
+      Imprescindible para el Fusion Engine: sin él, un
+      resultado del descubrimiento general y otro de la
+      misma fuente durante la fusión se contarían como DOS
+      motores distintos, fabricando una corroboración que no
+      existe.
+    */
+    __motorId: item?.__motorId || item?.motorId || motorId
   }));
 }
 
@@ -170,7 +182,8 @@ export async function investigarObjetivo(objetivo) {
     resultados.push(
       ...etiquetarOrigen(
         google.value.resultados,
-        google.value.motor || "Google"
+        google.value.motor || "Google",
+        google.value.motorId || "ddg_web"
       )
     );
   }
@@ -185,7 +198,8 @@ export async function investigarObjetivo(objetivo) {
     resultados.push(
       ...etiquetarOrigen(
         noticias.value.resultados,
-        noticias.value.motor || "Google News"
+        noticias.value.motor || "Google News",
+        "google_news"
       )
     );
   }
@@ -200,7 +214,8 @@ export async function investigarObjetivo(objetivo) {
     resultados.push(
       ...etiquetarOrigen(
         wayback.value.resultados,
-        wayback.value.motor || "Wayback Machine"
+        wayback.value.motor || "Wayback Machine",
+        "wayback"
       )
     );
   }
@@ -215,7 +230,8 @@ export async function investigarObjetivo(objetivo) {
     resultados.push(
       ...etiquetarOrigen(
         whois.value.resultados,
-        whois.value.motor || "Whois Intelligence"
+        whois.value.motor || "Whois Intelligence",
+        "whois"
       )
     );
   }
@@ -240,18 +256,55 @@ export async function investigarObjetivo(objetivo) {
   }
 
   /*
+    FUSION SEARCH ENGINE
+
+    Usa el Perfil de Referencia para generar consultas
+    precisas, ejecutarlas en los motores disponibles,
+    normalizar, deduplicar por URL y fusionar los orígenes.
+
+    Si falla, devuelve null y la investigación continúa con
+    el descubrimiento general, como antes.
+  */
+  let fusion = null;
+
+  if (perfilReferencia) {
+    try {
+      fusion = await ejecutarFusion(objetivo, perfilReferencia, {
+        resultadosPrevios: resultados,
+
+        /*
+          El descubrimiento general ya consultó el objetivo
+          tal cual. Se declara para que el Fusion Engine no
+          gaste cuota repitiéndolo.
+        */
+        consultasYaEjecutadas: [objetivo]
+      });
+    } catch (error) {
+      console.error("Error en ejecutarFusion:", error);
+
+      fusion = null;
+    }
+  }
+
+  /*
     ENTIDADES DEL GRAFO
   */
   const entidades = construirEntidades(resultados);
 
   /*
     MOTOR DE CORRELACIÓN DE IDENTIDAD
+
+    Si el Fusion Engine se ejecutó, ya correlacionó sobre el
+    conjunto fusionado (más amplio y sin duplicados). En ese
+    caso se reutiliza su resultado en lugar de recalcular
+    sobre el descubrimiento general.
   */
   let identidadesDescubiertas = [];
 
   try {
-    const correlacion =
-      correlacionarIdentidades(resultados);
+    const correlacion = fusion?.identidades?.length
+      ? fusion.identidades
+      : correlacionarIdentidades(resultados);
 
     if (Array.isArray(correlacion)) {
       identidadesDescubiertas = correlacion;
@@ -370,6 +423,13 @@ export async function investigarObjetivo(objetivo) {
     perfilReferencia,
 
     /*
+      FUSION SEARCH ENGINE
+
+      Puede ser null: el frontend debe tolerarlo.
+    */
+    fusion,
+
+    /*
       ENTIDADES PARA EL GRAFO
     */
     entidades,
@@ -427,6 +487,16 @@ export async function investigarObjetivo(objetivo) {
           ? `${perfilReferencia.terminosDiscriminantes.length} términos discriminantes · ` +
             `${perfilReferencia.handlesObservados.length} handles observados · ` +
             `confianza ${perfilReferencia.confianza.global}/100`
+          : "No disponible"
+      },
+
+      {
+        etapa: "Fusion Engine",
+        detalle: fusion
+          ? `${fusion.metricas.consultasEjecutadas} consultas · ` +
+            `${fusion.metricas.resultadosBrutos} resultados brutos → ` +
+            `${fusion.metricas.evidenciasUnicas} evidencias únicas ` +
+            `(${fusion.metricas.duplicadosFusionados} fusionados)`
           : "No disponible"
       },
 

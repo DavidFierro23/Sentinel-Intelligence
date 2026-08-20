@@ -182,12 +182,40 @@ Los resultados raspados de HTML llegan con &amp; y similares.
 
 export function decodificarEntidades(texto = "") {
   return String(texto ?? "")
-    .replace(/&amp;/g, "&")
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) =>
+      String.fromCodePoint(parseInt(hex, 16))
+    )
+    .replace(/&#(\d+);/g, (_, dec) =>
+      String.fromCodePoint(parseInt(dec, 10))
+    )
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ");
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&hellip;/g, "…")
+    .replace(/&mdash;/g, "—")
+    .replace(/&ndash;/g, "–")
+    /* &amp; al final: evita re-decodificar entidades anidadas */
+    .replace(/&amp;/g, "&");
+}
+
+
+/*
+-----------------------------------------------------------
+LIMPIAR HTML
+
+Quita etiquetas y decodifica entidades. Usado para extraer
+títulos y snippets reales del HTML de los buscadores.
+-----------------------------------------------------------
+*/
+
+export function limpiarHtml(texto = "") {
+  return decodificarEntidades(
+    String(texto ?? "").replace(/<[^>]+>/g, " ")
+  )
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 
