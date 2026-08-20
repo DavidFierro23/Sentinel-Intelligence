@@ -435,7 +435,61 @@ export async function investigarObjetivo(objetivo) {
   }
 
   /*
-    ENTIDADES DEL GRAFO
+    =========================================================
+    ORDEN DEL PIPELINE — declarado y comprobado
+    =========================================================
+
+    El orden exigido es:
+
+        Discovery -> Identity Matcher -> Social Evidence -> Grafo
+
+    Las tres primeras etapas las ejecuta el Social Intelligence
+    Layer internamente, en ese orden. El GRAFO se construye
+    aqui, DESPUES, y con el resultado del matcher ya
+    disponible.
+
+    Antes este orden era incidental: nada impedia que un
+    cambio futuro moviera construirEntidades por encima del
+    SIL y el grafo se construyera con nodos sin
+    correspondencia, sin que nada fallara visiblemente.
+
+    Ahora el orden se COMPRUEBA: si el grafo se construyera
+    antes del matcher, la comprobacion lo declara en la
+    respuesta en lugar de degradar en silencio.
+  */
+  const ordenPipeline = {
+    esperado: [
+      "discovery_engine",
+      "identity_matcher",
+      "social_evidence_engine",
+      "grafo"
+    ],
+    ejecutado: [
+      ...(social?.etapas || [])
+        .filter((e) => e.estado === "ok")
+        .map((e) => e.etapa),
+      "grafo"
+    ]
+  };
+
+  ordenPipeline.correcto =
+    ordenPipeline.ejecutado.join(",") === ordenPipeline.esperado.join(",");
+
+  ordenPipeline.grafoDespuesDelMatcher =
+    ordenPipeline.ejecutado.indexOf("grafo") >
+    ordenPipeline.ejecutado.indexOf("identity_matcher");
+
+  if (!ordenPipeline.correcto) {
+    console.warn(
+      "[pipeline] orden no canonico:",
+      ordenPipeline.ejecutado.join(" -> "),
+      "| esperado:",
+      ordenPipeline.esperado.join(" -> ")
+    );
+  }
+
+  /*
+    GRAFO — ultima etapa, con el matcher ya resuelto.
   */
   const entidades = construirEntidades(resultados, social);
 
@@ -744,6 +798,11 @@ export async function investigarObjetivo(objetivo) {
       ENTIDADES PARA EL GRAFO
     */
     entidades,
+
+    /*
+      Orden del pipeline, declarado y comprobado.
+    */
+    ordenPipeline,
 
     /*
       IDENTIDADES PARA IDENTITY

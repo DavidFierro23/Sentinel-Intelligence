@@ -2,7 +2,16 @@
 
 import { normalizarTexto, tokenizar, limpiarHtml } from "../textUtils.js";
 import { obtenerAvatar as avatarLocalDeRespaldo } from "../avatarService.js";
-import { construirRutaProxy, absolutizar } from "./avatarProxy.js";
+/*
+  SPRINT SAG — el AIE ya no tiene proxy propio: registra el
+  activo en el Sentinel Asset Gateway, que es la capa unica
+  para servir activos externos.
+*/
+import {
+  registrarActivo,
+  TIPOS_ACTIVO,
+  absolutizar
+} from "../assets/assetGateway.js";
 
 /*
 ===========================================================
@@ -1086,7 +1095,28 @@ function componer(resultado, nivel, nombre, tipoObjetivo, traza, inicio, oficial
     desde Wikimedia. Se calcula la ruta del proxy propio; la
     URL de la fuente se CONSERVA para atribucion y auditoria.
   */
-  const rutaProxy = construirRutaProxy(resultado.imageUrl);
+  /*
+    Se registra la fotografia como activo del SAG. Devuelve
+    assetId, licencia y la ruta por la que el frontend la
+    pedira. Si el origen no esta permitido, no se registra y
+    la imagen se sirve tal cual (caso del data: URI local).
+  */
+  const activo =
+    resultado.imageUrl && !resultado.esRespaldo
+      ? registrarActivo({
+          sourceType: TIPOS_ACTIVO.FOTOGRAFIA_PUBLICA,
+          sourceUrl: resultado.imageUrl,
+          license: resultado.licencia,
+          contexto: {
+            objetivo: nombre,
+            fuente: resultado.fuente,
+            nivelAIE: nivel,
+            confianza: resultado.confianza
+          }
+        })
+      : { registrado: false };
+
+  const rutaProxy = activo.registrado ? activo.ruta : null;
 
   return {
     /* ---- CAMPOS EXIGIDOS ---- */
@@ -1104,6 +1134,25 @@ function componer(resultado, nivel, nombre, tipoObjetivo, traza, inicio, oficial
     imageUrlOriginal: resultado.imageUrl,
     servidaPorProxy: Boolean(rutaProxy),
     rutaProxy,
+
+    /*
+      FICHA DEL ACTIVO (SAG) — los cinco campos exigidos.
+    */
+    activo: activo.registrado
+      ? {
+          assetId: activo.assetId,
+          sourceType: activo.sourceType,
+          sourceUrl: activo.sourceUrl,
+          license: activo.license,
+          fetchedAt: activo.fetchedAt,
+          cacheStatus: activo.cacheStatus,
+          /*
+            Fecha de consulta de la FUENTE (Wikipedia/Wikidata),
+            distinta de fetchedAt, que es la de la imagen.
+          */
+          consultadoEn: new Date().toISOString()
+        }
+      : null,
     fuente: resultado.fuente,
     tipoFuente: resultado.tipoFuente,
     confianza: resultado.confianza,

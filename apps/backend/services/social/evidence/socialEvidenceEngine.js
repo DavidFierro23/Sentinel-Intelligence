@@ -12,6 +12,16 @@
 */
 import { calcularHash } from "../../knowledgeLake/lakeHash.js";
 
+/*
+  SPRINT SAG — la ficha de una cuenta puede llevar activos
+  (miniatura, logo). Se registran en el Asset Gateway, nunca
+  se sirven desde el origen externo.
+*/
+import {
+  registrarMiniaturaYoutube,
+  TIPOS_ACTIVO
+} from "../../assets/assetGateway.js";
+
 import {
   normalizarTexto,
   normalizarUrl,
@@ -258,6 +268,89 @@ correspondencia con su explicación, calidad, linaje y hash.
 ===========================================================
 */
 
+/*
+-----------------------------------------------------------
+ACTIVOS DE UNA FICHA
+
+Hoy solo hay una via publica y documentada: la miniatura de
+un VIDEO de YouTube (i.ytimg.com), cuyo patron de URL es
+publico y no requiere API.
+
+La imagen de un CANAL o de una pagina de Facebook exige la
+API de la plataforma, no implementada. Se declara en lugar de
+deducir una URL, que seria inventarla.
+-----------------------------------------------------------
+*/
+
+function construirActivos(candidato, plataformaId) {
+  const activos = [];
+
+  const noDisponibles = [];
+
+  /*
+    Miniatura de YouTube: solo si alguna evidencia aporta el
+    identificador de un video concreto.
+  */
+  if (plataformaId === "youtube") {
+    const videoId = extraerVideoIdDeEvidencias(candidato);
+
+    if (videoId) {
+      const registrado = registrarMiniaturaYoutube(videoId, {
+        handle: candidato.handle,
+        plataforma: candidato.plataforma
+      });
+
+      if (registrado.registrado) {
+        activos.push({
+          assetId: registrado.assetId,
+          sourceType: registrado.sourceType,
+          sourceUrl: registrado.sourceUrl,
+          license: registrado.license,
+          fetchedAt: registrado.fetchedAt,
+          cacheStatus: registrado.cacheStatus,
+          ruta: registrado.ruta,
+          contexto: "miniatura del video identificado en las evidencias"
+        });
+      }
+    } else {
+      noDisponibles.push({
+        sourceType: TIPOS_ACTIVO.MINIATURA_YOUTUBE,
+        motivo:
+          "No se identifico ningun video concreto. La imagen del canal requiere la YouTube Data API, no implementada."
+      });
+    }
+  }
+
+  if (plataformaId === "facebook" || plataformaId === "x") {
+    noDisponibles.push({
+      sourceType: TIPOS_ACTIVO.FOTOGRAFIA_PUBLICA,
+      motivo:
+        "La fotografia de perfil requiere la API de la plataforma (Platform Scanner). No se deduce su URL."
+    });
+  }
+
+  return { registrados: activos, noDisponibles };
+}
+
+
+function extraerVideoIdDeEvidencias(candidato) {
+  const urls = [
+    candidato.url,
+    ...(candidato.origenes || []).map((o) => o.consulta || "")
+  ].filter(Boolean);
+
+  for (const u of urls) {
+    const m =
+      String(u).match(/[?&]v=([\w-]{6,20})/) ||
+      String(u).match(/youtu\.be\/([\w-]{6,20})/);
+
+    if (m) return m[1];
+  }
+
+  return null;
+}
+
+
 export function construirFicha(candidato, correspondencia, opciones = {}) {
   const plataformaId = candidato.plataformaId;
 
@@ -297,6 +390,53 @@ export function construirFicha(candidato, correspondencia, opciones = {}) {
     modoAcceso: candidato.modoAcceso || MODOS_ACCESO.PRESENCIA_INFERIDA,
     estadoPresencia: candidato.estadoPresencia || ESTADOS_PRESENCIA.INFERIDA,
 
+    /*
+      ---------------------------------------------------------
+      FICHA COMPLETA (objetivo 4 del sprint)
+      ---------------------------------------------------------
+
+      Una cuenta descubierta en Facebook, X o YouTube deja de
+      ser solo un nodo del grafo: la ficha declara todo lo
+      que se sabe de ella y, con la misma claridad, lo que NO
+      se sabe y por que.
+
+      Sin Platform Scanner no hay biografia, ni recuento de
+      seguidores, ni fecha de creacion. Declararlos como
+      "no disponible" con su motivo es informacion; omitir el
+      campo haria creer que no aplica.
+    */
+    perfil: {
+      /* Lo que SI se conoce, del descubrimiento web. */
+      nombreVisible: (candidato.titulosObservados || [])[0] || null,
+      textoObservado: (candidato.descripcionesObservadas || [])[0] || null,
+
+      /* Lo que NO se conoce, y por que. */
+      biografia: null,
+      cargo: null,
+      pais: null,
+      seguidores: null,
+      publicaciones: null,
+      verificado: null,
+      creadoEn: null,
+      enlacesExternos: [],
+
+      noDisponible: {
+        campos: [
+          "biografia",
+          "cargo",
+          "pais",
+          "seguidores",
+          "publicaciones",
+          "verificado",
+          "creadoEn",
+          "enlacesExternos"
+        ],
+        motivo:
+          "Requieren leer el perfil en la plataforma (Platform Scanner). Ninguna API de plataforma esta implementada.",
+        habilitaSenales: ["S3", "S4", "S5"]
+      }
+    },
+
     /* ---- PROCEDENCIA ---- */
     origenes: candidato.origenes || [],
     totalOrigenes: candidato.totalOrigenes || (candidato.origenes || []).length,
@@ -325,6 +465,14 @@ export function construirFicha(candidato, correspondencia, opciones = {}) {
           explicacion: correspondencia.explicacion
         }
       : null,
+
+    /*
+      ---- ACTIVOS (Sentinel Asset Gateway) ----
+
+      Se registran, no se descargan: la descarga ocurre cuando
+      el navegador pide la ruta del SAG.
+    */
+    activos: construirActivos(candidato, plataformaId),
 
     /* ---- GOBIERNO ---- */
     tenantId: opciones.tenantId || null,
