@@ -1,8 +1,14 @@
 // apps/backend/services/fusionSearchEngine.js
 
-import { buscarGoogle } from "./googleService.js";
 import { buscarGoogleNews } from "./googleNewsService.js";
 import { correlacionarIdentidades } from "./identityCorrelationService.js";
+
+import {
+  buscarWeb,
+  crearSesion,
+  resumirSesion,
+  diagnosticoProveedores
+} from "./searchProviderLayer.js";
 
 import {
   normalizarTexto,
@@ -53,47 +59,73 @@ las señales que el Confidence Engine usará después.
 
 /*
 -----------------------------------------------------------
-REGISTRO DE MOTORES
+RESPUESTA DEGRADADA
 
-Declara la disponibilidad REAL de cada motor. Un motor sin
-implementación se declara `disponible: false` y no se
-invoca: no se simula corroboración inexistente.
+Una respuesta está degradada cuando el motor NO pudo
+consultar: bloqueo de tasa, error de red o ausencia de
+proveedor disponible.
 
-ADVERTENCIA DE HONESTIDAD:
-
-`ddg_web` es el único motor web implementado en el proyecto.
-El archivo se llama googleService.js por histórico, pero
-consulta DuckDuckGo. NO se registra dos veces bajo dos
-nombres, porque eso fabricaría una corroboración falsa.
-
-Para añadir un motor nuevo (Bing, Brave, Google CSE) basta
-con añadir una entrada aquí con su función `buscar`.
+Es distinto de "consulté y no había resultados", que es una
+respuesta legítima. Confundirlas fue el defecto del Sprint 2.
 -----------------------------------------------------------
 */
 
+function respuestaDegradada(respuesta) {
+  if (!respuesta) return true;
+
+  /* Contrato de la Search Provider Layer. */
+  if (respuesta.estado === "Bloqueado" || respuesta.estado === "Error") {
+    return true;
+  }
+
+  /* Contrato histórico de googleService. */
+  if (respuesta.bloqueado) return true;
+
+  return false;
+}
+
+
+/*
+-----------------------------------------------------------
+REGISTRO DE MOTORES LÓGICOS
+-----------------------------------------------------------
+*/
+
+/*
+  DESACOPLAMIENTO (Sprint 2.5)
+
+  El Fusion Engine ya NO conoce ningún buscador concreto.
+
+  Para las búsquedas web declara UN solo motor lógico —la
+  Search Provider Layer— que resuelve internamente qué
+  proveedor la atiende (Brave, DuckDuckGo, y en el futuro
+  Bing u otros), con su propio orden de prioridad, salud,
+  presupuesto y failover.
+
+  El `motorId` de cada resultado sigue siendo el del
+  proveedor REAL que lo encontró, no el del motor lógico:
+  de lo contrario la corroboración multi-motor sería falsa.
+
+  Añadir un proveedor nuevo NO requiere tocar este archivo.
+*/
 export const MOTORES = [
   {
-    id: "ddg_web",
-    nombre: "DuckDuckGo Web",
+    id: "web",
+    nombre: "Búsqueda web (Search Provider Layer)",
     tipo: "web",
     disponible: true,
     aceptaOperadores: true,
+    delegado: true,
 
     /*
-      LIMITACIÓN DE TASA MEDIDA:
-
-      DuckDuckGo deja de devolver resultados tras unas pocas
-      consultas seguidas. Verificado empíricamente: la 1.ª
-      consulta responde, la 2.ª y siguientes devuelven una
-      página sin resultados.
-
-      Por eso este motor se ejecuta EN SERIE con pausa entre
-      consultas, y con un presupuesto reducido.
+      El intervalo y el presupuesto reales los aplica cada
+      proveedor dentro de la capa. Aquí se acota cuántas
+      consultas web se planifican en total.
     */
-    intervaloMs: 3500,
-    presupuesto: 4,
+    intervaloMs: 0,
+    presupuesto: 6,
 
-    buscar: (consulta, opciones) => buscarGoogle(consulta, opciones)
+    buscar: (consulta, opciones) => buscarWeb(consulta, opciones)
   },
   {
     id: "google_news",
@@ -107,17 +139,6 @@ export const MOTORES = [
     presupuesto: 3,
 
     buscar: (consulta) => buscarGoogleNews(consulta)
-  },
-  {
-    id: "bing_web",
-    nombre: "Bing Web",
-    tipo: "web",
-    disponible: false,
-    motivo: "Sin implementación en el proyecto. Preparado arquitectónicamente.",
-    aceptaOperadores: true,
-    intervaloMs: 0,
-    presupuesto: 0,
-    buscar: null
   }
 ];
 
@@ -333,8 +354,15 @@ export function normalizarResultado(bruto, contexto = {}) {
         : null,
 
     /* ---- procedencia ---- */
-    motorId: contexto.motorId || bruto.motorId || null,
-    motorNombre: contexto.motorNombre || bruto.motor || null,
+    /*
+      El proveedor REAL que lo encontró tiene prioridad sobre
+      el motor lógico que lo pidió. Con la Search Provider
+      Layer, `web` puede resolverse vía Brave o vía DuckDuckGo:
+      atribuirlo al motor lógico borraría esa distinción y
+      falsearía la corroboración multi-motor.
+    */
+    motorId: bruto.motorId || contexto.motorId || null,
+    motorNombre: bruto.motor || contexto.motorNombre || null,
     consulta: contexto.consulta || bruto.consulta || null,
     etiquetaConsulta: contexto.etiqueta || null
   };
@@ -394,6 +422,90 @@ function calcularSenales(evidencia, perfil) {
       evidencia.tipoPlataforma === "video",
     tieneSnippetReal: evidencia.snippetDisponible,
     tieneFecha: Boolean(evidencia.fecha)
+  };
+}
+
+
+/*
+-----------------------------------------------------------
+CALIDAD DE LA EVIDENCIA
+
+Mide cuánta INFORMACIÓN APROVECHABLE trae una evidencia, no
+si es cierta ni si corresponde al objetivo. Eso último es
+trabajo del Confidence Engine.
+
+  completa  título + snippet real + clasificación de la
+            fuente (plataforma o dominio) + fecha u origen
+            corroborado
+  parcial   título + al menos un dato sustantivo más
+  mínima    poco más que una URL
+
+Sirve para dos cosas inmediatas: ordenar lo que se muestra al
+analista, y avisar de que el material recogido es pobre
+aunque el recuento de resultados parezca alto.
+-----------------------------------------------------------
+*/
+
+export const CALIDADES = Object.freeze({
+  COMPLETA: "completa",
+  PARCIAL: "parcial",
+  MINIMA: "mínima"
+});
+
+export function evaluarCalidad(evidencia) {
+  const criterios = {
+    tieneTitulo: Boolean(evidencia.titulo && evidencia.titulo.length >= 5),
+    tieneSnippetReal: Boolean(
+      evidencia.snippetDisponible && evidencia.descripcion?.length >= 20
+    ),
+    tieneFecha: Boolean(evidencia.fecha),
+    tieneDominio: Boolean(evidencia.dominio),
+    fuenteClasificada: Boolean(evidencia.plataforma),
+    corroborada: (evidencia.totalMotores || 0) > 1,
+    multiConsulta: (evidencia.totalConsultas || 0) > 1
+  };
+
+  const cumplidos = Object.entries(criterios)
+    .filter(([, valor]) => valor)
+    .map(([clave]) => clave);
+
+  const faltantes = Object.entries(criterios)
+    .filter(([, valor]) => !valor)
+    .map(([clave]) => clave);
+
+  let nivel = CALIDADES.MINIMA;
+
+  const nucleo =
+    criterios.tieneTitulo && criterios.tieneSnippetReal && criterios.tieneDominio;
+
+  const refuerzo =
+    criterios.tieneFecha || criterios.fuenteClasificada || criterios.corroborada;
+
+  if (nucleo && refuerzo) {
+    nivel = CALIDADES.COMPLETA;
+  } else if (
+    criterios.tieneTitulo &&
+    (criterios.tieneSnippetReal ||
+      criterios.tieneFecha ||
+      criterios.fuenteClasificada ||
+      criterios.multiConsulta)
+  ) {
+    nivel = CALIDADES.PARCIAL;
+  }
+
+  return {
+    nivel,
+    criteriosCumplidos: cumplidos,
+    criteriosFaltantes: faltantes,
+    /*
+      Frase corta para la interfaz: por qué esta calidad.
+    */
+    motivo:
+      nivel === CALIDADES.COMPLETA
+        ? "Título, descripción real y fuente identificada."
+        : nivel === CALIDADES.PARCIAL
+        ? `Falta: ${faltantes.slice(0, 3).join(", ") || "información secundaria"}.`
+        : "Apenas una URL: sin descripción real ni fuente identificada."
   };
 }
 
@@ -511,6 +623,8 @@ export function fusionar(normalizados, perfil) {
 
       salida.senales = calcularSenales(salida, perfil);
 
+      salida.calidad = evaluarCalidad(salida);
+
       return salida;
     })
     .sort((a, b) => {
@@ -583,7 +697,7 @@ async function ejecutarPorMotor(tareasPorMotor) {
         try {
           const valor = await tareas[i]();
 
-          if (valor?.respuesta?.bloqueado) bloqueosSeguidos += 1;
+          if (respuestaDegradada(valor?.respuesta)) bloqueosSeguidos += 1;
           else bloqueosSeguidos = 0;
 
           salidas.push({ status: "fulfilled", value: valor });
@@ -650,12 +764,28 @@ export async function ejecutarFusion(objetivo, perfil, opciones = {}) {
 
   const disponibles = MOTORES.filter((m) => m.disponible && m.buscar);
 
-  const noDisponibles = MOTORES.filter((m) => !m.disponible).map((m) => ({
-    id: m.id,
-    nombre: m.nombre,
-    disponible: false,
-    motivo: m.motivo || "No disponible"
-  }));
+  /*
+    Sesión compartida por todas las consultas web de esta
+    investigación: es lo que hace que el presupuesto y el
+    intervalo de cada proveedor se respeten de verdad.
+  */
+  const sesionWeb = crearSesion({ tipo: "web" });
+
+  /*
+    Los proveedores no disponibles (sin credencial, no
+    implementados) los declara el registro, no este archivo.
+  */
+  const diagnostico = diagnosticoProveedores();
+
+  const noDisponibles = diagnostico.proveedores
+    .filter((p) => !p.disponible)
+    .map((p) => ({
+      id: p.id,
+      nombre: p.nombre,
+      disponible: false,
+      estado: p.estado,
+      motivo: p.detalle
+    }));
 
   /*
     Emparejar cada consulta con los motores compatibles.
@@ -708,7 +838,8 @@ export async function ejecutarFusion(objetivo, perfil, opciones = {}) {
 
         registro.tareas.push(async () => {
           const respuesta = await motor.buscar(entrada.consulta, {
-            etiqueta: entrada.etiqueta
+            etiqueta: entrada.etiqueta,
+            sesion: motor.delegado ? sesionWeb : undefined
           });
 
           return { motor, entrada, respuesta };
@@ -762,7 +893,7 @@ export async function ejecutarFusion(objetivo, perfil, opciones = {}) {
         Un bloqueo NO es "0 resultados": es una consulta que
         no se pudo realizar. Se reporta por separado.
       */
-      if (respuesta?.bloqueado) estado.consultasBloqueadas += 1;
+      if (respuestaDegradada(respuesta)) estado.consultasBloqueadas += 1;
     }
 
     const brutos = Array.isArray(respuesta?.resultados) ? respuesta.resultados : [];
@@ -853,6 +984,16 @@ export async function ejecutarFusion(objetivo, perfil, opciones = {}) {
 
     motores: [...estadoMotores.values(), ...noDisponibles],
 
+    /*
+      SEARCH PROVIDER LAYER — quién resolvió realmente las
+      búsquedas web, con qué salud y qué presupuesto.
+    */
+    proveedores: {
+      principalDeclarado: diagnostico.principalDeclarado,
+      registro: diagnostico.proveedores,
+      sesion: resumirSesion(sesionWeb)
+    },
+
     evidencias,
 
     plataformas: agrupar(evidencias, (e) => e.plataforma),
@@ -865,13 +1006,16 @@ export async function ejecutarFusion(objetivo, perfil, opciones = {}) {
       Aviso operativo cuando un motor fue limitado: sin esto,
       una investigación degradada parecería completa.
     */
-    advertencias: [...estadoMotores.values()]
-      .filter((e) => e.consultasBloqueadas > 0)
-      .map(
-        (e) =>
-          `${e.nombre}: ${e.consultasBloqueadas} de ${e.consultasEjecutadas} consultas ` +
-          `sin respuesta por limitación de tasa del proveedor. Cobertura parcial.`
-      ),
+    advertencias: [
+      ...[...estadoMotores.values()]
+        .filter((e) => e.consultasBloqueadas > 0)
+        .map(
+          (e) =>
+            `${e.nombre}: ${e.consultasBloqueadas} de ${e.consultasEjecutadas} consultas ` +
+            `sin respuesta. Cobertura parcial.`
+        ),
+      ...(resumirSesion(sesionWeb)?.advertencias || [])
+    ],
 
     metricas: {
       consultasPlanificadas: plan.length,
@@ -891,6 +1035,14 @@ export async function ejecutarFusion(objetivo, perfil, opciones = {}) {
       evidenciasMultiConsulta: evidencias.filter((e) => e.corroboracionMultiConsulta)
         .length,
       evidenciasConSnippetReal: evidencias.filter((e) => e.snippetDisponible).length,
+
+      calidad: {
+        completa: evidencias.filter((e) => e.calidad?.nivel === CALIDADES.COMPLETA)
+          .length,
+        parcial: evidencias.filter((e) => e.calidad?.nivel === CALIDADES.PARCIAL)
+          .length,
+        minima: evidencias.filter((e) => e.calidad?.nivel === CALIDADES.MINIMA).length
+      },
       identidadesDetectadas: identidades.length,
       tiempo: `${tiempo}s`
     },

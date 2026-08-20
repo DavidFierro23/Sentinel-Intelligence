@@ -7,6 +7,12 @@ import { correlacionarIdentidades } from "./identityCorrelationService.js";
 import { construirPerfilReferencia } from "./referenceProfileService.js";
 import { ejecutarFusion } from "./fusionSearchEngine.js";
 
+import {
+  obtenerEnlace,
+  detectarPlataformaPorUrl,
+  extraerDominio
+} from "./textUtils.js";
+
 /*
   Etiqueta cada resultado con el motor que lo encontró.
 
@@ -34,57 +40,78 @@ function etiquetarOrigen(items, origen, motorId) {
   }));
 }
 
+/*
+  ENTIDADES DEL GRAFO — clasificadas por DOMINIO.
+
+  CORRECCIÓN (Sprint 2.5):
+
+  La versión anterior clasificaba buscando subcadenas en el
+  título y la descripción. Una noticia que mencionara la
+  palabra "facebook" se contaba como entidad Facebook, y
+  cualquier titular con "news" acababa en Google News. Las
+  entidades del grafo no reflejaban las fuentes reales.
+
+  Ahora la clasificación sale de la URL: plataforma conocida
+  por dominio y, si no lo es, el dominio mismo como entidad.
+  El texto ya no interviene.
+
+  El contrato de salida no cambia — {id, nombre, tipo,
+  evidencias} — para no romper KnowledgeGraph.jsx.
+*/
 function construirEntidades(resultados) {
   const mapa = new Map();
 
-  resultados.forEach((item) => {
-    const texto = `${item.titulo || ""} ${item.descripcion || ""}`.toLowerCase();
+  const lista = Array.isArray(resultados) ? resultados : [];
 
-    let nombre = "Web";
+  lista.forEach((item) => {
+    if (!item) return;
+
+    const enlace = obtenerEnlace(item);
+
+    let nombre = null;
     let tipo = "web";
 
-    if (texto.includes("facebook")) {
-      nombre = "Facebook";
-      tipo = "social";
-    } else if (texto.includes("instagram")) {
-      nombre = "Instagram";
-      tipo = "social";
-    } else if (texto.includes("tiktok")) {
-      nombre = "TikTok";
-      tipo = "social";
-    } else if (texto.includes("youtube")) {
-      nombre = "YouTube";
-      tipo = "video";
-    } else if (texto.includes("linkedin")) {
-      nombre = "LinkedIn";
-      tipo = "social";
-    } else if (
-      texto.includes("x.com") ||
-      texto.includes("twitter")
-    ) {
-      nombre = "X";
-      tipo = "social";
-    } else if (texto.includes("news")) {
-      nombre = "Google News";
-      tipo = "news";
-    } else if (texto.includes("wayback")) {
-      nombre = "Wayback";
-      tipo = "archive";
+    if (enlace) {
+      const plataforma = detectarPlataformaPorUrl(enlace);
+
+      if (plataforma) {
+        nombre = plataforma.nombre;
+        tipo = plataforma.tipo;
+      } else {
+        const dominio = extraerDominio(enlace);
+
+        if (dominio) {
+          nombre = dominio.replace(/^www\./, "");
+          tipo = dominio.includes("news.google") ? "news" : "web";
+        }
+      }
     }
+
+    /*
+      Sin URL utilizable, la entidad se atribuye al motor que
+      la aportó (Whois y Wayback devuelven registros que no
+      siempre son enlaces navegables).
+    */
+    if (!nombre) {
+      nombre = item.__origen || "Otras fuentes";
+      tipo = "fuente";
+    }
+
+    const id = nombre.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
     if (!mapa.has(nombre)) {
       mapa.set(nombre, {
-        id: nombre.toLowerCase().replace(/\s+/g, "-"),
+        id: id || "fuente",
         nombre,
         tipo,
         evidencias: 1
       });
     } else {
-      mapa.get(nombre).evidencias++;
+      mapa.get(nombre).evidencias += 1;
     }
   });
 
-  return [...mapa.values()];
+  return [...mapa.values()].sort((a, b) => b.evidencias - a.evidencias);
 }
 
 /*
