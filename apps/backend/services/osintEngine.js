@@ -424,27 +424,72 @@ export async function investigarObjetivo(objetivo) {
           nombre: objetivo,
           tipo: "objetivo",
           avatar: crearAvatarFallback(objetivo),
-          confianza: 70,
           fuente: "local"
         };
 
   /*
-    Solo se sustituye si el AIE aporta una fotografia REAL
-    verificada. Un respaldo generado por el AIE no es mejor
-    que el avatar local que ya teniamos.
+    ---------------------------------------------------------
+    B2 · UNA SOLA FUENTE DE VERDAD DEL PUNTAJE
+    ---------------------------------------------------------
+
+    Defecto corregido (QA-1, Bloque 1):
+
+    La identidad de respaldo llevaba `confianza: 70`, un valor
+    fijo heredado de avatarService que no medía nada. Cuando el
+    AIE devolvía un respaldo con confianza 0, la respuesta
+    exponía DOS cifras contradictorias para el mismo avatar:
+    70 en `identidad` y 0 en `identidad.inteligencia`. Un
+    consumidor que leyera la primera creería que hay un 70 % de
+    confianza en un marcador generado.
+
+    Ahora el Avatar Intelligence Engine es la ÚNICA autoridad
+    sobre `confianza` y `fuente`:
+
+      · AIE con fotografía verificada → se adopta su resultado
+      · AIE con respaldo              → avatar local, pero
+                                        confianza y fuente del AIE
+      · AIE no ejecutado o con error  → confianza null, no un
+                                        número inventado
+
+    `null` y no `0`: cero significa «se buscó y no hay
+    fotografía verificable»; null significa «no se evaluó».
+    Son cosas distintas y confundirlas es el mismo error que
+    separa `bloqueado` de `0 resultados`.
   */
-  const identidad =
-    avatarInteligente && avatarInteligente.inteligencia?.esRespaldo === false
-      ? avatarInteligente
-      : {
-          ...identidadBase,
-          /*
-            Aunque se conserve el avatar local, se adjunta la
-            inteligencia del AIE: explica POR QUE no hay
-            fotografia, que es informacion util.
-          */
-          inteligencia: avatarInteligente?.inteligencia || null
-        };
+  const inteligenciaAvatar = avatarInteligente?.inteligencia || null;
+
+  const identidad = {
+    ...identidadBase,
+
+    /*
+      El avatar del AIE solo sustituye al local si es una
+      fotografía real verificada.
+    */
+    avatar:
+      inteligenciaAvatar && inteligenciaAvatar.esRespaldo === false
+        ? avatarInteligente.avatar
+        : identidadBase.avatar,
+
+    /* Autoridad única del puntaje. */
+    confianza: inteligenciaAvatar ? inteligenciaAvatar.confianza : null,
+
+    fuente: inteligenciaAvatar
+      ? inteligenciaAvatar.fuente
+      : identidadBase.fuente,
+
+    /*
+      Declara explícitamente si el puntaje fue evaluado, para
+      que `confianza: null` no se lea como un fallo silencioso.
+    */
+    confianzaEvaluada: Boolean(inteligenciaAvatar),
+
+    /*
+      Aunque se conserve el avatar local, se adjunta la
+      inteligencia del AIE: explicar POR QUÉ no hay fotografía
+      también es información.
+    */
+    inteligencia: inteligenciaAvatar
+  };
 
   /*
     RESULTADO FINAL

@@ -77,7 +77,15 @@ export async function obtenerAvatar(objetivo) {
     nombre,
     tipo: "objetivo",
     avatar: crearAvatarLocal(nombre),
-    confianza: 70,
+
+    /*
+      B2 (QA-1): antes devolvía 70, un número fijo que no medía
+      nada. Este servicio solo genera un SVG con iniciales: no
+      tiene forma de estimar si corresponde a la persona.
+      La autoridad sobre la confianza es el Avatar Intelligence
+      Engine; aquí `null` significa "no evaluado".
+    */
+    confianza: null,
     fuente: "local"
   };
 }

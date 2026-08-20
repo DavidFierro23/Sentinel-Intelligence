@@ -11,10 +11,11 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "echo \"Frontend y Backend iniciarán aquí\"",
-    "build": "echo \"Build del ecosistema\"",
-    "test": "echo \"Tests de Sentinel\"",
-    "lint": "echo \"Lint del ecosistema\""
+    "dev:backend": "npm run dev --workspace apps/backend",
+    "dev:web": "npm run dev --workspace apps/web",
+    "build": "npm run build --workspace apps/web",
+    "lint": "npm run lint --workspace apps/web",
+    "test": "echo \"Tests de Sentinel\""
   },
   "repository": {
     "type": "git",
