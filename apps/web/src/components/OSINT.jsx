@@ -268,6 +268,7 @@ export default function OSINT() {
               cobertura={resultado.fichaObjetivo?.coberturaPlataformas || []}
               limites={resultado.fichaObjetivo?.limites || null}
               metricas={resultado.fichaObjetivo?.metricas || null}
+              origenDescubrimiento={resultado.origenDescubrimiento || null}
             />
 
             {/* GRAFO */}

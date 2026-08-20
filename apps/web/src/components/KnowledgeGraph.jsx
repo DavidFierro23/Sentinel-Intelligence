@@ -61,7 +61,16 @@ export default function KnowledgeGraph({ resultado }) {
         tipo: e.tipo,
         evidencias: e.evidencias,
         radius: 18 + Math.min(e.evidencias * 1.5, 12),
-        color: colores[e.nombre] || "#3B82F6",
+        /*
+          Los nodos sociales pasan a llamarse "@handle", asi que
+          el color debe venir de la PLATAFORMA. Sin esto todas
+          las cuentas saldrian del mismo azul generico.
+        */
+        color: colores[e.plataforma] || colores[e.nombre] || "#3B82F6",
+        plataforma: e.plataforma || null,
+        handle: e.handle || null,
+        correspondencia: e.correspondencia ?? null,
+        vetadoPorContexto: e.vetadoPorContexto === true,
         x: Math.cos(angulo) * radio,
         y: Math.sin(angulo) * radio,
         fx: Math.cos(angulo) * radio,

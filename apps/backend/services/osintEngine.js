@@ -127,57 +127,73 @@ function construirEntidades(resultados, social = null) {
     contexto, para que el grafo pueda distinguir visualmente
     un perfil probable de un homonimo vetado.
   */
-  (social?.fichas || []).forEach((ficha) => {
-    const nombre = ficha.plataforma;
+  /*
+    ---------------------------------------------------------
+    UN NODO POR CUENTA (HOTFIX QA-1 del Sprint 3.2.2)
+    ---------------------------------------------------------
 
-    if (!nombre) return;
+    Antes se creaba un nodo por PLATAFORMA y las cuentas se
+    apilaban dentro en `nodo.cuentas`. El grafo mostraba
+    "Facebook" y "X", nunca @DanielNoboaOk ni @jotalloretv:
+    con SerpAPI devolviendo decenas de cuentas reales, treinta
+    y dos hallazgos colapsaban en tres circulos.
+
+    El grafo es la vista de identidad de la plataforma, y la
+    unidad de identidad es la CUENTA, no la plataforma.
+
+    La agrupacion no se pierde: cada nodo lleva `plataforma` y
+    `plataformaId`, con lo que el lienzo puede colorear y
+    agrupar por plataforma sin necesidad de un nodo contenedor.
+  */
+  (social?.fichas || []).forEach((ficha) => {
+    const plataforma = ficha.plataforma;
+
+    if (!plataforma || !ficha.handle) return;
 
     const c = ficha.correspondencia;
 
-    const id = `plataforma-${String(ficha.platform || nombre)
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")}`;
+    const clave = `${ficha.platform || plataforma}:${ficha.handle}`;
 
-    if (!mapa.has(nombre)) {
-      mapa.set(nombre, {
-        id,
-        nombre,
-        tipo: ficha.tipoPlataforma || "social",
-        evidencias: 0
-      });
-    }
+    if (mapa.has(clave)) return;
 
-    const nodo = mapa.get(nombre);
+    const cb = c?.explicacion?.contextBoost || null;
 
-    nodo.evidencias += 1;
+    mapa.set(clave, {
+      id: `cuenta-${String(clave)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")}`,
 
-    /*
-      Datos de identidad en el nodo: el grafo deja de mostrar
-      solo "hay algo en Facebook" y pasa a mostrar QUE cuenta
-      y con cuanta correspondencia.
-    */
-    nodo.plataformaId = ficha.platform;
+      /*
+        El nombre visible del nodo es el handle: es lo que
+        identifica a la cuenta. La plataforma va aparte.
+      */
+      nombre: `@${ficha.handle}`,
 
-    nodo.cuentas = [...(nodo.cuentas || []), {
+      tipo: ficha.tipoPlataforma || "social",
+
+      plataforma,
+      plataformaId: ficha.platform,
       handle: ficha.handle,
       url: ficha.url?.canonica || null,
+
+      /*
+        Grosor del enlace: cuantas evidencias sostienen la
+        cuenta, no cuantas cuentas tiene la plataforma.
+      */
+      evidencias: (ficha.origenes || []).length || 1,
+
       correspondencia: c?.puntuacion ?? null,
       nivel: c?.nivel || null,
-      estado: c?.estado || null,
-      vetadoPorContexto: c?.explicacion?.contextBoost?.vetoAplicado === true,
-      veredictoContexto: c?.explicacion?.contextBoost?.veredicto || null
-    }];
+      estadoIdentidad: c?.estado || null,
 
-    /*
-      La mejor correspondencia de la plataforma define el nodo.
-    */
-    const mejor = nodo.cuentas
-      .filter((x) => x.correspondencia != null)
-      .sort((a, b) => b.correspondencia - a.correspondencia)[0];
+      vetadoPorContexto: cb?.vetoAplicado === true,
+      veredictoContexto: cb?.veredicto || null,
 
-    nodo.mejorCorrespondencia = mejor?.correspondencia ?? null;
-    nodo.estadoIdentidad = mejor?.estado || null;
-    nodo.origenNodo = "social_intelligence_layer";
+      proveedores: ficha.proveedores || [],
+      modoAcceso: ficha.modoAcceso || null,
+
+      origenNodo: "social_intelligence_layer"
+    });
   });
 
   return [...mapa.values()].sort((a, b) => b.evidencias - a.evidencias);

@@ -76,7 +76,8 @@ export default function SocialAccountsPanel({
   cuentas = [],
   cobertura = [],
   limites = null,
-  metricas = null
+  metricas = null,
+  origenDescubrimiento = null
 }) {
   const [abierta, setAbierta] = useState(null);
 
@@ -372,6 +373,20 @@ export default function SocialAccountsPanel({
                     orígenes:{" "}
                     <strong style={{ color: "#93C5FD" }}>
                       {(cuenta.origenes || []).length}
+                    </strong>
+                  </span>
+
+                  {/*
+                    Que proveedor descubrio la cuenta. Sin esto el
+                    analista no puede saber si el hallazgo viene
+                    del buscador o de una base de conocimiento.
+                  */}
+                  <span>
+                    descubierta por:{" "}
+                    <strong style={{ color: "#FCD34D" }}>
+                      {(cuenta.corroboracion?.proveedores || []).join(", ") ||
+                        origenDescubrimiento ||
+                        "—"}
                     </strong>
                   </span>
 
