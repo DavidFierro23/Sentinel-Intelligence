@@ -8,6 +8,7 @@ import { construirPerfilReferencia } from "./referenceProfileService.js";
 import { ejecutarFusion } from "./fusionSearchEngine.js";
 import { ejecutarSocialIntelligence } from "./social/socialIntelligenceLayer.js";
 import { consolidarFichaObjetivo } from "./referenceProfileService.js";
+import { obtenerAvatarCompatible } from "./avatar/avatarIntelligenceEngine.js";
 
 import {
   obtenerEnlace,
@@ -341,6 +342,33 @@ export async function investigarObjetivo(objetivo) {
   }
 
   /*
+    AVATAR INTELLIGENCE ENGINE  (Sprint 4A, Bloque 1)
+
+    Se ejecuta AQUI y no en el Promise.allSettled inicial
+    porque necesita el Perfil de Referencia (variantes,
+    contexto, terminos discriminantes) para verificar que la
+    fotografia corresponde de verdad al objetivo.
+
+    El avatar local ya obtenido al principio sigue sirviendo
+    de respaldo inmediato: si el AIE falla o no encuentra
+    fotografia verificable, la identidad no cambia.
+  */
+  let avatarInteligente = null;
+
+  if (perfilReferencia) {
+    try {
+      avatarInteligente = await obtenerAvatarCompatible(objetivo, {
+        perfil: perfilReferencia,
+        social
+      });
+    } catch (error) {
+      console.error("Error en Avatar Intelligence Engine:", error);
+
+      avatarInteligente = null;
+    }
+  }
+
+  /*
     ENTIDADES DEL GRAFO
   */
   const entidades = construirEntidades(resultados);
@@ -388,7 +416,7 @@ export async function investigarObjetivo(objetivo) {
 
     Nunca se utiliza ui-avatars.com.
   */
-  const identidad =
+  const identidadBase =
     avatar.status === "fulfilled" &&
     avatar.value
       ? avatar.value
@@ -398,6 +426,24 @@ export async function investigarObjetivo(objetivo) {
           avatar: crearAvatarFallback(objetivo),
           confianza: 70,
           fuente: "local"
+        };
+
+  /*
+    Solo se sustituye si el AIE aporta una fotografia REAL
+    verificada. Un respaldo generado por el AIE no es mejor
+    que el avatar local que ya teniamos.
+  */
+  const identidad =
+    avatarInteligente && avatarInteligente.inteligencia?.esRespaldo === false
+      ? avatarInteligente
+      : {
+          ...identidadBase,
+          /*
+            Aunque se conserve el avatar local, se adjunta la
+            inteligencia del AIE: explica POR QUE no hay
+            fotografia, que es informacion util.
+          */
+          inteligencia: avatarInteligente?.inteligencia || null
         };
 
   /*
@@ -583,6 +629,14 @@ export async function investigarObjetivo(objetivo) {
             `${social.metricas.fichasUnicas} fichas únicas · ` +
             `${social.metricas.probables} probables · ` +
             `máx ${social.metricas.puntuacionMaxima}/100`
+          : "No disponible"
+      },
+
+      {
+        etapa: "Avatar Intelligence",
+        detalle: avatarInteligente
+          ? `${avatarInteligente.inteligencia.fuente} · nivel ${avatarInteligente.inteligencia.nivelUsado} · ` +
+            `confianza ${avatarInteligente.confianza}/100`
           : "No disponible"
       },
 
