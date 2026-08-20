@@ -36,7 +36,7 @@ import {
 import { contextBoostDeCandidato } from "../identity/contextBoost.js";
 
 /* SD-1A — descubrimiento desde las evidencias ya existentes. */
-import { descubrirDesdeEvidencias } from "./socialUrlClassifier.js";
+import { descubrirDesdeEvidencias, clasificarUrlSocial } from "./socialUrlClassifier.js";
 
 /* Platform Scanner — cuentas declaradas en base de conocimiento. */
 import { escanearPlataformas } from "../platforms/platformScanner.js";
@@ -205,9 +205,62 @@ function candidatoDesdeResultado(resultado, via, contexto = {}) {
 
   if (!TIPOS_CON_IDENTIDAD.includes(plataforma.tipo)) return null;
 
-  let handle = extraerHandle(enlace);
+  /*
+    ---------------------------------------------------------
+    EL CLASIFICADOR SD-1A ES LA AUTORIDAD SOBRE LA RUTA
+    ---------------------------------------------------------
 
-  let handleTipo = "extraido";
+    Defecto detectado al integrar SerpAPI (Sprint 3.2.2).
+
+    Habia DOS autoridades respondiendo a la misma pregunta
+    —"¿esta URL es una cuenta, y de quien?"— con criterios
+    distintos:
+
+      · clasificarUrlSocial  conoce las rutas de cada
+                             plataforma y rechaza el contenido
+      · extraerHandle        solo mira la forma del segmento
+
+    Con las URLs reales de Google la discrepancia produjo
+    cuentas inventadas. Medido en Daniel Noboa:
+
+      evidencia:  instagram.com/p/DcRCcfKnEjY/     (publicacion)
+      candidato:  instagram.com/dcrccfknejy        (INEXISTENTE)
+
+    El codigo de sesion de una publicacion se convirtio en un
+    handle y se reconstruyo una URL de perfil que nunca ha
+    existido. El propio registro lo delataba con
+    `coincideConReconstruida: false`, y se admitia igual.
+
+    Eso es inventar una cuenta: la regla que este modulo no
+    puede romper. Ahora manda el clasificador, y
+    `extraerHandle` queda como respaldo solo para lo que el
+    clasificador admite.
+  */
+  const clasificacion = clasificarUrlSocial(enlace);
+
+  if (clasificacion?.esSocial && !clasificacion.esCuenta) {
+    return {
+      descartado: true,
+      url: enlace,
+      plataformaId: plataforma.id,
+      plataforma: plataforma.nombre,
+      via,
+      tipoUrl: clasificacion.tipo,
+      motivo:
+        clasificacion.motivoExclusion ||
+        `${clasificacion.tipo}: la URL no identifica una cuenta (${clasificacion.motivo || "ruta no reconocida"})`
+    };
+  }
+
+  let handle = clasificacion?.esCuenta
+    ? clasificacion.handle
+    : extraerHandle(enlace);
+
+  let handleTipo = clasificacion?.esCuenta
+    ? clasificacion.handleDerivadoDeContenido
+      ? "derivado_de_contenido"
+      : "extraido"
+    : "extraido";
 
   /*
     ---------------------------------------------------------

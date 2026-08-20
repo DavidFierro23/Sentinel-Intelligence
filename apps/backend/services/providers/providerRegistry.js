@@ -1,5 +1,6 @@
 // apps/backend/services/providers/providerRegistry.js
 
+import serpapiProvider from "./serpapiProvider.js";
 import braveProvider from "./braveProvider.js";
 import duckProvider from "./duckProvider.js";
 
@@ -57,7 +58,19 @@ const PREPARADOS = [
 ];
 
 
-const PROVEEDORES = [braveProvider, duckProvider];
+/*
+  ORDEN DE INTENTO (prioridad ascendente)
+
+    1  SerpAPI      resultados de Google via API oficial
+    2  Brave        estructura lista, pendiente de credencial
+    3  DuckDuckGo   ULTIMO RECURSO
+
+  DuckDuckGo no se elimina: sigue cubriendo el caso de que
+  SerpAPI agote su cuota mensual o falle. Baja a ultimo recurso
+  porque su limite medido (1-2 consultas por investigacion) lo
+  hace inviable como principal.
+*/
+const PROVEEDORES = [serpapiProvider, braveProvider, duckProvider];
 
 
 /*

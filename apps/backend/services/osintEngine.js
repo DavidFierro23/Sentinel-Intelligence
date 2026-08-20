@@ -515,6 +515,55 @@ export async function investigarObjetivo(objetivo) {
 
   let origenIdentidades = "ninguno";
 
+  /*
+    ---------------------------------------------------------
+    ORIGEN DEL DESCUBRIMIENTO — que PROVEEDOR aporto la
+    evidencia (Sprint 3.2.2)
+    ---------------------------------------------------------
+
+    `origenIdentidades` declara que MOTOR tiene la autoridad
+    (Social Evidence > Fusion > legacy). Es una garantia
+    arquitectonica: sin ella un homonimo vetado por CB-1
+    reaparecia en primer plano por la via antigua.
+
+    El proveedor es una dimension distinta y se declara aparte,
+    para no perder ninguna de las dos.
+
+    Se DERIVA de los intentos reales, no se fija a mano: si
+    SerpAPI se queda sin cuota y responde DuckDuckGo, el campo
+    lo dice.
+  */
+  const proveedoresConExito = new Set();
+
+  [
+    ...(social?.descubrimiento?.intentos || []),
+    ...(fusion?.intentos || []),
+    ...(fusion?.motores || []).flatMap((m) => m.intentos || [])
+  ].forEach((i) => {
+    if (i?.estado === "OK" && i?.proveedorId) {
+      proveedoresConExito.add(i.proveedorId);
+    }
+  });
+
+  (social?.fichas || []).forEach((f) => {
+    (f.proveedores || []).forEach((nombre) => {
+      if (/serpapi/i.test(nombre)) proveedoresConExito.add("serpapi_google");
+      else if (/duckduckgo/i.test(nombre)) proveedoresConExito.add("duck_web");
+      else if (/brave/i.test(nombre)) proveedoresConExito.add("brave_web");
+      else if (/wikidata/i.test(nombre)) proveedoresConExito.add("wikidata");
+    });
+  });
+
+  const origenDescubrimiento = proveedoresConExito.has("serpapi_google")
+    ? "serpapi"
+    : proveedoresConExito.has("brave_web")
+      ? "brave"
+      : proveedoresConExito.has("duck_web")
+        ? "duckduckgo"
+        : proveedoresConExito.has("wikidata")
+          ? "wikidata"
+          : "ninguno";
+
   try {
     if (social?.fichas?.length) {
       /*
@@ -816,6 +865,9 @@ export async function investigarObjetivo(objetivo) {
       sin explicación visible.
     */
     origenIdentidades,
+    origenDescubrimiento,
+    proveedoresConExito: [...proveedoresConExito],
+
 
     /*
       TIMELINE

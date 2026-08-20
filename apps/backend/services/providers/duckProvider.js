@@ -30,7 +30,13 @@ responde HTTP 200 con una página sin resultados. Por eso:
 export const ID = "ddg_web";
 export const NOMBRE = "DuckDuckGo Web";
 export const TIPO = "web";
-export const PRIORIDAD = 2;
+/*
+  Baja a 3: ULTIMO RECURSO. No se elimina — sigue siendo la red
+  de seguridad si SerpAPI agota su cuota mensual o falla — pero
+  su limite medido (responde a 1-2 consultas y luego devuelve
+  HTTP 200 sin `result__a`) lo descarta como principal.
+*/
+export const PRIORIDAD = 3;
 
 
 export function estaConfigurado() {

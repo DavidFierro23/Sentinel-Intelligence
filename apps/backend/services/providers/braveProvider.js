@@ -5,7 +5,7 @@ import { limpiarHtml, desenvolverRedireccion } from "../textUtils.js";
 
 /*
 ===========================================================
-BRAVE SEARCH — proveedor web PRINCIPAL
+BRAVE SEARCH — proveedor web SECUNDARIO
 ===========================================================
 
 Estado actual: ESTRUCTURA COMPLETA, PENDIENTE DE CREDENCIAL.
@@ -30,7 +30,13 @@ Por qué Brave como principal:
 export const ID = "brave_web";
 export const NOMBRE = "Brave Search";
 export const TIPO = "web";
-export const PRIORIDAD = 1;
+/*
+  Baja a 2: SerpAPI pasa a principal por tener credencial
+  operativa. Brave conserva su estructura completa y recupera
+  la primera posicion en cuanto se defina BRAVE_API_KEY, sin
+  tocar nada mas.
+*/
+export const PRIORIDAD = 2;
 
 const ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
 

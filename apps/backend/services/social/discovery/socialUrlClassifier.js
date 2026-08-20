@@ -102,6 +102,18 @@ const PLATAFORMAS = Object.freeze([
       { re: /^\/profile\.php/, tipo: TIPOS_URL.PERFIL, handle: null, esCuenta: false, motivoExclusion: "perfil personal de Facebook: fuera de alcance por EX1 (Cap. 14) y por atender solo paginas publicas" },
 
       { re: /^\/pages\/[^/]+\/([^/?#]+)/, tipo: TIPOS_URL.PAGINA, handle: 1, esCuenta: true },
+
+      /*
+        Formato moderno de pagina: /p/Nombre-De-La-Pagina-100066123456789
+
+        Detectado al integrar SerpAPI: Google devuelve muchas
+        paginas publicas en esta forma y se descartaban por
+        completo. Exige el identificador numerico final, que es
+        lo que distingue una pagina real de cualquier otra ruta
+        /p/ — y evita confundirla con /p/ de Instagram, que es
+        una publicacion y pertenece a otra plataforma.
+      */
+      { re: /^\/p\/([A-Za-z0-9._\-%]+-\d{6,})\/?$/, tipo: TIPOS_URL.PAGINA, handle: 1, esCuenta: true },
       { re: /^\/([A-Za-z0-9.][A-Za-z0-9.\-_]{3,60})\/?$/, tipo: TIPOS_URL.PAGINA, handle: 1, esCuenta: true }
     ]
   },
@@ -295,12 +307,45 @@ export function clasificarUrlSocial(urlBruta) {
   */
   let rutaOriginal = "";
 
+  let consultaOriginal = "";
+
   try {
     const u = new URL(
       /^https?:\/\//i.test(urlBruta) ? urlBruta : `https://${urlBruta}`
     );
 
-    rutaOriginal = `${u.pathname}${u.search}`;
+    /*
+      LA CADENA DE CONSULTA SE EXCLUYE DE LA RUTA
+
+      Defecto detectado al integrar SerpAPI (Sprint 3.2.2).
+      Google devuelve las URLs con parametros de idioma y
+      localizacion:
+
+        x.com/jotalloretv?lang=es
+        instagram.com/danielnoboaok/?hl=es-la
+        facebook.com/DanielNoboaOk/?locale=es_LA
+
+      Todos los patrones de CUENTA estan anclados al final con
+      `\/?$` — es lo que impide que un segmento cualquiera se
+      convierta en handle. Al incluir `?lang=es` en la ruta,
+      ninguno coincidia: las tres cuentas reales anteriores se
+      clasificaban como `no_cuenta`.
+
+      Medido: con la consulta incluida, SerpAPI no entregaba una
+      sola cuenta pese a devolverlas todas.
+
+      Excluirla es seguro. El unico patron que menciona la
+      consulta es `/profile.php`, y coincide por la ruta sin
+      necesidad del `?id=`. Los patrones de video (`/watch`)
+      siguen coincidiendo por el ancla de fin de cadena, asi
+      que un video no puede convertirse en canal.
+
+      La consulta se conserva aparte para el mensaje de
+      descarte: al analista le sirve ver la URL como venia.
+    */
+    rutaOriginal = u.pathname;
+
+    consultaOriginal = u.search || "";
   } catch {
     rutaOriginal = "";
   }
@@ -308,7 +353,10 @@ export function clasificarUrlSocial(urlBruta) {
   const ruta = rutaOriginal || (() => {
     const sinDominio = normalizada.slice(dominio.length);
 
-    return sinDominio.startsWith("/") ? sinDominio : `/${sinDominio}`;
+    const bruta = sinDominio.startsWith("/") ? sinDominio : `/${sinDominio}`;
+
+    /* Mismo criterio en el camino de respaldo. */
+    return bruta.split("?")[0].split("#")[0];
   })();
 
   for (const patron of plataforma.patrones) {
@@ -380,7 +428,7 @@ export function clasificarUrlSocial(urlBruta) {
     urlNormalizada: normalizada,
     urlOriginal: urlBruta,
     confianzaInicial: calcularConfianzaInicial(TIPOS_URL.NO_CUENTA, null),
-    motivo: `ruta "${ruta.slice(0, 40)}" no reconocida como cuenta en ${plataforma.nombre}`
+    motivo: `ruta "${(ruta + consultaOriginal).slice(0, 60)}" no reconocida como cuenta en ${plataforma.nombre}`
   };
 }
 
