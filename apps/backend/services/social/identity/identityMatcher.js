@@ -4,6 +4,7 @@ import { evaluarS1 } from "./signals/nameSignal.js";
 import { evaluarS2 } from "./signals/handleSignal.js";
 import { evaluarS6 } from "./signals/officialLinkSignal.js";
 import { evaluarS7, agruparPorHandle } from "./signals/crossPresenceSignal.js";
+import { evaluarS8 } from "./signals/declarationSignal.js";
 
 import { construirExplicacion } from "./matchExplainer.js";
 
@@ -12,6 +13,7 @@ import {
   esEstadoAutomatico,
   nivelDeCorrespondencia,
   topeDeConcurrencia,
+  TOPE_ABSOLUTO,
   SENALES_IMPLEMENTADAS,
   validarCorrespondencia
 } from "../socialContracts.js";
@@ -73,7 +75,8 @@ export function evaluarCandidato(candidato, perfil, contexto = {}) {
     evaluarS1(candidato, perfil),
     evaluarS2(candidato, perfil),
     evaluarS6(candidato, perfil),
-    evaluarS7(candidato, perfil, contexto)
+    evaluarS7(candidato, perfil, contexto),
+    evaluarS8(candidato, perfil)
   ];
 
   const senales = resultados.filter((s) => !s.esContrasenal);
@@ -126,7 +129,16 @@ export function evaluarCandidato(candidato, perfil, contexto = {}) {
 
   const ajusteContexto = cb ? cb.ajuste : 0;
 
-  let puntuacionFinal = Math.max(0, Math.min(100, trasTope + ajusteContexto));
+  /*
+    CB-1 puede sumar por encima del tope de concurrencia, pero
+    NUNCA por encima del tope absoluto. Sin este limite, cinco
+    senales mas un contexto compatible producian 100 — certeza
+    absoluta, que el sistema no emite.
+  */
+  let puntuacionFinal = Math.max(
+    0,
+    Math.min(TOPE_ABSOLUTO, trasTope + ajusteContexto)
+  );
 
   /*
     VETO DE CONTEXTO INCOMPATIBLE

@@ -63,6 +63,16 @@ descubrimiento web, así que el modo real es
 export const MODOS_ACCESO = Object.freeze({
   API_OFICIAL: "api_oficial",
   PUBLICO_LIMITADO: "publico_limitado",
+
+  /*
+    Cuenta que una base de conocimiento (Wikidata) atribuye al
+    objetivo. Evidencia mas fuerte que un resultado de
+    buscador, porque tiene procedencia y edicion auditable,
+    pero SIGUE sin ser una lectura del perfil: no conocemos
+    biografia, seguidores ni si la cuenta esta activa.
+  */
+  DECLARADA_POR_REFERENCIA: "declarada_por_referencia",
+
   PRESENCIA_INFERIDA: "presencia_inferida",
   SIN_CONFIGURAR: "sin_configurar",
   NO_DISPONIBLE: "no_disponible"
@@ -216,6 +226,16 @@ export const SENALES = Object.freeze([
     implementada: true
   },
   {
+    id: "S8",
+    nombre: "Declaración de referencia",
+    descripcion:
+      "Una base de conocimiento con procedencia auditable declara la cuenta como oficial del objetivo",
+    fuerza: "muy_alta",
+    pesoMaximo: 30,
+    puedeSerContrasenal: false,
+    implementada: true
+  },
+  {
     id: "S7",
     nombre: "Presencia cruzada",
     descripcion: "El mismo handle aparece en varias plataformas del objetivo",
@@ -257,11 +277,37 @@ export const TOPE_POR_CONCURRENCIA = Object.freeze({
   1: 45,
   2: 70,
   3: 88,
-  4: 97
+  4: 97,
+  /*
+    Cinco senales independientes (con S8) NO elevan el techo.
+    El techo existe por doctrina, no por falta de senales: la
+    certeza absoluta no es una salida del sistema.
+  */
+  5: 97
 });
 
+
+/*
+-----------------------------------------------------------
+TOPE ABSOLUTO
+
+Ninguna puntuacion de correspondencia puede alcanzar 100,
+por ninguna via y en ninguna combinacion.
+
+Existe porque el tope por concurrencia NO era suficiente:
+CB-1 se aplica DESPUES del tope y puede sumar. Medido en la
+prueba real de Daniel Noboa: 5 senales (tope 97) + CB-1 (+4)
+= 100. El sistema afirmo certeza absoluta, que es
+exactamente lo que el tope humano prohibe.
+
+Este es el ultimo cierre, y se hace cumplir en el validador.
+-----------------------------------------------------------
+*/
+
+export const TOPE_ABSOLUTO = 97;
+
 export function topeDeConcurrencia(numeroDeSenales) {
-  const n = Math.max(0, Math.min(4, Number(numeroDeSenales) || 0));
+  const n = Math.max(0, Math.min(5, Number(numeroDeSenales) || 0));
 
   return TOPE_POR_CONCURRENCIA[n];
 }
@@ -336,6 +382,15 @@ export function validarCorrespondencia(correspondencia) {
 
   if (!Number.isFinite(p) || p < 0 || p > 100) {
     errores.push(`puntuación fuera de rango: ${correspondencia.puntuacion}`);
+  }
+
+  /*
+    TOPE ABSOLUTO — el validador lo hace cumplir.
+  */
+  if (Number.isFinite(p) && p > TOPE_ABSOLUTO) {
+    errores.push(
+      `puntuación ${p} supera el tope absoluto ${TOPE_ABSOLUTO}: el sistema no afirma certeza absoluta`
+    );
   }
 
   /*

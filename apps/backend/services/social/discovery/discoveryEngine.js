@@ -37,6 +37,9 @@ import { contextBoostDeCandidato } from "../identity/contextBoost.js";
 
 /* SD-1A — descubrimiento desde las evidencias ya existentes. */
 import { descubrirDesdeEvidencias } from "./socialUrlClassifier.js";
+
+/* Platform Scanner — cuentas declaradas en base de conocimiento. */
+import { escanearPlataformas } from "../platforms/platformScanner.js";
 import { DOMINIO_POLITICA_EC } from "../identity/contextBoost.js";
 
 /*
@@ -485,6 +488,102 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
 
   /*
     ---------------------------------------------------------
+    VIA 4 — PLATFORM SCANNER (cuentas declaradas)
+    ---------------------------------------------------------
+
+    La via mas fiable disponible sin APIs de plataforma: las
+    cuentas que Wikidata atribuye al objetivo, tras verificar
+    la entidad por nombre y por P31 = Q5.
+
+    Se ejecuta ANTES de las consultas dirigidas porque no
+    consume presupuesto del proveedor de busqueda -- el cuello
+    de botella real de los ultimos sprints.
+  */
+  let scanner = null;
+
+  const antesDelScanner = mapa.size;
+
+  if (!opciones.omitirScanner) {
+    try {
+      scanner = await escanearPlataformas(perfil?.nombrePrincipal || "", {
+        perfil,
+        wikidata: opciones.wikidata || null
+      });
+
+      (scanner.cuentas || []).forEach((c) => {
+        const plataforma = PLATAFORMAS.find((p) => p.id === c.plataformaId);
+
+        if (!plataforma) return;
+
+        const candidato = registrarCandidato(mapa, {
+          plataforma,
+          handle: c.handle,
+          url: c.url,
+          urlNormalizada: c.urlNormalizada,
+          via: "plataforma_declarada",
+          handleTipo: "declarado",
+          proveedor: `${c.fuente.nombre} (${c.fuente.propiedad})`,
+          consulta: null,
+          etiquetaConsulta: null,
+          titulo: null,
+          descripcion: null,
+          evidenciaId: c.fuente.entidad
+        });
+
+        /*
+          El modo de acceso del scanner es mas fuerte que la
+          presencia inferida por descubrimiento web.
+        */
+        candidato.modoAcceso = c.modoAcceso;
+
+        candidato.tipoCuenta = c.tipo;
+
+        /*
+          GRAFIA CANONICA DEL HANDLE
+
+          Si el candidato ya existia por evidencia web, su
+          handle venia como lo escribio el buscador — medido en
+          Daniel Noboa: "danielnoboaok" en minusculas, cuando la
+          cuenta declarada es "DanielNoboaOk".
+
+          La declaracion es la autoridad sobre la grafia: el
+          dedup usa la forma normalizada, asi que sobrescribir
+          la visible no rompe la correspondencia.
+        */
+        candidato.handle = c.handle;
+
+        candidato.handleTipo = "declarado";
+
+        candidato.url = c.url;
+
+        candidato.handleOpaco = Boolean(c.handleOpaco);
+
+        candidato.declaracion = {
+          fuente: c.fuente,
+          confianza: c.confianza,
+          motivoPuntuacion: c.motivoPuntuacion
+        };
+      });
+
+      trazas.push({
+        via: "plataforma_declarada",
+        entrada: scanner.entidad ? 1 : 0,
+        candidatosNuevos: mapa.size - antesDelScanner,
+        entidad: scanner.entidad?.qid || null
+      });
+    } catch (error) {
+      console.error("[discovery] platform scanner fallo:", error);
+
+      trazas.push({
+        via: "plataforma_declarada",
+        resultado: "error",
+        motivo: error?.message || "error desconocido"
+      });
+    }
+  }
+
+  /*
+    ---------------------------------------------------------
     VÍA 3 — CONSULTAS DIRIGIDAS VÍA SEARCH PROVIDER LAYER
     ---------------------------------------------------------
   */
@@ -684,12 +783,30 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
     const consultadaSinExito =
       consultasDeLaPlataforma.length > 0 && !consultadaConExito;
 
+    /*
+      Lo que el Platform Scanner comprobo para esta plataforma.
+      Su motivo es mas informativo que el del descubrimiento
+      web: distingue "no hay declaracion" de "no se consulto".
+    */
+    const scannerPlataforma = (scanner?.cobertura || []).find(
+      (c) => c.plataformaId === p.id
+    );
+
     let estadoPresencia;
     let motivoCobertura;
 
     if (encontrados.length) {
       estadoPresencia = ESTADOS_PRESENCIA.INFERIDA;
       motivoCobertura = `${encontrados.length} candidato(s) descubierto(s).`;
+
+      /*
+        Si el candidato nacio de una declaracion, el modo de
+        acceso real es ese y no la presencia inferida por web.
+      */
+      if (encontrados.some((c) => c.declaracion)) {
+        motivoCobertura +=
+          " Origen: declaración en base de conocimiento; el perfil no fue leído.";
+      }
     } else if (consultadaConExito) {
       estadoPresencia = ESTADOS_PRESENCIA.AUSENCIA;
       motivoCobertura =
@@ -701,7 +818,15 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
         .join(", ")}). No se puede afirmar ausencia.`;
     } else {
       estadoPresencia = ESTADOS_PRESENCIA.NO_COMPROBADA;
-      motivoCobertura = "No se planificó ninguna consulta para esta plataforma.";
+      /*
+        Aunque el descubrimiento web no planifico consulta, el
+        Platform Scanner SI comprobo la declaracion. Decir "no
+        se consulto" cuando si se comprobo algo seria ocultar
+        trabajo real al analista.
+      */
+      motivoCobertura = scannerPlataforma
+        ? scannerPlataforma.motivo
+        : "No se planificó ninguna consulta para esta plataforma.";
     }
 
     return {
@@ -710,6 +835,17 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
       candidatos: encontrados.length,
       estadoPresencia,
       motivoCobertura,
+
+      /*
+        Declarar SIEMPRE como se accedio (o no) a la plataforma.
+      */
+      modoAccesoDeclarado: encontrados.some((c) => c.declaracion)
+        ? MODOS_ACCESO.DECLARADA_POR_REFERENCIA
+        : encontrados.length
+          ? MODOS_ACCESO.PRESENCIA_INFERIDA
+          : MODOS_ACCESO.NO_DISPONIBLE,
+
+      comprobadoPorScanner: Boolean(scannerPlataforma),
       consultasIntentadas: consultasDeLaPlataforma.length,
       consultasConExito: consultasDeLaPlataforma.filter((i) => i.estado === "OK")
         .length,
@@ -729,6 +865,23 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
     cobertura,
 
     plan,
+
+    /*
+      PLATFORM SCANNER — cuentas declaradas y cobertura.
+    */
+    platformScanner: scanner
+      ? {
+          entidad: scanner.entidad,
+          sitioWebOficial: scanner.sitioWebOficial,
+          cuentas: scanner.cuentas,
+          cobertura: scanner.cobertura,
+          traza: scanner.traza,
+          metricas: scanner.metricas,
+          busquedaCompleta: scanner.busquedaCompleta,
+          diagnostico: scanner.diagnostico || null,
+          limites: scanner.limites
+        }
+      : null,
 
     /*
       SD-1A — resultado de clasificar las evidencias que ya
@@ -814,6 +967,7 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
     metricas: {
       candidatosUnicos: candidatos.length,
       candidatosDesdeEvidencias: sd1a.metricas.fichasCandidatas,
+      candidatosDeclarados: scanner?.metricas?.cuentas ?? 0,
       urlsDePlataformaEnEvidencias: sd1a.metricas.urlsDePlataforma,
       contextoCompatible: candidatos.filter((c) =>
         ["compatible", "compatible_con_ruido"].includes(c.contextBoost?.veredicto)

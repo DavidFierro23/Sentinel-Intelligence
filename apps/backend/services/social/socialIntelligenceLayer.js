@@ -165,6 +165,7 @@ export async function ejecutarSocialIntelligence(perfil, opciones = {}) {
       adaptadores: descubrimiento.adaptadores,
       descartados: descubrimiento.descartados || [],
       descubrimientoSocial: descubrimiento.descubrimientoSocial || null,
+      platformScanner: descubrimiento.platformScanner || null,
       desdeEvidencias: descubrimiento.desdeEvidencias || null,
       intentos: descubrimiento.intentos,
       trazas: descubrimiento.trazas,
