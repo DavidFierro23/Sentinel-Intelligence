@@ -165,6 +165,7 @@ export async function ejecutarSocialIntelligence(perfil, opciones = {}) {
       adaptadores: descubrimiento.adaptadores,
       descartados: descubrimiento.descartados || [],
       descubrimientoSocial: descubrimiento.descubrimientoSocial || null,
+      desdeEvidencias: descubrimiento.desdeEvidencias || null,
       intentos: descubrimiento.intentos,
       trazas: descubrimiento.trazas,
       proveedores: descubrimiento.proveedores
@@ -189,6 +190,10 @@ export async function ejecutarSocialIntelligence(perfil, opciones = {}) {
       consultasAncladas: descubrimiento.consultasAncladas ?? 0,
       consultasPorNombre: descubrimiento.consultasPorNombre ?? 0,
       urlsDescartadas: descubrimiento.metricas.urlsDescartadas ?? 0,
+      candidatosDesdeEvidencias:
+        descubrimiento.metricas.candidatosDesdeEvidencias ?? 0,
+      urlsDePlataformaEnEvidencias:
+        descubrimiento.metricas.urlsDePlataformaEnEvidencias ?? 0,
       puntuacionMaxima: correlacion?.metricas.puntuacionMaxima || 0,
       porCalidad: evidencia?.metricas.porCalidad || {},
       plataformasNoComprobadas:

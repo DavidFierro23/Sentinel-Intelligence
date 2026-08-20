@@ -34,6 +34,9 @@ import {
 } from "./platformAdapters.js";
 
 import { contextBoostDeCandidato } from "../identity/contextBoost.js";
+
+/* SD-1A — descubrimiento desde las evidencias ya existentes. */
+import { descubrirDesdeEvidencias } from "./socialUrlClassifier.js";
 import { DOMINIO_POLITICA_EC } from "../identity/contextBoost.js";
 
 /*
@@ -443,6 +446,22 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
 
   const descartados = [];
 
+  /*
+    ---------------------------------------------------------
+    SD-1A · CLASIFICACION DE LAS EVIDENCIAS EXISTENTES
+    ---------------------------------------------------------
+
+    Se recorren TODAS las evidencias del Fusion Engine con el
+    clasificador de URLs sociales, que distingue pagina,
+    canal, perfil, video y post, y solo crea cuenta cuando la
+    URL identifica un propietario.
+
+    Su salida es el diagnostico honesto de esta via: cuantas
+    URLs se examinaron, cuantas eran de plataforma y por que
+    se descarto cada una.
+  */
+  const sd1a = descubrirDesdeEvidencias(evidenciasPrevias);
+
   evidenciasPrevias.forEach((ev) => {
     const datos = candidatoDesdeResultado(ev, "evidencia_fusion", {
       proveedor: (ev.motores || []).map((m) => m.nombre).join(" + ") || null
@@ -712,6 +731,19 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
     plan,
 
     /*
+      SD-1A — resultado de clasificar las evidencias que ya
+      existian, sin lanzar ninguna consulta nueva.
+    */
+    desdeEvidencias: {
+      version: sd1a.version,
+      fichas: sd1a.fichas,
+      metricas: sd1a.metricas,
+      clasificadas: sd1a.clasificadas,
+      descartadas: sd1a.descartadas,
+      diagnostico: sd1a.diagnostico
+    },
+
+    /*
       SD-1 — estado real del descubrimiento social.
     */
     descubrimientoSocial: {
@@ -759,6 +791,7 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
     advertencias: [
       ...(planificacion.advertencia ? [planificacion.advertencia] : []),
       ...(resumen?.advertencias || []),
+      ...(sd1a.diagnostico ? [sd1a.diagnostico] : []),
       ...(sinProveedor && plan.length
         ? [
             `Descubrimiento social OMITIDO: ningun proveedor web estaba utilizable al llegar a esta etapa. Las ${plan.length} consultas planificadas no se lanzaron y las plataformas quedan NO COMPROBADAS, no ausentes.`
@@ -780,6 +813,8 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
 
     metricas: {
       candidatosUnicos: candidatos.length,
+      candidatosDesdeEvidencias: sd1a.metricas.fichasCandidatas,
+      urlsDePlataformaEnEvidencias: sd1a.metricas.urlsDePlataforma,
       contextoCompatible: candidatos.filter((c) =>
         ["compatible", "compatible_con_ruido"].includes(c.contextBoost?.veredicto)
       ).length,
