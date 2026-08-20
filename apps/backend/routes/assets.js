@@ -92,20 +92,18 @@ router.get("/:assetId/ficha", (req, res) => {
 router.get("/:assetId", async (req, res) => {
   const { assetId } = req.params;
 
-  const src = req.query.src;
-
-  if (!src) {
-    return res.status(400).json({
-      error: "Falta el parámetro src.",
-      nota:
-        "La ruta lleva assetId y src a propósito: el gateway comprueba que el hash de src coincide con el assetId, de modo que el par no se puede falsificar."
-    });
-  }
+  /*
+    B2 (QA-1): `src` es OPCIONAL. La via principal es el
+    registro del gateway, para que ninguna URL de Wikimedia
+    aparezca en el frontend. `src` solo sirve de respaldo tras
+    un reinicio del backend.
+  */
+  const src = req.query.src ? String(req.query.src) : null;
 
   try {
     const activo = await obtenerActivo(
       assetId,
-      String(src),
+      src,
       req.query.tipo ? String(req.query.tipo) : null
     );
 

@@ -10,7 +10,12 @@ import {
   textoDeResultado
 } from "../../textUtils.js";
 
-import { buscarWeb, crearSesion, resumirSesion } from "../../searchProviderLayer.js";
+import {
+  buscarWeb,
+  crearSesion,
+  resumirSesion,
+  diagnosticoProveedores
+} from "../../searchProviderLayer.js";
 
 import {
   esPlataformaSocial,
@@ -486,11 +491,49 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
 
   const sesion = opciones.sesion || crearSesion({ tipo: "web" });
 
+  /*
+    ---------------------------------------------------------
+    SD-1 · CORTE TEMPRANO POR PROVEEDOR AGOTADO
+    ---------------------------------------------------------
+
+    Defecto medido en las corridas de QA: el descubrimiento
+    general consume 1 consulta y el Fusion Engine hasta 4. Al
+    llegar aqui, DuckDuckGo ya esta limitado — y el SIL
+    lanzaba 10 consultas mas que fallaban todas, tardando
+    varios segundos para no obtener nada.
+
+    Peor que la lentitud: gastar el presupuesto en consultas
+    condenadas impide que las que SI podrian responder lo
+    hagan.
+
+    Ahora se comprueba antes: si ningun proveedor web esta
+    utilizable, no se lanza el plan. Las plataformas quedan
+    NO COMPROBADAS con su motivo, que es la verdad, en lugar
+    de diez bloqueos identicos.
+  */
+  const diagnostico = diagnosticoProveedores();
+
+  const proveedoresUtilizables = (diagnostico.proveedores || []).filter(
+    (p) => p.disponible
+  );
+
+  const sinProveedor = proveedoresUtilizables.length === 0;
+
+  if (sinProveedor && plan.length) {
+    trazas.push({
+      via: "consulta_dirigida",
+      resultado: "omitida",
+      motivo: `Ningun proveedor web utilizable (${(diagnostico.proveedores || [])
+        .map((p) => `${p.nombre}: ${p.estado}`)
+        .join("; ")}). No se lanzan las ${plan.length} consultas planificadas.`
+    });
+  }
+
   const intentos = [];
 
   const antesDeVia3 = mapa.size;
 
-  for (const entrada of plan) {
+  for (const entrada of sinProveedor ? [] : plan) {
     const respuesta = await buscarWeb(entrada.consulta, {
       etiqueta: entrada.etiqueta,
       sesion
@@ -669,6 +712,19 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
     plan,
 
     /*
+      SD-1 — estado real del descubrimiento social.
+    */
+    descubrimientoSocial: {
+      proveedoresUtilizables: proveedoresUtilizables.map((p) => p.nombre),
+      sinProveedor,
+      consultasPlanificadas: plan.length,
+      consultasLanzadas: sinProveedor ? 0 : plan.length,
+      motivoOmision: sinProveedor
+        ? "Ningun proveedor web utilizable al llegar a esta etapa. Las consultas planificadas no se lanzaron."
+        : null
+    },
+
+    /*
       Anclas de identidad usadas para derivar las consultas.
     */
     anclas: planificacion.anclas,
@@ -703,6 +759,11 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
     advertencias: [
       ...(planificacion.advertencia ? [planificacion.advertencia] : []),
       ...(resumen?.advertencias || []),
+      ...(sinProveedor && plan.length
+        ? [
+            `Descubrimiento social OMITIDO: ningun proveedor web estaba utilizable al llegar a esta etapa. Las ${plan.length} consultas planificadas no se lanzaron y las plataformas quedan NO COMPROBADAS, no ausentes.`
+          ]
+        : []),
       ...(intentos.some((i) => i.estado !== "OK")
         ? [
             `${intentos.filter((i) => i.estado !== "OK").length} de ${intentos.length} consultas sociales no obtuvieron respuesta del proveedor. Las plataformas afectadas quedan como NO COMPROBADAS, no como ausentes.`

@@ -46,9 +46,23 @@ el proveedor que lo encontró y la plataforma donde vive.
 */
 
 
+/*
+-----------------------------------------------------------
+PRIORIDAD DE DESCUBRIMIENTO (SD-1)
+
+El sprint acota el descubrimiento a cinco plataformas:
+Facebook Page, X, YouTube, TikTok y LinkedIn. Instagram sigue
+soportado, pero va DESPUES: con un presupuesto de consultas
+escaso, el orden decide que se descubre y que no.
+
+`prioridad` 1 = se consulta primero.
+-----------------------------------------------------------
+*/
+
 export const ADAPTADORES = Object.freeze([
   {
     id: "x",
+    prioridad: 1,
     nombre: "X",
     plataformaId: "x",
     dominios: ["x.com", "twitter.com"],
@@ -63,6 +77,7 @@ export const ADAPTADORES = Object.freeze([
   },
   {
     id: "facebook_pages",
+    prioridad: 1,
     nombre: "Facebook Pages",
     plataformaId: "facebook",
     dominios: ["facebook.com", "m.facebook.com", "fb.com"],
@@ -82,6 +97,7 @@ export const ADAPTADORES = Object.freeze([
   },
   {
     id: "youtube",
+    prioridad: 1,
     nombre: "YouTube",
     plataformaId: "youtube",
     dominios: ["youtube.com", "youtu.be"],
@@ -92,6 +108,7 @@ export const ADAPTADORES = Object.freeze([
   },
   {
     id: "instagram",
+    prioridad: 3,
     nombre: "Instagram",
     plataformaId: "instagram",
     dominios: ["instagram.com"],
@@ -102,6 +119,7 @@ export const ADAPTADORES = Object.freeze([
   },
   {
     id: "tiktok",
+    prioridad: 2,
     nombre: "TikTok",
     plataformaId: "tiktok",
     dominios: ["tiktok.com"],
@@ -112,6 +130,7 @@ export const ADAPTADORES = Object.freeze([
   },
   {
     id: "linkedin",
+    prioridad: 2,
     nombre: "LinkedIn",
     plataformaId: "linkedin",
     dominios: ["linkedin.com"],
@@ -259,9 +278,9 @@ export function planificarConsultasDerivadas(perfil, opciones = {}) {
 
   const anclas = extraerAnclas(perfil, dominio);
 
-  const adaptadores = (opciones.adaptadores || ADAPTADORES).filter(
-    (a) => a.publico
-  );
+  const adaptadores = [...(opciones.adaptadores || ADAPTADORES)]
+    .filter((a) => a.publico)
+    .sort((a, b) => (a.prioridad || 9) - (b.prioridad || 9));
 
   const plan = [];
 
@@ -320,7 +339,7 @@ export function planificarConsultasDerivadas(perfil, opciones = {}) {
          existir sin que su descripción mencione el contexto,
          pero va DESPUÉS y se marca como no anclada.
     */
-    if ((adaptador.presupuesto || 1) >= 2) {
+    if ((adaptador.presupuesto || 1) >= 2 && adaptador.prioridad === 1) {
       agregar(
         `site:${dominioPrincipal} "${nombre}"`,
         `nombre:${adaptador.id}`,

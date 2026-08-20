@@ -293,12 +293,25 @@ export function registrarActivo({
     tipoNombre: validacion.definicion.nombre,
 
     /*
-      Ruta por la que el frontend pide el activo. Lleva el
-      assetId Y la URL: el servidor comprueba que el hash de
-      la URL coincide con el assetId, así que el par no se
-      puede falsificar.
+      ---------------------------------------------------------
+      RUTA DEL ACTIVO — solo el assetId
+      ---------------------------------------------------------
+
+      B2 (QA-1): la version anterior incluia la URL de origen
+      en `?src=`. Aunque el navegador pedia el activo a NUESTRO
+      host y el CORS funcionaba, la cadena
+      «...?src=https://commons.wikimedia.org/...» hacia que una
+      URL de Wikimedia SI existiera en el frontend, visible en
+      las herramientas del navegador.
+
+      La exigencia es que no exista ninguna. El assetId basta:
+      el gateway conoce su origen porque lo registro el.
+
+      `src` sigue ACEPTANDOSE como respaldo opcional (el
+      registro vive en memoria y se pierde al reiniciar), pero
+      ya no se EMITE.
     */
-    ruta: `${RUTA_BASE}/${assetId}?src=${encodeURIComponent(sourceUrl)}`,
+    ruta: `${RUTA_BASE}/${assetId}`,
 
     contexto,
 
@@ -326,9 +339,38 @@ tipo, aplicada también al host final.
 ===========================================================
 */
 
-export async function obtenerActivo(assetId, sourceUrl, sourceTypeSugerido = null) {
-  if (!assetId || !sourceUrl) {
-    return { ok: false, estado: 400, motivo: "faltan assetId o src" };
+export async function obtenerActivo(assetId, sourceUrlRecibida = null, sourceTypeSugerido = null) {
+  if (!assetId) {
+    return { ok: false, estado: 400, motivo: "falta assetId" };
+  }
+
+  /*
+    ---------------------------------------------------------
+    RESOLUCION DEL ORIGEN
+
+    Via principal: el REGISTRO. El gateway emitio el assetId,
+    asi que conoce su sourceUrl; el cliente no necesita
+    enviarla y por tanto no aparece en el frontend.
+
+    Via de respaldo: `src`. El registro es en memoria y se
+    pierde al reiniciar el backend; una pagina ya cargada
+    seguiria pidiendo activos con assetId que el proceso nuevo
+    no conoce. Aceptar `src` cuando se envia hace el sistema
+    autorreparable, y el control de integridad del par sigue
+    aplicandose igual.
+  */
+  const fichaRegistrada = registro.get(assetId);
+
+  const sourceUrl = fichaRegistrada?.sourceUrl || sourceUrlRecibida;
+
+  if (!sourceUrl) {
+    return {
+      ok: false,
+      estado: 404,
+      motivo:
+        "activo no registrado en esta instancia y sin src de respaldo. El registro es en memoria: vuelva a ejecutar la investigacion para registrarlo.",
+      requiereRegistro: true
+    };
   }
 
   /*
@@ -351,8 +393,9 @@ export async function obtenerActivo(assetId, sourceUrl, sourceTypeSugerido = nul
     return {
       ok: false,
       estado: 403,
-      motivo:
-        "el assetId no corresponde al hash de la URL enviada: el par no fue emitido por el gateway"
+      motivo: fichaRegistrada
+        ? "inconsistencia interna: el registro no verifica su propio hash"
+        : "el assetId no corresponde al hash de la URL enviada: el par no fue emitido por el gateway"
     };
   }
 
