@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"
+     role="img" aria-label="Sentinel Intelligence">
+
+  <!--
+  ISOTIPO REDUCIDO — para favicon y tamaños pequeños.
+
+  Misma geometría y misma paleta que sentinel-logo.svg, con dos
+  ajustes de legibilidad a 16 px: el halo segmentado desaparece
+  (a ese tamaño se convierte en ruido) y los trazos engordan.
+  Las proporciones de cabeza, ojos y cejas NO cambian.
+  -->
+
+  <defs>
+    <linearGradient id="iconCabeza" x1="32" y1="6" x2="32" y2="58"
+                    gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B5FFF"/>
+      <stop offset="1" stop-color="#081A4A"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="64" height="64" rx="14" fill="#061126"/>
+
+  <circle cx="32" cy="33" r="23" fill="url(#iconCabeza)"/>
+  <circle cx="32" cy="33" r="23" fill="none" stroke="#00D4FF" stroke-width="1.8"
+          opacity="0.6"/>
+
+  <path d="M 15.6 17.2 L 21.0 12.2 L 22.4 20.2 Z" fill="#0B5FFF"/>
+  <path d="M 48.4 17.2 L 43.0 12.2 L 41.6 20.2 Z" fill="#0B5FFF"/>
+
+  <g stroke="#00D4FF" stroke-width="3.4" stroke-linecap="round">
+    <line x1="14.4" y1="23.6" x2="26.6" y2="22.0"/>
+    <line x1="49.6" y1="23.6" x2="37.4" y2="22.0"/>
+  </g>
+
+  <!-- Ojo izquierdo · EXTRACCIÓN -->
+  <circle cx="22.6" cy="32.2" r="8.1" fill="#061126"/>
+  <circle cx="22.6" cy="32.2" r="8.1" fill="none" stroke="#00D4FF" stroke-width="1.4"/>
+  <circle cx="22.6" cy="32.2" r="4.1" fill="#00D4FF"/>
+
+  <!-- Ojo derecho · ANÁLISIS -->
+  <circle cx="41.4" cy="32.2" r="8.1" fill="#061126"/>
+  <circle cx="41.4" cy="32.2" r="8.1" fill="none" stroke="#0B5FFF" stroke-width="1.4"/>
+  <circle cx="41.4" cy="32.2" r="4.1" fill="#4C8DFF"/>
+
+  <path d="M 32 36.2 L 28.6 41.6 L 35.4 41.6 Z" fill="#00D4FF"/>
+</svg>

@@ -8,11 +8,38 @@ import ForceGraph2D from "react-force-graph-2d";
   cuenta del objetivo de un medio que lo cubre induce
   exactamente el error que el Protocolo Universal prohibe.
 */
+/*
+  LEYENDA OFICIAL (UX-BRAND-001)
+
+  Los colores salen de la paleta oficial y cada uno corresponde a
+  UNA clase que el backend ya produce. Nada se recolorea "porque
+  queda bien": si no hay clase que lo respalde, no hay color.
+
+  Aliado y Oposicion figuran en la identidad visual pero el Core
+  NO los clasifica todavia: no existe motor que decida alianza ni
+  oposicion. Se declaran con `sinDatos` para que aparezcan en la
+  leyenda —la marca los reserva— sin que ningun nodo pueda
+  pintarse de ellos. Inventar esa asignacion seria atribuir una
+  postura politica sin evidencia.
+*/
 const CLASES_GRAFO = [
-  { clase: "cuenta_personal", etiqueta: "Cuenta del objetivo", color: "#22C55E" },
-  { clase: "medio", etiqueta: "Medio de comunicación", color: "#F59E0B" },
-  { clase: "institucion", etiqueta: "Institución", color: "#8B5CF6" },
-  { clase: "no_determinado", etiqueta: "Sin determinar", color: "#64748B" }
+  { clase: "cuenta_personal", etiqueta: "Cuenta oficial", color: "#0B5FFF" },
+  { clase: "institucion", etiqueta: "Institución", color: "#22C55E" },
+  { clase: "medio", etiqueta: "Medio", color: "#F59E0B" },
+  { clase: "aliado", etiqueta: "Aliado", color: "#A855F7", sinDatos: true },
+  { clase: "oposicion", etiqueta: "Oposición", color: "#EF4444", sinDatos: true },
+  { clase: "no_determinado", etiqueta: "Pendiente", color: "#94A3B8" }
+];
+
+/*
+  FILTROS DE VISTA. Solo ocultan; no alteran el grafo que el
+  backend produjo ni recalculan nada.
+*/
+const FILTROS = [
+  { id: "todo", etiqueta: "Ecosistema", clases: null },
+  { id: "cuentas", etiqueta: "Solo cuentas", clases: ["cuenta_personal"] },
+  { id: "medios", etiqueta: "Medios", clases: ["medio"] },
+  { id: "instituciones", etiqueta: "Instituciones", clases: ["institucion"] }
 ];
 
 const colores = {
@@ -30,6 +57,7 @@ const colores = {
 export default function KnowledgeGraph({ resultado }) {
   const fgRef = useRef();
   const [avatar, setAvatar] = useState(null);
+  const [filtro, setFiltro] = useState("todo");
 
   useEffect(() => {
     if (!resultado?.identidad?.avatar) {
@@ -62,7 +90,17 @@ export default function KnowledgeGraph({ resultado }) {
       fy: 0
     });
 
-    const entidades = resultado.entidades || [];
+    const clasesVisibles =
+      (FILTROS.find((f) => f.id === filtro) || {}).clases || null;
+
+    const entidades = (resultado.entidades || []).filter((e) => {
+      if (!clasesVisibles) return true;
+
+      /* Los nodos de dominio (no sociales) solo en Ecosistema. */
+      if (e.origenNodo !== "social_intelligence_layer") return false;
+
+      return clasesVisibles.includes(e.clase || "no_determinado");
+    });
     const radio = 180;
     const total = entidades.length || 1;
 
@@ -80,7 +118,16 @@ export default function KnowledgeGraph({ resultado }) {
           el color debe venir de la PLATAFORMA. Sin esto todas
           las cuentas saldrian del mismo azul generico.
         */
-        color: colores[e.plataforma] || colores[e.nombre] || "#3B82F6",
+        /*
+          UX-BRAND-001: el color dominante pasa a ser la CLASE,
+          porque es lo que la leyenda oficial declara. La
+          plataforma se conserva y se dibuja como borde.
+        */
+        color:
+          (CLASES_GRAFO.find(
+            (c) => c.clase === (e.clase || "no_determinado")
+          ) || {}).color || "#3B82F6",
+        colorPlataforma: colores[e.plataforma] || colores[e.nombre] || "#3B82F6",
         plataforma: e.plataforma || null,
         clase: e.clase || null,
         esDelObjetivo: e.esDelObjetivo === true,
@@ -101,7 +148,7 @@ export default function KnowledgeGraph({ resultado }) {
     });
 
     return { nodes, links };
-  }, [resultado]);
+  }, [resultado, filtro]);
 
   useEffect(() => {
     if (!fgRef.current) return;
@@ -124,25 +171,75 @@ export default function KnowledgeGraph({ resultado }) {
         overflow: "hidden"
       }}
     >
+      {/* FILTROS DE VISTA — solo ocultan, no recalculan nada. */}
+      <div
+        style={{
+          display: "flex",
+          gap: "8px",
+          flexWrap: "wrap",
+          alignItems: "center",
+          padding: "12px 18px",
+          borderBottom: "1px solid var(--sentinel-borde)",
+          background: "var(--sentinel-primary)"
+        }}
+      >
+        {FILTROS.map((f) => {
+          const activo = filtro === f.id;
+
+          return (
+            <button
+              key={f.id}
+              className="sentinel-hover"
+              onClick={() => setFiltro(f.id)}
+              aria-pressed={activo}
+              style={{
+                background: activo ? "rgba(11,95,255,.22)" : "transparent",
+                border: `1px solid ${
+                  activo ? "var(--sentinel-cyan)" : "var(--sentinel-borde)"
+                }`,
+                borderRadius: "var(--radio-pill)",
+                color: activo ? "#FFFFFF" : "var(--sentinel-texto-suave)",
+                padding: "6px 15px",
+                cursor: "pointer",
+                fontSize: "11.5px",
+                fontWeight: activo ? 650 : 500
+              }}
+            >
+              {f.etiqueta}
+            </button>
+          );
+        })}
+
+        <span
+          style={{
+            marginLeft: "auto",
+            color: "var(--sentinel-texto-tenue)",
+            fontSize: "10.5px"
+          }}
+        >
+          {Math.max(0, graphData.nodes.length - 1)} nodo(s) visibles
+        </span>
+      </div>
+
       {/*
-        LEYENDA PERMANENTE — Bloque D. Sin ella el analista no
-        puede saber si un circulo es la cuenta del objetivo o un
-        medio que lo cubre.
+        LEYENDA PERMANENTE. Sin ella el analista no puede saber si
+        un circulo es la cuenta del objetivo o un medio que lo
+        cubre.
       */}
       <div
         style={{
           display: "flex",
-          gap: "18px",
+          gap: "16px",
           flexWrap: "wrap",
           alignItems: "center",
-          padding: "12px 18px",
-          borderBottom: "1px solid #14224A",
-          background: "#0B1738"
+          padding: "11px 18px",
+          borderBottom: "1px solid var(--sentinel-borde)",
+          background: "var(--sentinel-surface)"
         }}
       >
         <span
           style={{
-            color: "#60A5FA",
+            color: "var(--sentinel-cyan)",
             fontSize: "10px",
             letterSpacing: "2px",
             textTransform: "uppercase"
@@ -154,11 +251,18 @@ export default function KnowledgeGraph({ resultado }) {
         {CLASES_GRAFO.map((c) => (
           <span
             key={c.clase}
+            title={
+              c.sinDatos
+                ? "Reservado por la identidad visual. El Core no clasifica esta categoria todavia, asi que ningun nodo puede recibirla."
+                : c.etiqueta
+            }
             style={{
               display: "flex",
               alignItems: "center",
               gap: "6px",
-              color: "#94A3B8",
+              color: c.sinDatos
+                ? "var(--sentinel-texto-tenue)"
+                : "var(--sentinel-texto-suave)",
               fontSize: "11px"
             }}
           >
@@ -167,22 +271,38 @@ export default function KnowledgeGraph({ resultado }) {
                 width: "9px",
                 height: "9px",
                 borderRadius: "50%",
-                background: c.color,
+                background: c.sinDatos ? "transparent" : c.color,
+                border: c.sinDatos ? `1.5px dashed ${c.color}` : "none",
+                boxSizing: "border-box",
                 flexShrink: 0
               }}
             />
             {c.etiqueta}
+            {c.sinDatos && (
+              <em
+                style={{
+                  fontStyle: "normal",
+                  fontSize: "9px",
+                  color: "var(--sentinel-texto-tenue)",
+                  border: "1px solid var(--sentinel-borde)",
+                  borderRadius: "var(--radio-pill)",
+                  padding: "1px 6px"
+                }}
+              >
+                sin datos
+              </em>
+            )}
           </span>
         ))}
 
         <span
           style={{
             marginLeft: "auto",
-            color: "#475569",
+            color: "var(--sentinel-texto-tenue)",
             fontSize: "10.5px"
           }}
         >
-          el borde indica la clase · el relleno, la plataforma
+          el relleno indica la clase · el borde, la plataforma
         </span>
       </div>
 
@@ -256,20 +376,17 @@ export default function KnowledgeGraph({ resultado }) {
           ctx.fill();
 
           /*
-            EL BORDE INDICA LA CLASE — Bloque D.
+            EL RELLENO INDICA LA CLASE; EL BORDE, LA PLATAFORMA.
 
-            El relleno ya dice la plataforma. El borde dice si es
-            la cuenta del objetivo, un medio que lo cubre o una
-            institucion. Sin esta distincion el grafo induce el
-            error que el Protocolo Universal prohibe.
+            Invertido en UX-BRAND-001 respecto de la version
+            anterior: la leyenda oficial asigna color a la CLASE,
+            asi que la clase debe dominar visualmente. Distinguir
+            la cuenta del objetivo de un medio que lo cubre es la
+            lectura principal del grafo.
           */
-          const claseColor =
-            (CLASES_GRAFO.find((c) => c.clase === node.clase) || {}).color ||
-            "#FFFFFF";
-
           ctx.beginPath();
           ctx.arc(x, y, r, 0, Math.PI * 2);
-          ctx.strokeStyle = claseColor;
+          ctx.strokeStyle = node.colorPlataforma || "#FFFFFF";
           ctx.lineWidth = node.esDelObjetivo ? 4 : 2.5;
           ctx.stroke();
 

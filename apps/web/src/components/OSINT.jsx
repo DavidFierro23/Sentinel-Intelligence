@@ -1,10 +1,15 @@
-import { useMemo, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useState
+} from "react";
 import {
   Search,
   ShieldCheck,
   ExternalLink,
-  Loader2,
-  UserCircle
+  Loader2
 } from "lucide-react";
 
 import KnowledgeGraph from "./KnowledgeGraph";
@@ -12,9 +17,27 @@ import IdentityCorrelationPanel from "./IdentityCorrelationPanel";
 import ReferenceProfilePanel from "./ReferenceProfilePanel";
 import SocialAccountsPanel from "./SocialAccountsPanel";
 import ExecutiveProfilePanel from "./ExecutiveProfilePanel";
+import LoadingInvestigation from "./LoadingInvestigation";
 
-export default function OSINT() {
-  const [consulta, setConsulta] = useState("");
+/*
+  Sprint UX-BRAND-001
+
+  El buscador del Header ejecutivo no implementa una busqueda
+  nueva: DELEGA en esta, que es la unica puerta al Discovery
+  Engine. Para eso OSINT admite control externo opcional. Si no
+  se le pasa nada, se comporta exactamente como antes.
+*/
+const OSINT = forwardRef(function OSINT(
+  { consultaExterna = null, onConsultaExterna = null, onEstado = null },
+  ref
+) {
+  const [consultaLocal, setConsultaLocal] = useState("");
+
+  const controlada = onConsultaExterna !== null;
+
+  const consulta = controlada ? consultaExterna || "" : consultaLocal;
+
+  const setConsulta = controlada ? onConsultaExterna : setConsultaLocal;
   const [resultado, setResultado] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [entidadActiva, setEntidadActiva] = useState("Todas");
@@ -42,6 +65,22 @@ export default function OSINT() {
       setCargando(false);
     }
   }
+
+  /* El Header muestra "Investigando..." con el estado real. */
+  useEffect(() => {
+    if (onEstado) onEstado({ cargando, tieneResultado: Boolean(resultado) });
+  }, [cargando, resultado, onEstado]);
+
+  /*
+    El Header dispara la busqueda a traves de este handle.
+
+    Se usa useImperativeHandle y no un contador con useEffect: un
+    contador obligaria a llamar setState dentro de un efecto, que
+    provoca renders en cascada y que React marca como
+    antipatron. Aqui App invoca directamente, sin render
+    intermedio.
+  */
+  useImperativeHandle(ref, () => ({ buscar: ejecutarBusqueda }));
 
   const entidades = useMemo(() => resultado?.entidades || [], [resultado]);
 
@@ -100,11 +139,11 @@ export default function OSINT() {
         style={{
           display: "flex",
           width: "100%",
-          border: "1px solid #2563EB",
+          border: "1px solid var(--sentinel-borde-vivo)",
           borderRadius: "18px",
           overflow: "hidden",
           marginBottom: "28px",
-          boxShadow: "0 0 18px rgba(37,99,235,.25)"
+          boxShadow: "var(--glow-blue)"
         }}
       >
         <div
@@ -112,11 +151,11 @@ export default function OSINT() {
             flex: 1,
             display: "flex",
             alignItems: "center",
-            background: "#08142F",
+            background: "var(--sentinel-surface)",
             padding: "0 18px"
           }}
         >
-          <Search color="#60A5FA" size={22} />
+          <Search color="var(--sentinel-cyan)" size={22} />
 
           <input
             value={consulta}
@@ -140,7 +179,9 @@ export default function OSINT() {
           disabled={cargando}
           style={{
             width: "180px",
-            background: cargando ? "#1E40AF" : "#2563EB",
+            background: cargando
+              ? "var(--sentinel-primary)"
+              : "var(--sentinel-blue)",
             color: "white",
             border: "none",
             cursor: cargando ? "wait" : "pointer",
@@ -165,6 +206,14 @@ export default function OSINT() {
           )}
         </button>
       </div>
+
+      {/*
+        PANTALLA DE CARGA DE MARCA — sustituye al indicador
+        generico mientras no hay resultado que mostrar.
+      */}
+      {cargando && !resultado && (
+        <LoadingInvestigation objetivo={consulta.trim() || null} />
+      )}
 
       {resultado && (
         <>
@@ -230,7 +279,7 @@ export default function OSINT() {
                 marginBottom: "20px"
               }}
             >
-              Sentinel Intelligence Report
+              Centro de Inteligencia Digital
             </h2>
 
             <div
@@ -396,7 +445,7 @@ export default function OSINT() {
       )}
     </div>
   );
-}
+});
 
 function boton(activo) {
   return {
@@ -408,3 +457,5 @@ function boton(activo) {
     cursor: "pointer"
   };
 }
+
+export default OSINT;
