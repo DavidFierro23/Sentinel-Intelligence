@@ -625,13 +625,20 @@ export default {
   /*
     Presupuesto por investigación.
 
-    Deliberadamente 4 y no 8: el plan gratuito da 250 búsquedas
-    AL MES, un saldo que no se recupera esperando. Con 4 el
-    saldo cubre ~62 investigaciones; con 8, la mitad.
+    SEIS, una por plataforma obligatoria (ARQ-PUI-001).
+
+    El plan gratuito da 250 busquedas AL MES: un saldo que no se
+    recupera esperando. Con 6 cubre ~41 investigaciones
+    mensuales, frente a ~62 con 4.
+
+    Se sube de 4 a 6 porque el Protocolo Universal declara las
+    seis plataformas OBLIGATORIAS y TikTok prioritario: con 4 y
+    reparto a lo ancho, dos plataformas quedaban siempre sin
+    tocar. Cubrir seis plataformas exige seis consultas.
 
     Intervalo corto: es una API, no un raspado.
   */
-  presupuesto: 4,
+  presupuesto: 6,
   intervaloMs: 250,
 
   /* Extras propios, para el informe de proveedores. */

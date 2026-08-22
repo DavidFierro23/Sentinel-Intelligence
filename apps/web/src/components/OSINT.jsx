@@ -11,6 +11,7 @@ import KnowledgeGraph from "./KnowledgeGraph";
 import IdentityCorrelationPanel from "./IdentityCorrelationPanel";
 import ReferenceProfilePanel from "./ReferenceProfilePanel";
 import SocialAccountsPanel from "./SocialAccountsPanel";
+import ExecutiveProfilePanel from "./ExecutiveProfilePanel";
 
 export default function OSINT() {
   const [consulta, setConsulta] = useState("");
@@ -262,6 +263,13 @@ export default function OSINT() {
             />
 
             {/* CUENTAS CANDIDATAS · Social Intelligence Layer */}
+
+            {/*
+              ARQ-PUI-001 Bloque F — va ANTES del panel de
+              candidatas: primero lo que se atribuye al objetivo,
+              despues el material bruto del descubrimiento.
+            */}
+            <ExecutiveProfilePanel perfil={resultado.perfilEjecutivo} />
 
             <SocialAccountsPanel
               cuentas={resultado.fichaObjetivo?.cuentas || []}

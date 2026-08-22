@@ -1,6 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import ForceGraph2D from "react-force-graph-2d";
 
+/*
+  LEYENDA PERMANENTE (ARQ-PUI-001, Bloque D)
+
+  Permanente y no plegable: un grafo donde no se distingue la
+  cuenta del objetivo de un medio que lo cubre induce
+  exactamente el error que el Protocolo Universal prohibe.
+*/
+const CLASES_GRAFO = [
+  { clase: "cuenta_personal", etiqueta: "Cuenta del objetivo", color: "#22C55E" },
+  { clase: "medio", etiqueta: "Medio de comunicación", color: "#F59E0B" },
+  { clase: "institucion", etiqueta: "Institución", color: "#8B5CF6" },
+  { clase: "no_determinado", etiqueta: "Sin determinar", color: "#64748B" }
+];
+
 const colores = {
   Facebook: "#1877F2",
   Instagram: "#E1306C",
@@ -68,6 +82,8 @@ export default function KnowledgeGraph({ resultado }) {
         */
         color: colores[e.plataforma] || colores[e.nombre] || "#3B82F6",
         plataforma: e.plataforma || null,
+        clase: e.clase || null,
+        esDelObjetivo: e.esDelObjetivo === true,
         handle: e.handle || null,
         correspondencia: e.correspondencia ?? null,
         vetadoPorContexto: e.vetadoPorContexto === true,
@@ -102,13 +118,75 @@ export default function KnowledgeGraph({ resultado }) {
     <div
       style={{
         width: "100%",
-        height: "560px",
         background: "#08142F",
         borderRadius: "20px",
         border: "1px solid #1E3A8A",
         overflow: "hidden"
       }}
     >
+      {/*
+        LEYENDA PERMANENTE — Bloque D. Sin ella el analista no
+        puede saber si un circulo es la cuenta del objetivo o un
+        medio que lo cubre.
+      */}
+      <div
+        style={{
+          display: "flex",
+          gap: "18px",
+          flexWrap: "wrap",
+          alignItems: "center",
+          padding: "12px 18px",
+          borderBottom: "1px solid #14224A",
+          background: "#0B1738"
+        }}
+      >
+        <span
+          style={{
+            color: "#60A5FA",
+            fontSize: "10px",
+            letterSpacing: "2px",
+            textTransform: "uppercase"
+          }}
+        >
+          Leyenda
+        </span>
+
+        {CLASES_GRAFO.map((c) => (
+          <span
+            key={c.clase}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              color: "#94A3B8",
+              fontSize: "11px"
+            }}
+          >
+            <span
+              style={{
+                width: "9px",
+                height: "9px",
+                borderRadius: "50%",
+                background: c.color,
+                flexShrink: 0
+              }}
+            />
+            {c.etiqueta}
+          </span>
+        ))}
+
+        <span
+          style={{
+            marginLeft: "auto",
+            color: "#475569",
+            fontSize: "10.5px"
+          }}
+        >
+          el borde indica la clase · el relleno, la plataforma
+        </span>
+      </div>
+
+      <div style={{ width: "100%", height: "560px" }}>
       <ForceGraph2D
         ref={fgRef}
         graphData={graphData}
@@ -177,14 +255,26 @@ export default function KnowledgeGraph({ resultado }) {
           ctx.fillStyle = node.color || "#3B82F6";
           ctx.fill();
 
+          /*
+            EL BORDE INDICA LA CLASE — Bloque D.
+
+            El relleno ya dice la plataforma. El borde dice si es
+            la cuenta del objetivo, un medio que lo cubre o una
+            institucion. Sin esta distincion el grafo induce el
+            error que el Protocolo Universal prohibe.
+          */
+          const claseColor =
+            (CLASES_GRAFO.find((c) => c.clase === node.clase) || {}).color ||
+            "#FFFFFF";
+
           ctx.beginPath();
           ctx.arc(x, y, r, 0, Math.PI * 2);
-          ctx.strokeStyle = "#FFFFFF";
-          ctx.lineWidth = 2.5;
+          ctx.strokeStyle = claseColor;
+          ctx.lineWidth = node.esDelObjetivo ? 4 : 2.5;
           ctx.stroke();
 
-          ctx.fillStyle = "white";
-          ctx.font = "bold 14px Arial";
+          ctx.fillStyle = node.esDelObjetivo ? "white" : "#CBD5E1";
+          ctx.font = node.esDelObjetivo ? "bold 14px Arial" : "13px Arial";
           ctx.textAlign = "center";
           ctx.fillText(node.nombre, x, y + r + 18);
 
@@ -193,6 +283,8 @@ export default function KnowledgeGraph({ resultado }) {
           ctx.fillText(`${node.evidencias || 1} evid.`, x, y + r + 34);
         }}
       />
+
+      </div>
     </div>
   );
 }

@@ -119,7 +119,7 @@ export const ADAPTADORES = Object.freeze([
   },
   {
     id: "tiktok",
-    prioridad: 2,
+    prioridad: 1,
     nombre: "TikTok",
     plataformaId: "tiktok",
     dominios: ["tiktok.com"],
@@ -318,30 +318,53 @@ export function planificarConsultasDerivadas(perfil, opciones = {}) {
 
   const textoAnclas = anclasPrincipales.map((a) => a.termino).join(" ");
 
-  adaptadores.forEach((adaptador) => {
-    const dominioPrincipal = adaptador.dominios[0];
+  /*
+    ---------------------------------------------------------
+    REPARTO A LO ANCHO (ARQ-PUI-001, Bloque A)
+    ---------------------------------------------------------
 
-    /*
-      a) CONSULTA ANCLADA — la principal de este sprint.
-    */
-    if (textoAnclas) {
+    Antes el plan se construia plataforma por plataforma, con
+    sus DOS consultas seguidas:
+
+        x anclada · x nombre · facebook anclada · facebook
+        nombre · youtube anclada · ...
+
+    Con el presupuesto del proveedor en 4, X y Facebook se lo
+    comian entero y YouTube, TikTok, LinkedIn e Instagram nunca
+    llegaban a ejecutarse. Medido en Daniel Noboa: cuatro
+    consultas OK y seis Bloqueado.
+
+    El Protocolo Universal exige que las SEIS plataformas se
+    cubran. Asi que primero va UNA consulta anclada por
+    plataforma —una pasada a lo ancho— y solo despues las
+    variantes por nombre.
+
+    Con esto el presupuesto se agota, si se agota, habiendo
+    tocado las seis, no habiendo agotado dos.
+  */
+
+  /* PASADA 1 — una consulta anclada por plataforma. */
+  if (textoAnclas) {
+    adaptadores.forEach((adaptador) => {
       agregar(
-        `site:${dominioPrincipal} "${nombre}" ${textoAnclas}`,
+        `site:${adaptador.dominios[0]} "${nombre}" ${textoAnclas}`,
         `identidad:${adaptador.id}`,
         adaptador,
         anclasPrincipales
       );
-    }
+    });
+  }
 
-    /*
-      b) CONSULTA POR NOMBRE — de reserva, y solo si queda
-         presupuesto. Se conserva porque un perfil puede
-         existir sin que su descripción mencione el contexto,
-         pero va DESPUÉS y se marca como no anclada.
-    */
+  /*
+    PASADA 2 — reserva por nombre, para plataformas donde un
+    perfil puede existir sin mencionar el contexto. Va despues:
+    si el presupuesto no llega, se pierde una reserva, nunca la
+    cobertura de una plataforma.
+  */
+  adaptadores.forEach((adaptador) => {
     if ((adaptador.presupuesto || 1) >= 2 && adaptador.prioridad === 1) {
       agregar(
-        `site:${dominioPrincipal} "${nombre}"`,
+        `site:${adaptador.dominios[0]} "${nombre}"`,
         `nombre:${adaptador.id}`,
         adaptador,
         []

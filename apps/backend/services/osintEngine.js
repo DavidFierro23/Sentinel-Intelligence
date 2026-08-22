@@ -7,6 +7,11 @@ import { correlacionarIdentidades } from "./identityCorrelationService.js";
 import { construirPerfilReferencia } from "./referenceProfileService.js";
 import { ejecutarFusion } from "./fusionSearchEngine.js";
 import { ejecutarSocialIntelligence } from "./social/socialIntelligenceLayer.js";
+
+/* ARQ-PUI-001 — Bloques C, E y F. */
+import { clasificarYSeparar } from "./social/classification/accountClassifier.js";
+import { construirPerfilEjecutivo } from "./social/executive/executiveProfile.js";
+import { registrarEnPerfilPermanente } from "./social/pip/permanentIdentityProfile.js";
 import { consolidarFichaObjetivo } from "./referenceProfileService.js";
 import { obtenerAvatarCompatible } from "./avatar/avatarIntelligenceEngine.js";
 
@@ -549,6 +554,22 @@ export async function investigarObjetivo(objetivo) {
     SerpAPI se queda sin cuota y responde DuckDuckGo, el campo
     lo dice.
   */
+  /*
+    ---------------------------------------------------------
+    PROTOCOLO UNIVERSAL — BLOQUES C, E, F
+    ---------------------------------------------------------
+
+    Toda la informacion pasa por limpieza ANTES del dashboard:
+    se clasifica cada cuenta, se separan medios e instituciones
+    y se construye el perfil ejecutivo. Identico para todo
+    objetivo, sin una sola rama por candidato.
+  */
+  let clasificacion = null;
+
+  let perfilEjecutivo = null;
+
+  let perfilPermanente = null;
+
   const proveedoresConExito = new Set();
 
   [
@@ -570,7 +591,7 @@ export async function investigarObjetivo(objetivo) {
     });
   });
 
-  const origenDescubrimiento = proveedoresConExito.has("serpapi_google")
+  const origenDescubrimientoCalculado = proveedoresConExito.has("serpapi_google")
     ? "serpapi"
     : proveedoresConExito.has("brave_web")
       ? "brave"
@@ -579,6 +600,8 @@ export async function investigarObjetivo(objetivo) {
         : proveedoresConExito.has("wikidata")
           ? "wikidata"
           : "ninguno";
+
+  const origenDescubrimiento = origenDescubrimientoCalculado;
 
   try {
     if (social?.fichas?.length) {
@@ -757,6 +780,136 @@ export async function investigarObjetivo(objetivo) {
   /*
     RESULTADO FINAL
   */
+  /*
+    ---------------------------------------------------------
+    FICHA CONSOLIDADA + PROTOCOLO UNIVERSAL (ARQ-PUI-001)
+    ---------------------------------------------------------
+
+    Se calcula ANTES de la respuesta porque los Bloques C, E y F
+    trabajan sobre ella: clasificar necesita las cuentas ya
+    consolidadas y la cobertura por plataforma.
+
+    "Toda informacion pasa por limpieza antes del dashboard":
+    clasificar, separar medios e instituciones y construir el
+    perfil ejecutivo ocurre aqui, nunca en el frontend.
+  */
+  const fichaObjetivo = perfilReferencia
+    ? consolidarFichaObjetivo({
+        objetivo,
+        perfil: perfilReferencia,
+        identidad,
+        fusion,
+        social
+      })
+    : null;
+
+  try {
+    /* eslint-disable-next-line no-unused-vars */
+    clasificacion = clasificarYSeparar(
+      fichaObjetivo?.cuentas || social?.fichas || [],
+      perfilReferencia
+    );
+
+    perfilEjecutivo = construirPerfilEjecutivo({
+      perfil: perfilReferencia,
+      clasificacion,
+      cobertura: fichaObjetivo?.coberturaPlataformas || [],
+      evidencias: [
+        ...(fichaObjetivo?.evidencias?.web || []),
+        ...(fichaObjetivo?.evidencias?.sociales || [])
+      ],
+      origenDescubrimiento
+    });
+  } catch (error) {
+    console.error("[PUI] clasificacion/perfil ejecutivo fallo:", error);
+  }
+
+  /*
+    ---------------------------------------------------------
+    PERFIL PERMANENTE (Bloque B)
+    ---------------------------------------------------------
+
+    Persiste el resultado sobre el Knowledge Lake, que es
+    append-only y versionado, y devuelve que ha cambiado desde
+    la investigacion anterior del mismo objetivo.
+  */
+  if (perfilEjecutivo) {
+    try {
+      perfilPermanente = await registrarEnPerfilPermanente({
+        perfil: perfilReferencia,
+        perfilEjecutivo,
+        origenDescubrimiento,
+        /*
+          Sin multitenancy en esta ruta todavia: el contexto va
+          vacio y el Lake lo registra como tal. Declararlo asi
+          es mejor que inventar un tenantId (DT1).
+        */
+        contexto: {}
+      });
+    } catch (error) {
+      console.error("[PIP] registro fallo:", error);
+
+      perfilPermanente = {
+        registrado: false,
+        motivo: error?.message || "fallo de registro"
+      };
+    }
+  }
+
+  /*
+    ---------------------------------------------------------
+    GRAFO LIMPIO (ARQ-PUI-001, Bloque D)
+    ---------------------------------------------------------
+
+    Cada nodo de cuenta recibe su CLASE. El grafo deja de ser
+    una nube indiferenciada: el lienzo puede distinguir la
+    cuenta del objetivo de un medio que lo cubre, que es la
+    regla congelada "nunca mezclar medios con cuentas
+    oficiales" llevada a la vista.
+
+    No se elimina ningun nodo. Un medio es inteligencia: quien
+    cubre al objetivo importa. Se distingue, no se esconde.
+  */
+  if (clasificacion) {
+    const claseporClave = new Map();
+
+    const registrar = (lista, clase) =>
+      (lista || []).forEach((c) => {
+        const plataformaId = c.plataformaId || c.platform;
+
+        if (!plataformaId || !c.handle) return;
+
+        claseporClave.set(
+          `${plataformaId}:${String(c.handle).toLowerCase()}`,
+          { clase, motivo: (c.clasificacion?.razones || [])[0] || null }
+        );
+      });
+
+    registrar(clasificacion.cuentasObjetivo, "cuenta_personal");
+    registrar(clasificacion.medios, "medio");
+    registrar(clasificacion.instituciones, "institucion");
+    registrar(clasificacion.indeterminadas, "no_determinado");
+
+    entidades.forEach((nodo) => {
+      if (nodo.origenNodo !== "social_intelligence_layer") return;
+
+      const encontrada = claseporClave.get(
+        `${nodo.plataformaId}:${String(nodo.handle || "").toLowerCase()}`
+      );
+
+      nodo.clase = encontrada?.clase || "no_determinado";
+
+      nodo.motivoClase = encontrada?.motivo || null;
+
+      /*
+        Solo la cuenta del objetivo es identidad. Lo demas es
+        contexto, y el grafo debe decirlo.
+      */
+      nodo.esDelObjetivo = nodo.clase === "cuenta_personal";
+    });
+  }
+
+
   return {
     objetivo,
 
@@ -849,15 +1002,7 @@ export async function investigarObjetivo(objetivo) {
       que consume ReferenceProfilePanel. Aditivo: los campos
       anteriores siguen presentes.
     */
-    fichaObjetivo: perfilReferencia
-      ? consolidarFichaObjetivo({
-          objetivo,
-          perfil: perfilReferencia,
-          identidad,
-          fusion,
-          social
-        })
-      : null,
+    fichaObjetivo,
 
     /*
       ENTIDADES PARA EL GRAFO
@@ -883,6 +1028,11 @@ export async function investigarObjetivo(objetivo) {
     origenIdentidades,
     origenDescubrimiento,
     proveedoresConExito: [...proveedoresConExito],
+
+    /* ARQ-PUI-001 — Bloques C, E, F. */
+    clasificacionCuentas: clasificacion,
+    perfilEjecutivo,
+    perfilPermanente,
 
 
     /*
