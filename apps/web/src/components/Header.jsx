@@ -48,8 +48,6 @@ function fechaLarga(d) {
 }
 
 export default function Header({
-  titulo = "Sentinel Intelligence",
-  subtitulo = "Centro de Inteligencia Digital",
   enVivo = false,
   detalleEnVivo = null,
   consulta = "",
@@ -73,42 +71,25 @@ export default function Header({
         boxSizing: "border-box"
       }}
     >
-      {/* LOGO + TÍTULO */}
+      {/*
+        SOLO EL ISOTIPO — UX-BRAND-003
 
-      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-        {/* Mismo isotipo oficial que el Sidebar. */}
-        <img
-          src="/branding/owl-320.png"
-          alt=""
-          style={{ height: "38px", width: "auto", flexShrink: 0 }}
-        />
+        Esta barra repetia "Sentinel Intelligence" y "Centro de
+        Inteligencia Digital" a dos centimetros del Sidebar, que ya
+        los muestra, y del encabezado principal, que tambien. Tres
+        veces el mismo titulo en una pantalla.
 
-        <div>
-          <div
-            style={{
-              color: "#FFFFFF",
-              fontSize: "15px",
-              fontWeight: 700,
-              lineHeight: 1.2
-            }}
-          >
-            {titulo}
-          </div>
+        La marca la sostienen el Sidebar y el encabezado principal.
+        Aqui queda el isotipo, que identifica sin repetir palabras, y
+        los controles.
+      */}
 
-          <div
-            style={{
-              color: "var(--sentinel-cyan)",
-              fontSize: "10px",
-              fontWeight: 600,
-              letterSpacing: "1.3px",
-              textTransform: "uppercase",
-              marginTop: "3px"
-            }}
-          >
-            {subtitulo}
-          </div>
-        </div>
-      </div>
+      <img
+        src="/branding/owl-320.png"
+        alt="Sentinel Intelligence"
+        title="Sentinel Intelligence"
+        style={{ height: "38px", width: "auto", flexShrink: 0 }}
+      />
 
       {/* ESTADO LIVE */}
 

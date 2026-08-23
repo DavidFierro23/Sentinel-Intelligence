@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 
 export default function Dashboard() {
-  const [modulo, setModulo] = useState("Dashboard");
+  const [modulo, setModulo] = useState("Resumen");
 
   const Item = ({ nombre, icono }) => (
     <button
@@ -59,8 +59,8 @@ export default function Dashboard() {
           SENTINEL
         </h2>
 
-        <Item nombre="Dashboard" icono={<Home size={20} />} />
-        <Item nombre="OSINT" icono={<Search size={20} />} />
+        <Item nombre="Resumen" icono={<Home size={20} />} />
+        <Item nombre="Investigaciones" icono={<Search size={20} />} />
         <Item nombre="AI Router" icono={<Brain size={20} />} />
         <Item nombre="Reportes" icono={<FileText size={20} />} />
         <Item nombre="Seguridad" icono={<Shield size={20} />} />
@@ -74,12 +74,12 @@ export default function Dashboard() {
           padding: "40px"
         }}
       >
-        {modulo === "Dashboard" && (
+        {modulo === "Resumen" && (
           <>
-            <h1>Dashboard</h1>
+            <h1>Resumen</h1>
 
             <p style={{ color: "#A5B4FC" }}>
-              Módulo activo de Sentinel Intelligence Platform
+              Módulo activo de Sentinel Intelligence
             </p>
 
             {/* Métricas */}
@@ -179,7 +179,7 @@ export default function Dashboard() {
                 }}
               >
                 <p>🟢 Sentinel Core iniciado.</p>
-                <p>🔎 Centro OSINT operativo.</p>
+                <p>🔎 Motor de investigación operativo.</p>
                 <p>🤖 AI Router listo.</p>
                 <p>📄 Reportes preparados.</p>
               </div>
@@ -187,9 +187,9 @@ export default function Dashboard() {
           </>
         )}
 
-        {/* OSINT */}
+        {/* INVESTIGACIONES */}
 
-        {modulo === "OSINT" && <OSINT />}
+        {modulo === "Investigaciones" && <OSINT />}
 
         {/* AI ROUTER */}
 
@@ -219,7 +219,7 @@ export default function Dashboard() {
                 <li>PDF Ejecutivo</li>
                 <li>Word Institucional</li>
                 <li>PowerPoint Automático</li>
-                <li>Informe OSINT</li>
+                <li>Informe de investigación</li>
                 <li>Resumen IA</li>
               </ul>
             </div>

@@ -339,7 +339,7 @@ export default function App() {
               </section>
 
               {/*
-                Dashboard y AI Router existen y funcionan, pero no
+                Resumen y AI Router existen y funcionan, pero no
                 figuran en el menú definitivo. Se conservan
                 accesibles aquí para no dejar inalcanzable nada que
                 ya funcionaba.

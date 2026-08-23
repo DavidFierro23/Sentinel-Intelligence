@@ -106,32 +106,70 @@ const OSINT = forwardRef(function OSINT(
         overflowX: "hidden"
       }}
     >
-      {/* CABECERA */}
+      {/*
+        ENCABEZADO PRINCIPAL — UX-BRAND-003
 
+        Antes habia aqui un titulo propio que competia con el que ya
+        mostraban el Sidebar y la barra superior: tres encabezados
+        distintos apilados en la misma pantalla.
+
+        Ahora hay UNO. La marca va en ingles y no se traduce; todo lo
+        funcional sigue en espanol (es-EC).
+
+        Para que el subtitulo aparezca UNA sola vez, la barra
+        superior dejo de repetir nombre y descriptor: alli quedan el
+        isotipo y los controles.
+
+        Y es la PAGINA DE INICIO, no un banner permanente: se retira
+        en cuanto hay una investigacion en curso o un resultado. Como
+        banner fijo repetiria la identidad del Sidebar encima de cada
+        resultado, y durante la carga dejaria dos buhos en pantalla.
+      */}
+
+      {!resultado && !cargando && (
       <div
+        className="sentinel-fade"
         style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
           textAlign: "center",
           marginBottom: "30px"
         }}
       >
+        <img
+          src="/branding/owl-320.png"
+          alt=""
+          style={{ height: "96px", width: "auto", marginBottom: "14px" }}
+        />
+
         <h1
           style={{
-            fontSize: "clamp(38px,5vw,60px)",
-            margin: 0
+            fontSize: "clamp(32px,4.4vw,52px)",
+            margin: 0,
+            color: "#FFFFFF",
+            fontWeight: 700,
+            letterSpacing: "0.4px"
           }}
         >
-          Centro OSINT
+          Sentinel Intelligence
         </h1>
 
         <p
           style={{
-            color: "#93C5FD",
-            marginTop: "12px"
+            color: "var(--sentinel-cyan)",
+            marginTop: "10px",
+            marginBottom: 0,
+            fontSize: "12px",
+            fontWeight: 600,
+            letterSpacing: "2.6px",
+            textTransform: "uppercase"
           }}
         >
-          Motor de Inteligencia de Fuentes Abiertas de Sentinel.
+          Centro de Inteligencia Digital
         </p>
       </div>
+      )}
 
       {/* BUSCADOR */}
 
@@ -273,15 +311,6 @@ const OSINT = forwardRef(function OSINT(
               boxSizing: "border-box"
             }}
           >
-            <h2
-              style={{
-                textAlign: "center",
-                marginBottom: "20px"
-              }}
-            >
-              Centro de Inteligencia Digital
-            </h2>
-
             <div
               style={{
                 display: "flex",
