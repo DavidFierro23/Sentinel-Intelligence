@@ -187,19 +187,6 @@ body {
   animation: sentinelFade 260ms ease-out both;
 }
 
-/* ---- BARRIDO DEL HALO (pantalla de carga) ---- */
-
-@keyframes sentinelGiro {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.sentinel-halo-gira {
-  animation: sentinelGiro 3.4s linear infinite;
-  transform-origin: 50% 50%;
-}
-
 /* ---- PLATAFORMA QUE SE ILUMINA ----
    El estado lo decide el atributo data-estado, que el
    componente pone a partir del progreso REAL. La animación no
@@ -256,6 +243,52 @@ body {
   border-radius: 50%;
   background: currentColor;
   flex-shrink: 0;
+}
+
+/* ---- HALO DEL LOADER ----
+
+   UX-BRAND-002. El halo azul y el pulso se dibujan en un
+   pseudo-elemento DETRAS del isotipo. Animar la imagen la
+   deformaria o la rotaria, y el logo oficial esta congelado: lo
+   que late es la luz. */
+
+@keyframes sentinelRespira {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.14);
+    opacity: 0.9;
+  }
+}
+
+.sentinel-loader-halo {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sentinel-loader-halo::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 150%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(
+    circle,
+    rgba(11, 95, 255, 0.34) 0%,
+    rgba(0, 212, 255, 0.16) 45%,
+    transparent 70%
+  );
+  animation: sentinelRespira 2.6s ease-in-out infinite;
+  z-index: 0;
+  pointer-events: none;
 }
 
 /* ---- SECUENCIA DE PLATAFORMAS (pantalla de carga) ----
@@ -378,9 +411,9 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .sentinel-live-punto,
   .sentinel-fade,
-  .sentinel-halo-gira,
   .sentinel-barra::after,
   .sentinel-secuencia,
+  .sentinel-loader-halo::before,
   .sentinel-plataforma[data-estado="activa"] .sentinel-plataforma-punto {
     animation: none;
   }

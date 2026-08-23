@@ -1,0 +1,27 @@
+{
+  "name": "Sentinel Intelligence",
+  "short_name": "Sentinel",
+  "description": "Centro de Inteligencia Digital",
+  "lang": "es",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#061126",
+  "theme_color": "#061126",
+  "icons": [
+    {
+      "src": "/branding/favicon-16x16.png",
+      "sizes": "16x16",
+      "type": "image/png"
+    },
+    {
+      "src": "/branding/favicon-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/branding/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}

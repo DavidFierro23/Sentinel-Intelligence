@@ -58,16 +58,19 @@ export default function LoadingInvestigation({ objetivo = null }) {
         boxSizing: "border-box"
       }}
     >
-      {/* ISOTIPO CON HALO EN BARRIDO */}
+      {/*
+        ISOTIPO OFICIAL CENTRADO CON HALO AZUL
 
-      <div style={{ position: "relative", width: "96px", height: "96px" }}>
+        El halo y el pulso viven en un contenedor DETRAS de la
+        imagen: el logo no se rota, no se escala y no se deforma.
+        El sprint prohibe alterar el isotipo, asi que lo que respira
+        es la luz, no el buho.
+      */}
+      <div className="sentinel-loader-halo">
         <img
-          src="/assets/sentinel/sentinel-logo.svg"
+          src="/branding/owl-320.png"
           alt=""
-          width={96}
-          height={96}
-          className="sentinel-halo-gira"
-          style={{ display: "block" }}
+          style={{ height: "112px", width: "auto", display: "block", position: "relative", zIndex: 1 }}
         />
       </div>
 

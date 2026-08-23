@@ -76,12 +76,11 @@ export default function Header({
       {/* LOGO + TÍTULO */}
 
       <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+        {/* Mismo isotipo oficial que el Sidebar. */}
         <img
-          src="/assets/sentinel/sentinel-logo.svg"
+          src="/branding/owl-320.png"
           alt=""
-          width={34}
-          height={34}
-          style={{ flexShrink: 0 }}
+          style={{ height: "38px", width: "auto", flexShrink: 0 }}
         />
 
         <div>
@@ -98,9 +97,12 @@ export default function Header({
 
           <div
             style={{
-              color: "var(--sentinel-texto-suave)",
-              fontSize: "11px",
-              marginTop: "2px"
+              color: "var(--sentinel-cyan)",
+              fontSize: "10px",
+              fontWeight: 600,
+              letterSpacing: "1.3px",
+              textTransform: "uppercase",
+              marginTop: "3px"
             }}
           >
             {subtitulo}

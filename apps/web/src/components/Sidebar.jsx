@@ -76,17 +76,23 @@ const MODULOS = [
   }
 ];
 
+/*
+  El icono de War Room es el propio buho de la marca.
+
+  Se declara solo la ALTURA y width queda en "auto": asi el
+  navegador conserva la proporcion original del archivo (953x773).
+  Fijar ambos lados deformaria el isotipo, que el sprint prohibe.
+*/
 function IconoBuho({ activo }) {
   return (
     <img
-      src="/assets/sentinel/sentinel-icon.svg"
+      src="/branding/owl-320.png"
       alt=""
-      width={20}
-      height={20}
       style={{
-        borderRadius: "5px",
+        height: "20px",
+        width: "auto",
         flexShrink: 0,
-        opacity: activo ? 1 : 0.75,
+        opacity: activo ? 1 : 0.72,
         transition: "opacity 180ms"
       }}
     />
@@ -115,17 +121,19 @@ export default function Sidebar({ activo, onSeleccionar }) {
           display: "flex",
           alignItems: "center",
           gap: "12px",
-          padding: "4px 8px 20px 8px",
+          padding: "6px 6px 20px 6px",
           borderBottom: "1px solid var(--sentinel-borde)",
           marginBottom: "16px"
         }}
       >
+        {/*
+          Isotipo oficial a 60 px de alto, con width automatico para
+          respetar la proporcion original del archivo.
+        */}
         <img
-          src="/assets/sentinel/sentinel-logo.svg"
+          src="/branding/owl-320.png"
           alt="Sentinel Intelligence"
-          width={42}
-          height={42}
-          style={{ flexShrink: 0 }}
+          style={{ height: "60px", width: "auto", flexShrink: 0 }}
         />
 
         <div style={{ minWidth: 0 }}>
@@ -141,13 +149,18 @@ export default function Sidebar({ activo, onSeleccionar }) {
             Sentinel Intelligence
           </div>
 
+          {/*
+            Contraste de marca: titulo en blanco puro, subtitulo en
+            cian oficial.
+          */}
           <div
             style={{
               color: "var(--sentinel-cyan)",
               fontSize: "9.5px",
+              fontWeight: 600,
               letterSpacing: "1.5px",
               textTransform: "uppercase",
-              marginTop: "3px"
+              marginTop: "4px"
             }}
           >
             Centro de Inteligencia Digital
