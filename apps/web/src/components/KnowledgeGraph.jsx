@@ -35,11 +35,42 @@ const CLASES_GRAFO = [
   FILTROS DE VISTA. Solo ocultan; no alteran el grafo que el
   backend produjo ni recalculan nada.
 */
+/*
+  VISTAS DEL GRAFO — Sprint 3.2.4, Bloque E
+
+  La vista por defecto es EJECUTIVA: nodo central y cuentas
+  oficiales, nada mas. Con SerpAPI devolviendo veinte o treinta
+  hallazgos, arrancar mostrando el ecosistema completo entierra la
+  cuenta del objetivo entre medios que solo hablan de el.
+
+  "Ecosistema completo" sigue estando a un clic, y ahi aparecen
+  medios, instituciones e indeterminadas.
+*/
 const FILTROS = [
-  { id: "todo", etiqueta: "Ecosistema", clases: null },
-  { id: "cuentas", etiqueta: "Solo cuentas", clases: ["cuenta_personal"] },
-  { id: "medios", etiqueta: "Medios", clases: ["medio"] },
-  { id: "instituciones", etiqueta: "Instituciones", clases: ["institucion"] }
+  {
+    id: "ejecutiva",
+    etiqueta: "Vista ejecutiva",
+    clases: ["cuenta_personal"],
+    nota: "nodo central y cuentas oficiales"
+  },
+  {
+    id: "todo",
+    etiqueta: "Ecosistema completo",
+    clases: null,
+    nota: "todo lo descubierto, incluidos medios e instituciones"
+  },
+  {
+    id: "medios",
+    etiqueta: "Medios",
+    clases: ["medio"],
+    nota: "quien cubre al objetivo"
+  },
+  {
+    id: "instituciones",
+    etiqueta: "Instituciones",
+    clases: ["institucion"],
+    nota: "cuentas institucionales relacionadas"
+  }
 ];
 
 const colores = {
@@ -57,7 +88,7 @@ const colores = {
 export default function KnowledgeGraph({ resultado }) {
   const fgRef = useRef();
   const [avatar, setAvatar] = useState(null);
-  const [filtro, setFiltro] = useState("todo");
+  const [filtro, setFiltro] = useState("ejecutiva");
 
   useEffect(() => {
     if (!resultado?.identidad?.avatar) {
@@ -131,6 +162,13 @@ export default function KnowledgeGraph({ resultado }) {
         plataforma: e.plataforma || null,
         clase: e.clase || null,
         esDelObjetivo: e.esDelObjetivo === true,
+        /* Bloque E — datos del hover inteligente. */
+        proveedores: e.proveedores || [],
+        modoAcceso: e.modoAcceso || null,
+        motivoClase: e.motivoClase || null,
+        nivel: e.nivel || null,
+        estadoIdentidad: e.estadoIdentidad || null,
+        url: e.url || null,
         handle: e.handle || null,
         correspondencia: e.correspondencia ?? null,
         vetadoPorContexto: e.vetadoPorContexto === true,
@@ -217,7 +255,8 @@ export default function KnowledgeGraph({ resultado }) {
             fontSize: "10.5px"
           }}
         >
-          {Math.max(0, graphData.nodes.length - 1)} nodo(s) visibles
+          {(FILTROS.find((f) => f.id === filtro) || {}).nota} ·{" "}
+          {Math.max(0, graphData.nodes.length - 1)} nodo(s)
         </span>
       </div>
 
@@ -315,6 +354,66 @@ export default function KnowledgeGraph({ resultado }) {
         enableNodeDrag={false}
         enableZoomInteraction
         enablePanInteraction
+        /*
+          HOVER INTELIGENTE — Bloque E.
+
+          Se usa nodeLabel, que la libreria ya renderiza como
+          tooltip, en lugar de montar seguimiento de raton propio:
+          menos estado y menos que romper.
+
+          Solo se muestran datos que el backend devolvio. Un campo
+          sin dato dice "no comprobada", nunca se rellena.
+        */
+        nodeLabel={(n) => {
+          if (n.id === "objetivo") {
+            return `<div style="font:600 12px system-ui;color:#fff">${n.nombre}</div>
+              <div style="font:11px system-ui;color:#94A3B8">objetivo de la investigacion</div>`;
+          }
+
+          const clase =
+            (CLASES_GRAFO.find((c) => c.clase === n.clase) || {}).etiqueta ||
+            "sin clasificar";
+
+          const fila = (k, v) =>
+            `<div style="font:11px system-ui;color:#94A3B8">
+               <span style="color:#00D4FF">${k}:</span> ${v}
+             </div>`;
+
+          return `<div style="background:#081A4A;border:1px solid #1E3A8A;
+                    border-radius:10px;padding:10px 12px;max-width:300px">
+              <div style="font:700 12.5px system-ui;color:#fff;margin-bottom:6px">
+                ${n.nombre}
+              </div>
+              ${fila("Plataforma", n.plataforma || "no comprobada")}
+              ${fila("Clase", clase)}
+              ${fila(
+                "Confianza",
+                n.correspondencia != null
+                  ? `${n.correspondencia}/100${n.nivel ? ` (${n.nivel})` : ""}`
+                  : "no evaluada"
+              )}
+              ${fila(
+                "Proveedor",
+                (n.proveedores || []).length
+                  ? n.proveedores.join(", ")
+                  : "no comprobada"
+              )}
+              ${fila("Modo de acceso", n.modoAcceso || "no comprobada")}
+              ${
+                n.vetadoPorContexto
+                  ? `<div style="font:11px system-ui;color:#EF4444;margin-top:5px">
+                       vetado por contexto ajeno (CB-1)
+                     </div>`
+                  : ""
+              }
+              ${
+                n.motivoClase
+                  ? `<div style="font:10px system-ui;color:#475569;margin-top:6px;
+                       line-height:1.5">${n.motivoClase}</div>`
+                  : ""
+              }
+            </div>`;
+        }}
         linkColor={() => "#60A5FA"}
         linkWidth={(l) => l.width || 2}
         nodeCanvasObject={(node, ctx) => {

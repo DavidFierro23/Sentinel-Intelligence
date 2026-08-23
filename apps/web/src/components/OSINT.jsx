@@ -18,6 +18,9 @@ import ReferenceProfilePanel from "./ReferenceProfilePanel";
 import SocialAccountsPanel from "./SocialAccountsPanel";
 import ExecutiveProfilePanel from "./ExecutiveProfilePanel";
 import LoadingInvestigation from "./LoadingInvestigation";
+import ExecutiveDashboard from "./ExecutiveDashboard";
+import PlatformGrid from "./PlatformGrid";
+import EvidenceConfidencePanel from "./EvidenceConfidencePanel";
 
 /*
   Sprint UX-BRAND-001
@@ -149,7 +152,12 @@ const OSINT = forwardRef(function OSINT(
             margin: 0,
             color: "#FFFFFF",
             fontWeight: 700,
-            letterSpacing: "0.4px"
+            letterSpacing: "0.4px",
+            /*
+              Sin line-height explicito los descendentes del titulo
+              chocaban con el descriptor: se veian solapados.
+            */
+            lineHeight: 1.16
           }}
         >
           Sentinel Intelligence
@@ -158,7 +166,7 @@ const OSINT = forwardRef(function OSINT(
         <p
           style={{
             color: "var(--sentinel-cyan)",
-            marginTop: "10px",
+            marginTop: "16px",
             marginBottom: 0,
             fontSize: "12px",
             fontWeight: 600,
@@ -343,11 +351,32 @@ const OSINT = forwardRef(function OSINT(
             {/* CUENTAS CANDIDATAS · Social Intelligence Layer */}
 
             {/*
-              ARQ-PUI-001 Bloque F — va ANTES del panel de
-              candidatas: primero lo que se atribuye al objetivo,
-              despues el material bruto del descubrimiento.
+              ORDEN DEL INFORME — Sprint 3.2.4, Bloque A
+
+              1. Dashboard ejecutivo: la sintesis y la evidencia de
+                 la foto.
+              2. Perfil ejecutivo: las cuentas atribuidas, ordenadas
+                 por correspondencia, con los medios ya separados.
+              3. Cobertura por plataforma: las seis obligatorias.
+              4. Confianza por evidencia: de donde sale cada punto.
+              5. Candidatas en bruto y grafo, al final.
+
+              Una cuenta oficial nunca queda por debajo de un medio
+              porque los medios no estan en esta lista: el
+              clasificador los separo antes de llegar aqui.
             */}
+            <ExecutiveDashboard resultado={resultado} />
+
             <ExecutiveProfilePanel perfil={resultado.perfilEjecutivo} />
+
+            <PlatformGrid
+              cobertura={resultado.fichaObjetivo?.coberturaPlataformas || []}
+              cuentas={resultado.clasificacionCuentas?.cuentasObjetivo || []}
+            />
+
+            <EvidenceConfidencePanel
+              cuentas={resultado.clasificacionCuentas?.cuentasObjetivo || []}
+            />
 
             <SocialAccountsPanel
               cuentas={resultado.fichaObjetivo?.cuentas || []}

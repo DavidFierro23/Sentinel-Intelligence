@@ -119,9 +119,10 @@ export default function Sidebar({ activo, onSeleccionar }) {
       <div
         style={{
           display: "flex",
+          flexDirection: "column",
           alignItems: "center",
-          gap: "12px",
-          padding: "6px 6px 20px 6px",
+          gap: "10px",
+          padding: "4px 4px 18px 4px",
           borderBottom: "1px solid var(--sentinel-borde)",
           marginBottom: "16px"
         }}
@@ -136,14 +137,15 @@ export default function Sidebar({ activo, onSeleccionar }) {
           style={{ height: "60px", width: "auto", flexShrink: 0 }}
         />
 
-        <div style={{ minWidth: 0 }}>
+        <div style={{ minWidth: 0, textAlign: "center", width: "100%" }}>
           <div
             style={{
               color: "#FFFFFF",
-              fontSize: "15px",
+              fontSize: "15.5px",
               fontWeight: 700,
-              lineHeight: 1.25,
-              letterSpacing: "0.2px"
+              lineHeight: 1.2,
+              letterSpacing: "0.2px",
+              whiteSpace: "nowrap"
             }}
           >
             Sentinel Intelligence
@@ -156,11 +158,12 @@ export default function Sidebar({ activo, onSeleccionar }) {
           <div
             style={{
               color: "var(--sentinel-cyan)",
-              fontSize: "9.5px",
+              fontSize: "8.5px",
               fontWeight: 600,
-              letterSpacing: "1.5px",
+              letterSpacing: "1.1px",
               textTransform: "uppercase",
-              marginTop: "4px"
+              marginTop: "5px",
+              lineHeight: 1.5
             }}
           >
             Centro de Inteligencia Digital
@@ -202,8 +205,9 @@ export default function Sidebar({ activo, onSeleccionar }) {
                   ? "#FFFFFF"
                   : "var(--sentinel-texto-suave)",
                 fontWeight: seleccionado ? 650 : 500,
-                fontSize: "13.5px",
+                fontSize: "13px",
                 textAlign: "left",
+                lineHeight: 1.35,
                 boxShadow: seleccionado ? "var(--glow-cyan)" : "none"
               }}
             >
