@@ -138,6 +138,50 @@ export function normalizar(agregado, opciones = {}) {
   });
 
   /*
+    ---------------------------------------------------------
+    REGLA DE NIVEL — denominadores incompatibles
+    ---------------------------------------------------------
+
+    La poblacion de una parroquia rural y la del bloque urbano
+    agregado son ambas oficiales, ambas verificadas y ambas del
+    censo 2022. Y NO son comparables: una cubre una parroquia y
+    la otra cubre quince.
+
+    Dividir evidencias entre ellas y ordenar el resultado
+    produciria un ranking donde el bloque urbano —361 524
+    habitantes— siempre aparece abajo y cualquier parroquia
+    pequena arriba. El numero seria correcto y la lectura,
+    falsa.
+
+    Asi que si aparecen dos niveles distintos, la normalizacion
+    NO se ofrece mezclada: se declara el conflicto y se dice
+    para que nivel SI esta disponible.
+  */
+  const niveles = [
+    ...new Set(conDenominador.map((c) => c.denominador.nivel).filter(Boolean))
+  ];
+
+  if (niveles.length > 1) {
+    const porNivel = niveles.map((n) => ({
+      nivel: n,
+      unidades: conDenominador.filter((c) => c.denominador.nivel === n).length
+    }));
+
+    return bloqueado(agregado, {
+      modo: modo.id,
+      nombreModo: modo.nombre,
+      motivo: `Los denominadores disponibles pertenecen a ${
+        niveles.length
+      } niveles territoriales distintos (${porNivel
+        .map((p) => `${p.nivel}: ${p.unidades}`)
+        .join(", ")}). No son comparables entre si y no se mezclan.`,
+      campo: modo.campo,
+      conflictoDeNivel: porNivel,
+      unidadesSinDenominador: sinDenominador.length
+    });
+  }
+
+  /*
     NINGUN denominador disponible: no se calcula nada. No hay
     resultado parcial que ofrecer, porque un ranking con dos
     unidades normalizadas y treinta sin normalizar no es

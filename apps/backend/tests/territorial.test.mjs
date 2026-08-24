@@ -11,7 +11,10 @@ import { comprobarGeo1 } from "../services/geo/geoContracts.js";
 
 import {
   estadoRegistro,
-  denominadorDe
+  denominadorDe,
+  listarUnidades,
+  unidadPorId,
+  abrirRegistro
 } from "../services/geo/territoryRegistry.js";
 
 import { extraerTemas } from "../services/conversation/topicExtractor.js";
@@ -105,26 +108,220 @@ const registro = estadoRegistro();
 
 t("carga sin errores", () => registro.errores.length === 0);
 
-t("40 unidades", () => registro.metricas.unidades === 40);
+t("41 unidades (39 administrativas + 2 sectores)", () => {
+  return registro.metricas.unidades === 41;
+});
 
 t("36 parroquias", () => registro.metricas.porResolucion.parroquia === 36);
 
-t("1 sector especial", () => registro.metricas.porResolucion.sector === 1);
+t("2 sectores: centro historico y cabecera cantonal", () => {
+  return registro.metricas.porResolucion.sector === 2;
+});
 
-t("las 4 carencias estan declaradas", () => {
-  const ids = registro.carencias.map((c) => c.id).sort();
+t("las carencias siguen declarandose", () => {
+  const ids = registro.carencias.map((c) => c.id);
 
-  return ["geometria", "padron", "poblacion", "verificacion"].every((x) =>
-    ids.includes(x)
+  return ["geometria", "padron", "verificacion"].every((x) => ids.includes(x));
+});
+
+t("solo el Centro Historico queda sin verificar", () => {
+  return registro.metricas.sinVerificar === 1;
+});
+
+t("22 unidades con geometria oficial", () => {
+  return registro.metricas.conGeometria === 22;
+});
+
+t("las 15 urbanas siguen SIN geometria", () => {
+  const urbanas = listarUnidades({ tipo: "urbana" });
+
+  return urbanas.length === 15 && urbanas.every((u) => !u.geometriaDisponible);
+});
+
+
+/* ---------------------------------------------------------
+   1-BIS. DATOS OFICIALES — GATE A
+--------------------------------------------------------- */
+
+bloque("[1b] DATOS OFICIALES INTEGRADOS");
+
+const RURALES = listarUnidades({ tipo: "rural" });
+
+t("21 parroquias rurales", () => RURALES.length === 21);
+
+t("las 21 rurales tienen geometria oficial", () => {
+  return RURALES.every((u) => u.geometriaDisponible === true);
+});
+
+t("las 21 rurales tienen codigo DPA oficial", () => {
+  return RURALES.every((u) => /^0101\d\d$/.test(String(u.codigoOficial)));
+});
+
+t("los codigos DPA son unicos", () => {
+  const cods = RURALES.map((u) => u.codigoOficial);
+
+  return new Set(cods).size === cods.length;
+});
+
+t("la cabecera cantonal tiene su codigo DPA 010150", () => {
+  return unidadPorId("cuenca-cabecera")?.codigoOficial === "010150";
+});
+
+t("NINGUNA unidad de otro canton se colo", () => {
+  const conCodigo = listarUnidades().filter((u) => u.codigoOficial);
+
+  return conCodigo.every(
+    (u) =>
+      u.codigoOficial === "01" ||
+      u.codigoOficial === "0101" ||
+      String(u.codigoOficial).startsWith("0101")
   );
 });
 
-t("ninguna unidad se presenta como verificada", () => {
-  return registro.metricas.sinVerificar === 40;
+t("geometria en EPSG:4326, dentro del bbox de Cuenca", () => {
+  const u = unidadPorId("molleturo");
+
+  const pts = u.geometria.coordinates.flat();
+
+  return pts.every(
+    ([lon, lat]) => lon > -80 && lon < -78.5 && lat > -3.5 && lat < -2.3
+  );
 });
 
-t("ninguna unidad tiene geometria", () => {
-  return registro.metricas.sinGeometria === 40;
+t("el CRS de origen queda declarado en la procedencia", () => {
+  return /EPSG:32717/.test(registro.geometria?.metadata?.crsOrigen || "");
+});
+
+t("la procedencia declara institucion, URL, licencia y fecha", () => {
+  const conali = (registro.fuentesOficiales || []).find(
+    (f) => f.id === "conali-otp-2025"
+  );
+
+  return Boolean(
+    conali &&
+      /CONALI/.test(conali.institucion) &&
+      /datosabiertos\.gob\.ec/.test(conali.url) &&
+      /cc-by/i.test(conali.licencia) &&
+      conali.fechaDescarga
+  );
+});
+
+t("la simplificacion declara su error de area", () => {
+  const s = registro.geometria?.metadata?.simplificacion;
+
+  return Boolean(s?.toleranciaMetros && s?.errorAreaMedio && s?.errorAreaMaximo);
+});
+
+t("las 15 urbanas estan verificadas pese a no tener geometria", () => {
+  const urbanas = listarUnidades({ tipo: "urbana" });
+
+  return urbanas.every(
+    (u) => u.verificado === true && u.geometriaDisponible === false
+  );
+});
+
+t("cada urbana declara por que no tiene geometria", () => {
+  return listarUnidades({ tipo: "urbana" }).every((u) =>
+    Boolean(u.motivoSinGeometria)
+  );
+});
+
+t("las urbanas NO inventan codigo DPA", () => {
+  return listarUnidades({ tipo: "urbana" }).every(
+    (u) => u.codigoOficial === null
+  );
+});
+
+bloque("[1c] INEC — poblacion");
+
+const POB_BANOS = denominadorDe("banos", "poblacionOficial");
+
+t("poblacion rural disponible y verificada", () => {
+  return POB_BANOS.disponible === true && POB_BANOS.verificado === true;
+});
+
+t("declara tipoDato CENSO, no proyeccion", () => POB_BANOS.tipoDato === "CENSO");
+
+t("declara el anio 2022", () => POB_BANOS.anio === 2022);
+
+t("declara el nivel territorial", () => POB_BANOS.nivel === "parroquia");
+
+t("declara la fuente con institucion y URL", () => {
+  return Boolean(POB_BANOS.fuente?.institucion && POB_BANOS.fuente?.url);
+});
+
+t("la restriccion de licencia viaja con el dato", () => {
+  return POB_BANOS.usoComercialPermitido === false;
+});
+
+t("el bloque urbano declara nivel DISTINTO al de una parroquia", () => {
+  return (
+    denominadorDe("cuenca-cabecera", "poblacionOficial").nivel ===
+    "bloque_urbano_agregado"
+  );
+});
+
+t("una parroquia urbana NO tiene poblacion inventada", () => {
+  const d = denominadorDe("el-batan", "poblacionOficial");
+
+  return d.valor === null && d.disponible === false && Boolean(d.motivo);
+});
+
+t("la poblacion cantonal NO se repartio entre parroquias", () => {
+  const suma = RURALES.map(
+    (u) => denominadorDe(u.id, "poblacionOficial").valor || 0
+  ).reduce((a, b) => a + b, 0);
+
+  const cabecera = denominadorDe("cuenca-cabecera", "poblacionOficial").valor;
+
+  /* 596 101 del censo 2022: rurales + bloque urbano, sin reparto. */
+  return suma + cabecera === 596101;
+});
+
+bloque("[1d] CNE — bloqueado, no inventado");
+
+const PAD = denominadorDe("banos", "padronElectoral");
+
+t("padron sigue null", () => PAD.valor === null);
+
+t("padron NO verificado", () => PAD.verificado === false);
+
+t("declara estadoFuente acceso_oficial_bloqueado", () => {
+  return PAD.estadoFuente === "acceso_oficial_bloqueado";
+});
+
+t("ninguna unidad tiene padron", () => {
+  return registro.metricas.denominadoresConValor.padronElectoral === 0;
+});
+
+bloque("[1e] SUPERFICIE — calculada, no inventada");
+
+t("superficie desde geometria oficial", () => {
+  const s = denominadorDe("molleturo", "superficieKm2");
+
+  return s.disponible && s.valor > 900 && s.valor < 1050;
+});
+
+t("superficie calculada en EPSG:32717, no en Web Mercator", () => {
+  const denominadoresRaw = abrirRegistro().datos.denominadores;
+
+  return denominadoresRaw["molleturo"].superficieKm2.calculadaEn === "EPSG:32717";
+});
+
+t("la superficie cuadra con la publicada por el GAD", () => {
+  /*
+    Cruce independiente: el CSV municipal publica el area de
+    cada parroquia. Si mi calculo desde la geometria CONALI se
+    aparta de el, una de las dos cosas esta mal.
+    Molleturo GAD = 984 km2.
+  */
+  const s = denominadorDe("molleturo", "superficieKm2").valor;
+
+  return Math.abs(s - 984) < 1.5;
+});
+
+t("sin geometria no hay superficie", () => {
+  return denominadorDe("el-batan", "superficieKm2").disponible === false;
 });
 
 
@@ -373,24 +570,90 @@ t("resolucion efectiva se declara", () => {
 
 bloque("[5] NORMALIZACION — sin denominador no se calcula");
 
-t("poblacion NO disponible", () => {
+/*
+  Este agregado solo contiene Yanuncay (urbana, sin poblacion)
+  y Cuenca canton. Ninguno tiene denominador poblacional, asi
+  que la normalizacion sigue bloqueada — ahora por AUSENCIA,
+  no porque no exista el dato en el sistema.
+*/
+t("sin denominador en las unidades del agregado: bloqueada", () => {
   return normalizar(agregado, { modo: "poblacion" }).disponible === false;
 });
 
-t("poblacion no devuelve NINGUNA unidad calculada", () => {
+t("no devuelve NINGUNA unidad calculada", () => {
   return normalizar(agregado, { modo: "poblacion" }).unidades.length === 0;
 });
 
-t("poblacion declara motivo", () => {
+t("declara el motivo del bloqueo", () => {
   return Boolean(normalizar(agregado, { modo: "poblacion" }).motivo);
 });
 
-t("padron NO disponible", () => {
+t("padron NO disponible (CNE bloqueado)", () => {
   return normalizar(agregado, { modo: "padron" }).disponible === false;
 });
 
-t("superficie NO disponible", () => {
-  return normalizar(agregado, { modo: "area" }).disponible === false;
+/*
+  REGLA DE NIVEL. Un agregado que mezcle parroquias rurales con
+  el bloque urbano tiene denominadores de DOS niveles, y no son
+  comparables: uno cubre una parroquia y el otro quince.
+*/
+const agregadoMixto = {
+  unidades: [
+    { unidadId: "banos", nombre: "Baños", conteo: 10, sePinta: true },
+    { unidadId: "molleturo", nombre: "Molleturo", conteo: 8, sePinta: true },
+    {
+      unidadId: "cuenca-cabecera",
+      nombre: "Cuenca (area urbana)",
+      conteo: 40,
+      sePinta: true
+    }
+  ]
+};
+
+t("niveles mezclados: normalizacion BLOQUEADA", () => {
+  return normalizar(agregadoMixto, { modo: "poblacion" }).disponible === false;
+});
+
+t("...y declara cuales son los niveles en conflicto", () => {
+  return /nivel|niveles/i.test(
+    normalizar(agregadoMixto, { modo: "poblacion" }).motivo || ""
+  );
+});
+
+/*
+  Mismo nivel: SI se puede normalizar. Es lo que demuestra que
+  el bloqueo anterior es por incompatibilidad, no por incapacidad.
+*/
+const agregadoRural = {
+  unidades: [
+    { unidadId: "banos", nombre: "Baños", conteo: 10, sePinta: true },
+    { unidadId: "molleturo", nombre: "Molleturo", conteo: 8, sePinta: true }
+  ]
+};
+
+t("mismo nivel (rural): normalizacion DISPONIBLE", () => {
+  return normalizar(agregadoRural, { modo: "poblacion" }).disponible === true;
+});
+
+t("...y calcula el valor correcto", () => {
+  const n = normalizar(agregadoRural, { modo: "poblacion" });
+
+  const banos = n.unidades.find((u) => u.unidadId === "banos");
+
+  /* 10 evidencias / 21797 hab * 1000 = 0.459 */
+  return Math.abs(banos.valorNormalizado - 0.459) < 0.01;
+});
+
+t("...declarando el denominador y su fuente", () => {
+  const n = normalizar(agregadoRural, { modo: "poblacion" });
+
+  const banos = n.unidades.find((u) => u.unidadId === "banos");
+
+  return banos.denominador.valor === 21797 && Boolean(banos.denominador.fuente);
+});
+
+t("superficie SI disponible para las rurales", () => {
+  return normalizar(agregadoRural, { modo: "area" }).disponible === true;
 });
 
 t("absoluto SI disponible", () => {

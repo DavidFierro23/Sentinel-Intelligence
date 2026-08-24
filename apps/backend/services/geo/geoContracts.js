@@ -323,7 +323,7 @@ export const NORMALIZACIONES = Object.freeze([
   {
     id: "poblacion",
     nombre: "Poblacion (INEC)",
-    campo: "poblacion",
+    campo: "poblacionOficial",
     recomendado: true,
     aviso: null
   },

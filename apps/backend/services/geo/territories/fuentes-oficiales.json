@@ -1,0 +1,128 @@
+{
+  "id": "fuentes-oficiales-ec-azuay-cuenca",
+  "version": "1.0",
+  "fechaAuditoria": "2026-08-24",
+
+  "porQueExiste": "Cada dato oficial integrado debe poder rastrearse hasta su institucion, su URL de descarga, su fecha y su licencia. Sin este registro, dentro de seis meses nadie podra decir de donde salio un poligono ni si sigue vigente, y un dato sin procedencia es indistinguible de un dato inventado.",
+
+  "fuentes": [
+    {
+      "id": "conali-otp-2025",
+      "dominio": "geometria",
+      "estado": "INTEGRADA",
+
+      "institucion": "CONALI — Direccion de Limites Territoriales Internos, Ministerio de Gobierno del Ecuador",
+      "dataset": "Organizacion Territorial Parroquial",
+      "recurso": "MDG_OTPR_2025 · organizacion-territorial-parroquial.zip",
+      "url": "https://www.datosabiertos.gob.ec/dataset/organizacion-territorial-parroquial",
+      "urlDescarga": "https://www.datosabiertos.gob.ec/dataset/2fd34713-51be-489c-a444-f0ec2b36dd6f/resource/fe22719f-5c0f-4d78-b6b3-d57561fd883e/download/organizacion-territorial-parroquial.zip",
+
+      "licencia": "Creative Commons Attribution (cc-by)",
+      "usoComercialPermitido": true,
+
+      "anioDato": "2024",
+      "versionRecurso": "2025-02-20",
+      "fechaDescarga": "2026-08-24",
+      "bytesDescargados": 131810122,
+
+      "crsOrigen": "EPSG:32717 — WGS 1984 UTM Zone 17S",
+      "crsOrigenProcedencia": "declarado en ORGANIZACION_TERRITORIAL_PARROQUIAL.prj",
+      "crsSalida": "EPSG:4326 (CRS84)",
+
+      "codigoTerritorial": "DPA — DPA_PARROQ, DPA_CANTON, DPA_PROVIN",
+
+      "cobertura": {
+        "registrosNacionales": 1049,
+        "registrosCanton0101": 22,
+        "parroquiasRurales": 21,
+        "cabecerasCantonales": 1,
+        "parroquiasUrbanasIndividuales": 0
+      },
+
+      "limiteDeclarado": "La DPA nacional NO desagrega las parroquias urbanas. Las 15 de Cuenca existen por ordenanza municipal de 1982 y en este dataset aparecen agregadas en el registro CABECERA CANTONAL (010150).",
+
+      "validaciones": [
+        "Reproyeccion validada: (714383.48, 9679807.79) UTM 17S -> (-79.0713, -2.8952), que cae dentro del canton Cuenca.",
+        "BBOX resultante lon -79.6703..-78.8473, lat -3.1726..-2.5169: corresponde al canton Cuenca, Azuay.",
+        "Superficie total calculada 3195.19 km2 sobre geometria completa en EPSG:32717.",
+        "Cruce independiente contra el area publicada por el GAD: diferencia maxima 0.44 km2, atribuible al redondeo a entero del CSV municipal.",
+        "Encoding del .dbf confirmado UTF-8 por inspeccion de bytes (C3 91 = N con virgulilla), coincidiendo con lo declarado en el .cpg."
+      ],
+
+      "transformacion": {
+        "simplificacion": "Douglas-Peucker, tolerancia 30 m, aplicada en EPSG:32717 ANTES de reproyectar",
+        "puntosOriginales": 388028,
+        "puntosResultantes": 5586,
+        "errorAreaMedio": "0.054 %",
+        "errorAreaMaximo": "0.259 %",
+        "nota": "La superficie de cada unidad se calculo sobre la geometria COMPLETA, nunca sobre la simplificada. La simplificacion afecta solo al dibujo."
+      }
+    },
+
+    {
+      "id": "gad-cuenca-censo-2022",
+      "dominio": "poblacion",
+      "estado": "INTEGRADA_CON_RESTRICCION",
+
+      "institucion": "GAD Municipal del canton Cuenca",
+      "fuentePrimaria": "INEC — VIII Censo de Poblacion y VII de Vivienda 2022",
+      "esDerivado": true,
+      "dataset": "Poblacion Censo 2022",
+      "recurso": "GADCuenca_PoblacionCenso2022.csv",
+      "url": "https://cuencaendatos.cuenca.gob.ec/dataset/poblacion-censo-2022",
+      "urlDescarga": "https://cuencaendatos.cuenca.gob.ec/dataset/b0aa9d21-fa10-4286-8deb-b69c4578cb04/resource/c9227003-06d5-4b0b-abc5-8d726f1fb859/download/gadcuenca_poblacioncenso2022.csv",
+
+      "licencia": "Creative Commons Non-Commercial",
+      "usoComercialPermitido": false,
+      "restriccionLicencia": "La licencia CC NC PROHIBE el uso comercial. Sentinel es un producto propietario con modelo SaaS (Cap. 12 de la Constitucion). Antes de explotar comercialmente cualquier metrica derivada de este denominador hace falta permiso del GAD o sustituirlo por la fuente primaria del INEC.",
+
+      "tipoDato": "CENSO",
+      "anioDato": "2022",
+      "noEsProyeccion": "No confundir con las proyecciones INEC Revision 2024, que NO existen a nivel parroquial: su maximo desagregado es cantonal.",
+
+      "nivelTerritorial": "parroquia rural + bloque urbano agregado",
+      "fechaDescarga": "2026-08-24",
+
+      "cobertura": {
+        "unidadesConPoblacion": 22,
+        "parroquiasRurales": 21,
+        "bloqueUrbanoAgregado": 1,
+        "parroquiasUrbanasIndividuales": 0,
+        "poblacionTotalCanton2022": 596101
+      },
+
+      "limiteDeclarado": "Las 15 parroquias urbanas NO tienen poblacion individual: el CSV las agrega en una sola fila, «Cuenca parroquias urbanas» (361 524). Es el mismo limite estructural que la geometria de CONALI, y por el mismo motivo: la division urbana es municipal, no nacional.",
+
+      "porQueNoLaFuentePrimaria": "El INEC publica los tabulados del censo 2022 a nivel canton, sector y manzana, NO a nivel parroquia. La tabla parroquial que si publica (id=310 de ecuadorencifras) es un XLS del censo 2010. La publicacion municipal es, hoy, la unica fuente parroquial reproducible."
+    },
+
+    {
+      "id": "cne-padron",
+      "dominio": "padron_electoral",
+      "estado": "ACCESO_OFICIAL_BLOQUEADO",
+
+      "institucion": "Consejo Nacional Electoral (CNE)",
+      "url": "https://www.cne.gob.ec/registro-electoral-y-circunscripciones/",
+
+      "licencia": null,
+      "usoComercialPermitido": null,
+
+      "motivoBloqueo": "cne.gob.ec devuelve HTTP 403 a acceso automatizado en las dos rutas auditadas (pagina de registro electoral y PDF de estadisticas). No se pudo confirmar si existe un desglose descargable por parroquia.",
+
+      "loQueSiConsta": "Registro Electoral aprobado para las Elecciones Seccionales y CPCCS 2027 con 13 822 790 electores. El ciudadano puede consultar su parroquia y zona electoral. Existe un PDF de circunscripciones de Cuenca de 2013.",
+
+      "pendiente": "Integracion CNE requiere obtencion manual/verificable del dataset oficial. NO se usan fuentes secundarias para marcarlo verificado.",
+
+      "valorMientrasTanto": null,
+      "verificado": false
+    }
+  ],
+
+  "reglas": [
+    "Un dato solo pasa a verificado:true tras validarse tecnicamente contra su fichero de origen, no por estar citado en una pagina.",
+    "CENSO y PROYECCION nunca se mezclan ni se sustituyen entre si.",
+    "La poblacion cantonal NO se reparte entre parroquias. La poblacion parroquial no se infiere.",
+    "Los valores ausentes no se completan.",
+    "Una fuente secundaria no convierte un dato en oficial."
+  ]
+}

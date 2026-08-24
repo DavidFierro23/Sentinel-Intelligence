@@ -1,84 +1,1096 @@
 {
   "id": "ec-azuay-cuenca-denominadores",
-  "nombre": "Denominadores de normalizacion — canton Cuenca",
-  "version": "0.1",
-
-  "estado": "PENDIENTE — ningun denominador oficial integrado",
-
-  "porQueExisteVACIO": "La normalizacion es obligatoria y visible (UX-WR-001 §6.3). Este fichero es su punto de inyeccion. Se crea con TODAS las unidades y TODOS los valores en null, y no con estimaciones, porque el precedente que origino GEO-1 fue exactamente eso: repartir un dato provincial segun peso poblacional produjo penetraciones del 134 % y el 238 %. Un denominador inventado no degrada la respuesta, la invierte.",
-
-  "reglaDura": "Sin denominador oficial NO se calcula ninguna metrica per capita, ningun porcentaje poblacional y ninguna intensidad relativa. El normalizador devuelve `disponible:false` con motivo y la UI muestra «Dato oficial pendiente de integracion». No hay ruta de codigo que estime un denominador ausente.",
-
-  "fuentes": {
-    "poblacion": {
-      "organismo": "INEC",
-      "referencia": "Censo de Poblacion y Vivienda — proyecciones por parroquia",
-      "integrado": false,
-      "url": null
-    },
-    "padronElectoral": {
-      "organismo": "CNE",
-      "referencia": "Padron electoral por parroquia / junta receptora del voto",
-      "integrado": false,
-      "url": null
-    },
-    "superficieKm2": {
-      "organismo": "GAD Municipal de Cuenca / INEC",
-      "referencia": "Calculo sobre geometria oficial en EPSG:32717 (UTM 17S)",
-      "integrado": false,
-      "url": null,
-      "nota": "La superficie NO se calcula sobre Web Mercator: distorsiona el area. Depende del GeoJSON oficial, hoy ausente."
-    }
-  },
-
-  "comoIntegrar": [
-    "1. Rellenar `valor` y `fuente` en cada unidad de `denominadores`.",
-    "2. Poner `verificado: true` solo cuando el dato provenga del organismo citado, no de una nota de prensa.",
-    "3. Actualizar `integrado: true` en el bloque `fuentes` correspondiente.",
-    "4. No hace falta tocar una sola linea de codigo: normalizer.js lee este fichero."
-  ],
-
+  "nombre": "Denominadores de normalizacion del canton Cuenca",
+  "version": "2.0",
+  "estado": "PARCIAL. Poblacion y superficie integradas para 22 unidades; padron bloqueado; 15 parroquias urbanas sin desagregar.",
+  "procedencia": "Cada valor apunta a una entrada de fuentes-oficiales.json mediante fuenteId. Ningun valor sin fuenteId es utilizable.",
+  "reglaDura": "Sin denominador oficial NO se calcula ninguna metrica per capita, ningun porcentaje poblacional y ninguna intensidad relativa. Los valores null NO se completan, NO se estiman y NO se reparten desde el nivel superior.",
+  "reglaDeNivel": "Una normalizacion solo se habilita si todas las unidades comparadas tienen denominador del MISMO nivel. El bloque urbano agregado no es comparable con una parroquia rural.",
   "denominadores": {
-    "ec-azuay-cuenca": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-
-    "bellavista": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "canaribamba": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "el-batan": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "el-sagrario": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "el-vecino": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "gil-ramirez-davalos": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "hermano-miguel": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "huayna-capac": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "machangara": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "monay": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "san-blas": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "san-sebastian": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "sucre": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "totoracocha": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "yanuncay": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-
-    "banos": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "chaucha": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "checa": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "chiquintad": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "cumbe": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "el-valle": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "llacao": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "molleturo": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "nulti": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "octavio-cordero-palacios": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "paccha": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "quingeo": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "ricaurte": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "san-joaquin": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "santa-ana": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "sayausi": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "sidcay": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "sinincay": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "tarqui": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "turi": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-    "victoria-del-portete": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
-
-    "centro-historico": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false }
+    "banos": {
+      "poblacionOficial": {
+        "valor": 21797,
+        "tipoDato": "CENSO",
+        "anio": 2022,
+        "nivel": "parroquia",
+        "fuenteId": "gad-cuenca-censo-2022",
+        "verificado": true,
+        "usoComercialPermitido": false
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": 251.443,
+        "calculadaEn": "EPSG:32717",
+        "fuenteId": "conali-otp-2025",
+        "verificado": true
+      }
+    },
+    "bellavista": {
+      "poblacionOficial": {
+        "valor": null,
+        "tipoDato": null,
+        "anio": null,
+        "nivel": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. La division urbana es municipal y la fuente parroquial no la desagrega."
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": null,
+        "calculadaEn": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. Sin geometria oficial no se calcula superficie."
+      }
+    },
+    "canaribamba": {
+      "poblacionOficial": {
+        "valor": null,
+        "tipoDato": null,
+        "anio": null,
+        "nivel": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. La division urbana es municipal y la fuente parroquial no la desagrega."
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": null,
+        "calculadaEn": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. Sin geometria oficial no se calcula superficie."
+      }
+    },
+    "centro-historico": {
+      "poblacionOficial": {
+        "valor": null,
+        "tipoDato": null,
+        "anio": null,
+        "nivel": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. La division urbana es municipal y la fuente parroquial no la desagrega."
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": null,
+        "calculadaEn": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. Sin geometria oficial no se calcula superficie."
+      }
+    },
+    "chaucha": {
+      "poblacionOficial": {
+        "valor": 1721,
+        "tipoDato": "CENSO",
+        "anio": 2022,
+        "nivel": "parroquia",
+        "fuenteId": "gad-cuenca-censo-2022",
+        "verificado": true,
+        "usoComercialPermitido": false
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": 379.996,
+        "calculadaEn": "EPSG:32717",
+        "fuenteId": "conali-otp-2025",
+        "verificado": true
+      }
+    },
+    "checa": {
+      "poblacionOficial": {
+        "valor": 3204,
+        "tipoDato": "CENSO",
+        "anio": 2022,
+        "nivel": "parroquia",
+        "fuenteId": "gad-cuenca-censo-2022",
+        "verificado": true,
+        "usoComercialPermitido": false
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": 110.857,
+        "calculadaEn": "EPSG:32717",
+        "fuenteId": "conali-otp-2025",
+        "verificado": true
+      }
+    },
+    "chiquintad": {
+      "poblacionOficial": {
+        "valor": 5738,
+        "tipoDato": "CENSO",
+        "anio": 2022,
+        "nivel": "parroquia",
+        "fuenteId": "gad-cuenca-censo-2022",
+        "verificado": true,
+        "usoComercialPermitido": false
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": 93.445,
+        "calculadaEn": "EPSG:32717",
+        "fuenteId": "conali-otp-2025",
+        "verificado": true
+      }
+    },
+    "cuenca-cabecera": {
+      "poblacionOficial": {
+        "valor": 361524,
+        "tipoDato": "CENSO",
+        "anio": 2022,
+        "nivel": "bloque_urbano_agregado",
+        "fuenteId": "gad-cuenca-censo-2022",
+        "verificado": true,
+        "usoComercialPermitido": false
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": 71.676,
+        "calculadaEn": "EPSG:32717",
+        "fuenteId": "conali-otp-2025",
+        "verificado": true
+      }
+    },
+    "cumbe": {
+      "poblacionOficial": {
+        "valor": 6455,
+        "tipoDato": "CENSO",
+        "anio": 2022,
+        "nivel": "parroquia",
+        "fuenteId": "gad-cuenca-censo-2022",
+        "verificado": true,
+        "usoComercialPermitido": false
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": 75.13,
+        "calculadaEn": "EPSG:32717",
+        "fuenteId": "conali-otp-2025",
+        "verificado": true
+      }
+    },
+    "ec": {
+      "poblacionOficial": {
+        "valor": null,
+        "tipoDato": null,
+        "anio": null,
+        "nivel": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. La division urbana es municipal y la fuente parroquial no la desagrega."
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": null,
+        "calculadaEn": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. Sin geometria oficial no se calcula superficie."
+      }
+    },
+    "ec-azuay": {
+      "poblacionOficial": {
+        "valor": null,
+        "tipoDato": null,
+        "anio": null,
+        "nivel": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. La division urbana es municipal y la fuente parroquial no la desagrega."
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": null,
+        "calculadaEn": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. Sin geometria oficial no se calcula superficie."
+      }
+    },
+    "ec-azuay-cuenca": {
+      "poblacionOficial": {
+        "valor": null,
+        "tipoDato": null,
+        "anio": null,
+        "nivel": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. La division urbana es municipal y la fuente parroquial no la desagrega."
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": null,
+        "calculadaEn": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. Sin geometria oficial no se calcula superficie."
+      }
+    },
+    "el-batan": {
+      "poblacionOficial": {
+        "valor": null,
+        "tipoDato": null,
+        "anio": null,
+        "nivel": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. La division urbana es municipal y la fuente parroquial no la desagrega."
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": null,
+        "calculadaEn": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. Sin geometria oficial no se calcula superficie."
+      }
+    },
+    "el-sagrario": {
+      "poblacionOficial": {
+        "valor": null,
+        "tipoDato": null,
+        "anio": null,
+        "nivel": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. La division urbana es municipal y la fuente parroquial no la desagrega."
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": null,
+        "calculadaEn": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. Sin geometria oficial no se calcula superficie."
+      }
+    },
+    "el-valle": {
+      "poblacionOficial": {
+        "valor": 34785,
+        "tipoDato": "CENSO",
+        "anio": 2022,
+        "nivel": "parroquia",
+        "fuenteId": "gad-cuenca-censo-2022",
+        "verificado": true,
+        "usoComercialPermitido": false
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": 44.347,
+        "calculadaEn": "EPSG:32717",
+        "fuenteId": "conali-otp-2025",
+        "verificado": true
+      }
+    },
+    "el-vecino": {
+      "poblacionOficial": {
+        "valor": null,
+        "tipoDato": null,
+        "anio": null,
+        "nivel": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. La division urbana es municipal y la fuente parroquial no la desagrega."
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": null,
+        "calculadaEn": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. Sin geometria oficial no se calcula superficie."
+      }
+    },
+    "gil-ramirez-davalos": {
+      "poblacionOficial": {
+        "valor": null,
+        "tipoDato": null,
+        "anio": null,
+        "nivel": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. La division urbana es municipal y la fuente parroquial no la desagrega."
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": null,
+        "calculadaEn": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. Sin geometria oficial no se calcula superficie."
+      }
+    },
+    "hermano-miguel": {
+      "poblacionOficial": {
+        "valor": null,
+        "tipoDato": null,
+        "anio": null,
+        "nivel": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. La division urbana es municipal y la fuente parroquial no la desagrega."
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": null,
+        "calculadaEn": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. Sin geometria oficial no se calcula superficie."
+      }
+    },
+    "huayna-capac": {
+      "poblacionOficial": {
+        "valor": null,
+        "tipoDato": null,
+        "anio": null,
+        "nivel": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. La division urbana es municipal y la fuente parroquial no la desagrega."
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": null,
+        "calculadaEn": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. Sin geometria oficial no se calcula superficie."
+      }
+    },
+    "llacao": {
+      "poblacionOficial": {
+        "valor": 7468,
+        "tipoDato": "CENSO",
+        "anio": 2022,
+        "nivel": "parroquia",
+        "fuenteId": "gad-cuenca-censo-2022",
+        "verificado": true,
+        "usoComercialPermitido": false
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": 15.961,
+        "calculadaEn": "EPSG:32717",
+        "fuenteId": "conali-otp-2025",
+        "verificado": true
+      }
+    },
+    "machangara": {
+      "poblacionOficial": {
+        "valor": null,
+        "tipoDato": null,
+        "anio": null,
+        "nivel": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. La division urbana es municipal y la fuente parroquial no la desagrega."
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": null,
+        "calculadaEn": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. Sin geometria oficial no se calcula superficie."
+      }
+    },
+    "molleturo": {
+      "poblacionOficial": {
+        "valor": 6882,
+        "tipoDato": "CENSO",
+        "anio": 2022,
+        "nivel": "parroquia",
+        "fuenteId": "gad-cuenca-censo-2022",
+        "verificado": true,
+        "usoComercialPermitido": false
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": 983.77,
+        "calculadaEn": "EPSG:32717",
+        "fuenteId": "conali-otp-2025",
+        "verificado": true
+      }
+    },
+    "monay": {
+      "poblacionOficial": {
+        "valor": null,
+        "tipoDato": null,
+        "anio": null,
+        "nivel": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. La division urbana es municipal y la fuente parroquial no la desagrega."
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": null,
+        "calculadaEn": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. Sin geometria oficial no se calcula superficie."
+      }
+    },
+    "nulti": {
+      "poblacionOficial": {
+        "valor": 6707,
+        "tipoDato": "CENSO",
+        "anio": 2022,
+        "nivel": "parroquia",
+        "fuenteId": "gad-cuenca-censo-2022",
+        "verificado": true,
+        "usoComercialPermitido": false
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": 27.036,
+        "calculadaEn": "EPSG:32717",
+        "fuenteId": "conali-otp-2025",
+        "verificado": true
+      }
+    },
+    "octavio-cordero-palacios": {
+      "poblacionOficial": {
+        "valor": 2516,
+        "tipoDato": "CENSO",
+        "anio": 2022,
+        "nivel": "parroquia",
+        "fuenteId": "gad-cuenca-censo-2022",
+        "verificado": true,
+        "usoComercialPermitido": false
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": 20.879,
+        "calculadaEn": "EPSG:32717",
+        "fuenteId": "conali-otp-2025",
+        "verificado": true
+      }
+    },
+    "paccha": {
+      "poblacionOficial": {
+        "valor": 8497,
+        "tipoDato": "CENSO",
+        "anio": 2022,
+        "nivel": "parroquia",
+        "fuenteId": "gad-cuenca-censo-2022",
+        "verificado": true,
+        "usoComercialPermitido": false
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": 25.272,
+        "calculadaEn": "EPSG:32717",
+        "fuenteId": "conali-otp-2025",
+        "verificado": true
+      }
+    },
+    "quingeo": {
+      "poblacionOficial": {
+        "valor": 7318,
+        "tipoDato": "CENSO",
+        "anio": 2022,
+        "nivel": "parroquia",
+        "fuenteId": "gad-cuenca-censo-2022",
+        "verificado": true,
+        "usoComercialPermitido": false
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": 116.915,
+        "calculadaEn": "EPSG:32717",
+        "fuenteId": "conali-otp-2025",
+        "verificado": true
+      }
+    },
+    "ricaurte": {
+      "poblacionOficial": {
+        "valor": 26919,
+        "tipoDato": "CENSO",
+        "anio": 2022,
+        "nivel": "parroquia",
+        "fuenteId": "gad-cuenca-censo-2022",
+        "verificado": true,
+        "usoComercialPermitido": false
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": 13.929,
+        "calculadaEn": "EPSG:32717",
+        "fuenteId": "conali-otp-2025",
+        "verificado": true
+      }
+    },
+    "san-blas": {
+      "poblacionOficial": {
+        "valor": null,
+        "tipoDato": null,
+        "anio": null,
+        "nivel": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. La division urbana es municipal y la fuente parroquial no la desagrega."
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": null,
+        "calculadaEn": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. Sin geometria oficial no se calcula superficie."
+      }
+    },
+    "san-joaquin": {
+      "poblacionOficial": {
+        "valor": 10728,
+        "tipoDato": "CENSO",
+        "anio": 2022,
+        "nivel": "parroquia",
+        "fuenteId": "gad-cuenca-censo-2022",
+        "verificado": true,
+        "usoComercialPermitido": false
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": 204.179,
+        "calculadaEn": "EPSG:32717",
+        "fuenteId": "conali-otp-2025",
+        "verificado": true
+      }
+    },
+    "san-sebastian": {
+      "poblacionOficial": {
+        "valor": null,
+        "tipoDato": null,
+        "anio": null,
+        "nivel": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. La division urbana es municipal y la fuente parroquial no la desagrega."
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": null,
+        "calculadaEn": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. Sin geometria oficial no se calcula superficie."
+      }
+    },
+    "santa-ana": {
+      "poblacionOficial": {
+        "valor": 7027,
+        "tipoDato": "CENSO",
+        "anio": 2022,
+        "nivel": "parroquia",
+        "fuenteId": "gad-cuenca-censo-2022",
+        "verificado": true,
+        "usoComercialPermitido": false
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": 44.953,
+        "calculadaEn": "EPSG:32717",
+        "fuenteId": "conali-otp-2025",
+        "verificado": true
+      }
+    },
+    "sayausi": {
+      "poblacionOficial": {
+        "valor": 10352,
+        "tipoDato": "CENSO",
+        "anio": 2022,
+        "nivel": "parroquia",
+        "fuenteId": "gad-cuenca-censo-2022",
+        "verificado": true,
+        "usoComercialPermitido": false
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": 279.741,
+        "calculadaEn": "EPSG:32717",
+        "fuenteId": "conali-otp-2025",
+        "verificado": true
+      }
+    },
+    "sidcay": {
+      "poblacionOficial": {
+        "valor": 5039,
+        "tipoDato": "CENSO",
+        "anio": 2022,
+        "nivel": "parroquia",
+        "fuenteId": "gad-cuenca-censo-2022",
+        "verificado": true,
+        "usoComercialPermitido": false
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": 16.169,
+        "calculadaEn": "EPSG:32717",
+        "fuenteId": "conali-otp-2025",
+        "verificado": true
+      }
+    },
+    "sinincay": {
+      "poblacionOficial": {
+        "valor": 26725,
+        "tipoDato": "CENSO",
+        "anio": 2022,
+        "nivel": "parroquia",
+        "fuenteId": "gad-cuenca-censo-2022",
+        "verificado": true,
+        "usoComercialPermitido": false
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": 46.662,
+        "calculadaEn": "EPSG:32717",
+        "fuenteId": "conali-otp-2025",
+        "verificado": true
+      }
+    },
+    "sucre": {
+      "poblacionOficial": {
+        "valor": null,
+        "tipoDato": null,
+        "anio": null,
+        "nivel": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. La division urbana es municipal y la fuente parroquial no la desagrega."
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": null,
+        "calculadaEn": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. Sin geometria oficial no se calcula superficie."
+      }
+    },
+    "tarqui": {
+      "poblacionOficial": {
+        "valor": 14144,
+        "tipoDato": "CENSO",
+        "anio": 2022,
+        "nivel": "parroquia",
+        "fuenteId": "gad-cuenca-censo-2022",
+        "verificado": true,
+        "usoComercialPermitido": false
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": 150.841,
+        "calculadaEn": "EPSG:32717",
+        "fuenteId": "conali-otp-2025",
+        "verificado": true
+      }
+    },
+    "totoracocha": {
+      "poblacionOficial": {
+        "valor": null,
+        "tipoDato": null,
+        "anio": null,
+        "nivel": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. La division urbana es municipal y la fuente parroquial no la desagrega."
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": null,
+        "calculadaEn": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. Sin geometria oficial no se calcula superficie."
+      }
+    },
+    "turi": {
+      "poblacionOficial": {
+        "valor": 13901,
+        "tipoDato": "CENSO",
+        "anio": 2022,
+        "nivel": "parroquia",
+        "fuenteId": "gad-cuenca-censo-2022",
+        "verificado": true,
+        "usoComercialPermitido": false
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": 25.899,
+        "calculadaEn": "EPSG:32717",
+        "fuenteId": "conali-otp-2025",
+        "verificado": true
+      }
+    },
+    "victoria-del-portete": {
+      "poblacionOficial": {
+        "valor": 6654,
+        "tipoDato": "CENSO",
+        "anio": 2022,
+        "nivel": "parroquia",
+        "fuenteId": "gad-cuenca-censo-2022",
+        "verificado": true,
+        "usoComercialPermitido": false
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": 196.089,
+        "calculadaEn": "EPSG:32717",
+        "fuenteId": "conali-otp-2025",
+        "verificado": true
+      }
+    },
+    "yanuncay": {
+      "poblacionOficial": {
+        "valor": null,
+        "tipoDato": null,
+        "anio": null,
+        "nivel": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. La division urbana es municipal y la fuente parroquial no la desagrega."
+      },
+      "padronElectoral": {
+        "valor": null,
+        "proceso": null,
+        "nivel": null,
+        "fuenteId": "cne-padron",
+        "verificado": false,
+        "estadoFuente": "acceso_oficial_bloqueado",
+        "motivo": "Dato oficial pendiente de integracion. cne.gob.ec devuelve HTTP 403 a acceso automatizado."
+      },
+      "superficieKm2": {
+        "valor": null,
+        "calculadaEn": null,
+        "fuenteId": null,
+        "verificado": false,
+        "motivo": "Dato oficial pendiente de integracion. Sin geometria oficial no se calcula superficie."
+      }
+    }
   }
 }

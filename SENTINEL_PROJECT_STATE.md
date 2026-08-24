@@ -539,19 +539,67 @@ Modo `web` verificado aparte con **1** búsqueda de cuota: SerpAPI `OK`,
 
 ---
 
+## 13-bis. Datos oficiales integrados — GATE A (2026-08-24)
+
+✅ **Fuentes oficiales auditadas, descargadas, validadas e integradas.**
+Procedencia completa en `services/geo/territories/fuentes-oficiales.json`.
+
+| Fuente | Institución | Estado | Licencia |
+|---|---|---|---|
+| **Geometría** | CONALI — Ministerio de Gobierno | ✅ **INTEGRADA** | CC BY |
+| **Población** | GAD Cuenca (censo INEC 2022) | ⚠️ **INTEGRADA CON RESTRICCIÓN** | **CC NonCommercial** |
+| **Padrón** | CNE | ⛔ **ACCESO OFICIAL BLOQUEADO** (HTTP 403) | — |
+
+### Geometría — 22 de 41 unidades
+
+Dataset `Organización Territorial Parroquial`, 131 MB, SHP en **EPSG:32717**.
+Reproyectado a EPSG:4326 con Transverse Mercator inversa **validada**:
+`(714383, 9679807)` UTM → `(-79.0713, -2.8952)`, dentro de Cuenca.
+Simplificación Douglas-Peucker 30 m: **388 028 → 5 586 puntos**, error de área medio **0,054 %**.
+Las superficies se calculan sobre la geometría **completa**, no la simplificada.
+
+**21 parroquias rurales + 1 cabecera cantonal.** Las 15 urbanas **no tienen geometría**: la DPA nacional no las desagrega.
+
+### Códigos DPA oficiales
+
+Cada unidad rural lleva su `codigoOficial` (`010151`–`010171`), el cantón `0101` y la provincia `01`. **Resuelve el bloqueo para unir con INEC y CNE.**
+
+### Unidad reconocida ≠ geometría disponible
+
+Las 15 urbanas quedan **`verificado: true`** (respaldo: [GAD Cuenca](https://www.cuenca.gob.ec/page_divisionpolitica), ordenanza de 1982) con **`geometriaDisponible: false`**. Existen oficialmente; lo que falta es el polígono.
+
+### Población — censo 2022, no proyección
+
+596 101 habitantes en 22 unidades. **`tipoDato: "CENSO"`, `anio: 2022`.**
+No hay proyecciones parroquiales: el INEC solo llega a cantón.
+La población cantonal **no se repartió** entre parroquias (comprobado en tests).
+
+### Dos bloqueos nuevos, declarados
+
+1. **Conflicto de nivel.** Los denominadores son de dos niveles (`parroquia` y `bloque_urbano_agregado`). El normalizador **bloquea la mezcla** y solo habilita dentro de un mismo nivel.
+2. **Licencia CC-NC.** El denominador poblacional **prohíbe uso comercial**. Sentinel es SaaS propietario. Decisión pendiente del analista.
+
+### Validación cruzada independiente
+
+Las áreas calculadas desde la geometría CONALI **coinciden con las publicadas por el GAD** — diferencia máxima 0,44 km², atribuible al redondeo del CSV.
+
+---
+
 ## 14. Pendientes críticos territoriales
 
 🔴 **CRÍTICO** — sin esto el módulo es funcional pero incompleto:
 
-| # | Pendiente | Bloquea | Punto de inyección |
+| # | Pendiente | Bloquea | Estado |
 |---|---|---|---|
-| 1 | **GeoJSON oficial de parroquias** (GAD Cuenca / INEC) | mapa, coropleta, superficie km² | `territories/ec-azuay-cuenca.json` → campo `geometria` |
-| 2 | **Población oficial INEC** | normalización por población, per cápita | `territories/ec-azuay-cuenca-denominadores.json` |
-| 3 | **Padrón electoral CNE** | normalización por padrón | mismo fichero, campo **distinto** de población |
-| 4 | **Verificar nomenclatura** contra GAD/INEC | presentar como oficial | `verificado: true` por unidad |
-| 5 | **Credencial Brave** | segundo proveedor web | `BRAVE_API_KEY` en `.env` |
-| 6 | Attribution Engine · Replay Reconstructor | atribución y reconstrucción temporal | UX-3 |
-| 7 | Ingesta continua | separar actividad de observación | riesgo WR-7 |
+| 1 | ~~GeoJSON de parroquias rurales~~ | — | ✅ **RESUELTO** (CONALI) |
+| 2 | **Geometría de las 15 parroquias urbanas** | mapa completo, coropleta urbana | 🔴 no publicada por el GAD |
+| 3 | ~~Población parroquial~~ | — | ✅ **RESUELTO** con restricción de licencia |
+| 4 | **Licencia comercial del denominador poblacional** | uso comercial de métricas normalizadas | 🔴 CC-NC; requiere permiso del GAD o fuente INEC |
+| 5 | **Padrón electoral CNE** | normalización por elector | 🔴 HTTP 403, requiere gestión manual |
+| 6 | **Polígono del Centro Histórico** | sector patrimonial | 🔴 única unidad con `verificado:false` |
+| 7 | **Credencial Brave** | segundo proveedor web | 🔴 `BRAVE_API_KEY` |
+| 8 | Attribution Engine · Replay Reconstructor | atribución y reconstrucción | UX-3 |
+| 9 | Ingesta continua | separar actividad de observación | riesgo WR-7 |
 
 `POST /api/territorio/recargar` integra 1–4 **sin reiniciar el backend y sin
 cambiar arquitectura**.

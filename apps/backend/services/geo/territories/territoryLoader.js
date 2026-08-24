@@ -37,6 +37,10 @@ const FICHEROS = Object.freeze([
 
 const FICHERO_DENOMINADORES = "ec-azuay-cuenca-denominadores.json";
 
+const FICHERO_GEOMETRIA = "ec-azuay-cuenca-parroquias.geojson";
+
+const FICHERO_FUENTES = "fuentes-oficiales.json";
+
 
 function leerJson(nombre) {
   const ruta = join(RAIZ, nombre);
@@ -109,6 +113,59 @@ export function cargarTerritorios({ forzar = false } = {}) {
 
   let sinVerificar = 0;
 
+  /*
+    ---------------------------------------------------------
+    GEOMETRIA OFICIAL
+
+    Vive en su PROPIO fichero, no dentro del catalogo. Son dos
+    cosas distintas y el proyecto lo pidio explicitamente:
+
+      unidad territorial oficialmente reconocida
+      geometria oficial disponible
+
+    Una parroquia urbana de Cuenca es lo primero —la respalda
+    la ordenanza municipal de 1982— sin ser lo segundo: la DPA
+    nacional no publica su poligono. Meter la geometria dentro
+    del catalogo obligaria a que ambas cosas viajaran juntas, y
+    entonces «sin poligono» acabaria leyendose como «no existe».
+    ---------------------------------------------------------
+  */
+  const lecturaGeo = leerJson(FICHERO_GEOMETRIA);
+
+  const geometrias = new Map();
+
+  let metadataGeo = null;
+
+  if (lecturaGeo.ok) {
+    metadataGeo = lecturaGeo.datos?.metadata || null;
+
+    (lecturaGeo.datos?.features || []).forEach((f) => {
+      const id = f?.properties?.unidadId;
+
+      if (!id || !f.geometry) return;
+
+      geometrias.set(id, {
+        geometry: f.geometry,
+        propiedades: f.properties
+      });
+    });
+  } else {
+    avisos.push(
+      `${lecturaGeo.motivo}. El modulo funciona sin geometria: no habra mapa.`
+    );
+  }
+
+  /* Registro de procedencia. Sin el, un dato no es auditable. */
+  const lecturaFuentes = leerJson(FICHERO_FUENTES);
+
+  const fuentes = lecturaFuentes.ok ? lecturaFuentes.datos?.fuentes || [] : [];
+
+  if (!lecturaFuentes.ok) {
+    avisos.push(
+      `${lecturaFuentes.motivo}. Los datos oficiales quedan sin procedencia declarada.`
+    );
+  }
+
   for (const { archivo, obligatorio } of FICHEROS) {
     const lectura = leerJson(archivo);
 
@@ -147,7 +204,9 @@ export function cargarTerritorios({ forzar = false } = {}) {
 
       if (u.verificado !== true) sinVerificar += 1;
 
-      if (!u.geometria) sinGeometria += 1;
+      const geo = geometrias.get(u.id) || null;
+
+      if (!geo) sinGeometria += 1;
 
       unidades.push({
         ...u,
@@ -155,6 +214,19 @@ export function cargarTerritorios({ forzar = false } = {}) {
         jerarquia,
 
         catalogoId: catalogo.id,
+
+        /*
+          La geometria se ADJUNTA, no se declara en el catalogo.
+          `verificado` sigue hablando de la unidad; `geometria`
+          habla del poligono. Son independientes.
+        */
+        geometria: geo?.geometry || null,
+
+        geometriaDisponible: Boolean(geo),
+
+        codigoOficial: u.codigoOficial ?? geo?.propiedades?.codigoDPA ?? null,
+
+        superficieKm2: geo?.propiedades?.superficieKm2 ?? null,
 
         /*
           Se normaliza la forma para que el registro no tenga
@@ -206,8 +278,7 @@ export function cargarTerritorios({ forzar = false } = {}) {
           ? u.aliasInequivocos.map((a) => String(a).toLowerCase())
           : [],
         solapa: Array.isArray(u.solapa) ? u.solapa : [],
-        verificado: u.verificado === true,
-        geometria: u.geometria || null
+        verificado: u.verificado === true
       });
     });
   }
@@ -234,18 +305,44 @@ export function cargarTerritorios({ forzar = false } = {}) {
     );
   }
 
-  const conteoDenominadores = { poblacion: 0, padronElectoral: 0, superficieKm2: 0 };
+  /*
+    Un denominador cuenta SOLO si esta verificado. Un valor sin
+    verificar es una cifra sin respaldo, y para el caso vale lo
+    mismo que no tenerla: no habilita ninguna metrica.
+
+    Se cuentan ademas los NIVELES presentes: una poblacion de
+    «parroquia» y otra de «bloque_urbano_agregado» no son
+    comparables entre si, y esa incompatibilidad tiene que
+    llegar hasta el normalizador.
+  */
+  const conteoDenominadores = {
+    poblacionOficial: 0,
+    padronElectoral: 0,
+    superficieKm2: 0
+  };
+
+  const nivelesPorCampo = {
+    poblacionOficial: new Set(),
+    padronElectoral: new Set(),
+    superficieKm2: new Set()
+  };
+
+  let restriccionUsoComercial = false;
 
   Object.values(denominadores).forEach((d) => {
     if (!d) return;
 
-    if (typeof d.poblacion === "number") conteoDenominadores.poblacion += 1;
-    if (typeof d.padronElectoral === "number") {
-      conteoDenominadores.padronElectoral += 1;
-    }
-    if (typeof d.superficieKm2 === "number") {
-      conteoDenominadores.superficieKm2 += 1;
-    }
+    ["poblacionOficial", "padronElectoral", "superficieKm2"].forEach((campo) => {
+      const v = d[campo];
+
+      if (!v || v.verificado !== true || typeof v.valor !== "number") return;
+
+      conteoDenominadores[campo] += 1;
+
+      if (v.nivel) nivelesPorCampo[campo].add(v.nivel);
+
+      if (v.usoComercialPermitido === false) restriccionUsoComercial = true;
+    });
   });
 
   /*
@@ -255,39 +352,107 @@ export function cargarTerritorios({ forzar = false } = {}) {
   */
   const carencias = [];
 
+  const conGeometria = unidades.length - sinGeometria;
+
   if (sinGeometria > 0) {
+    const urbanasSinGeo = unidades.filter(
+      (u) => u.tipo === "urbana" && !u.geometriaDisponible
+    ).length;
+
     carencias.push({
       id: "geometria",
-      titulo: "Geometria oficial no integrada",
-      detalle: `${sinGeometria} de ${unidades.length} unidades sin poligono. No hay mapa; si hay analisis territorial por toponimo, evidencia, tema, fuente y tendencia.`,
+      titulo:
+        conGeometria > 0
+          ? "Cobertura geometrica PARCIAL"
+          : "Geometria oficial no integrada",
+      detalle:
+        conGeometria > 0
+          ? `${conGeometria} unidades con geometria oficial y ${sinGeometria} sin ella, de las cuales ${urbanasSinGeo} son parroquias urbanas. El mapa se puede dibujar, pero NO esta completo.`
+          : `${sinGeometria} de ${unidades.length} unidades sin poligono. No hay mapa.`,
       etiquetaUI: "Dato oficial pendiente de integracion",
-      origen: "GAD Municipal de Cuenca / geoportal INEC",
-      bloquea: ["mapa", "coropleta", "superficie_km2"],
-      noBloquea: ["resolucion_de_toponimos", "ranking", "series", "temas", "medios"]
+      origen: "GAD Municipal de Cuenca (poligono urbano no publicado)",
+      cobertura: { conGeometria, sinGeometria, urbanasSinGeometria: urbanasSinGeo },
+      bloquea:
+        conGeometria > 0
+          ? ["mapa_completo", "coropleta_urbana", "superficie_urbana"]
+          : ["mapa", "coropleta", "superficie_km2"],
+      noBloquea: [
+        "mapa_parcial",
+        "resolucion_de_toponimos",
+        "ranking",
+        "series",
+        "temas",
+        "medios"
+      ]
     });
   }
 
-  if (conteoDenominadores.poblacion === 0) {
+  if (conteoDenominadores.poblacionOficial === 0) {
     carencias.push({
       id: "poblacion",
-      titulo: "Poblacion INEC no integrada",
+      titulo: "Poblacion oficial no integrada",
       detalle:
-        "Ninguna unidad tiene poblacion oficial. No se calcula ninguna metrica per capita ni porcentaje poblacional.",
+        "Ninguna unidad tiene poblacion oficial verificada. No se calcula ninguna metrica per capita ni porcentaje poblacional.",
       etiquetaUI: "Dato oficial pendiente de integracion",
-      origen: "INEC",
+      origen: "INEC / GAD",
       bloquea: ["normalizacion_por_poblacion", "per_capita", "penetracion"],
       noBloquea: ["conteo_absoluto", "ranking_absoluto", "variacion_porcentual_propia"]
     });
+  } else {
+    /*
+      Hay poblacion, pero NO para todas las unidades y no en un
+      solo nivel. Declararlo como carencia distinta es lo que
+      impide que «hay poblacion» se lea como «se puede
+      normalizar todo».
+    */
+    const sinPoblacion = unidades.filter((u) => {
+      const d = denominadores[u.id];
+
+      return !(d?.poblacionOficial?.verificado === true);
+    }).length;
+
+    if (sinPoblacion > 0) {
+      carencias.push({
+        id: "poblacion_parcial",
+        titulo: "Poblacion oficial PARCIAL",
+        detalle: `${conteoDenominadores.poblacionOficial} unidades con poblacion oficial y ${sinPoblacion} sin ella. Las unidades sin denominador quedan FUERA de cualquier ranking normalizado, no al final de la lista.`,
+        etiquetaUI: "Dato oficial pendiente de integracion",
+        origen: "GAD Municipal de Cuenca (censo INEC 2022)",
+        niveles: [...nivelesPorCampo.poblacionOficial],
+        bloquea:
+          nivelesPorCampo.poblacionOficial.size > 1
+            ? ["normalizacion_por_poblacion_entre_niveles_distintos"]
+            : [],
+        noBloquea: ["normalizacion_dentro_del_mismo_nivel"]
+      });
+    }
+
+    if (restriccionUsoComercial) {
+      carencias.push({
+        id: "licencia_poblacion",
+        titulo: "Restriccion de licencia en el denominador poblacional",
+        detalle:
+          "La fuente poblacional integrada tiene licencia Creative Commons NonCommercial, que PROHIBE el uso comercial. Sentinel es un producto propietario con modelo SaaS. Antes de explotar comercialmente cualquier metrica derivada hace falta permiso del GAD o sustituir el denominador por la fuente primaria del INEC.",
+        etiquetaUI: "Restriccion de licencia",
+        origen: "GAD Municipal de Cuenca - CC NonCommercial",
+        bloquea: ["uso_comercial_de_metricas_normalizadas"],
+        noBloquea: ["uso_interno", "analisis", "conteo_absoluto"]
+      });
+    }
   }
 
   if (conteoDenominadores.padronElectoral === 0) {
+    const cne = fuentes.find((f) => f.dominio === "padron_electoral");
+
     carencias.push({
       id: "padron",
       titulo: "Padron electoral CNE no integrado",
       detalle:
+        cne?.motivoBloqueo ||
         "Ninguna unidad tiene padron oficial. No se calcula intensidad por elector.",
       etiquetaUI: "Dato oficial pendiente de integracion",
       origen: "CNE",
+      estadoFuente: cne?.estado || "no_localizada",
       bloquea: ["normalizacion_por_padron"],
       noBloquea: ["conteo_absoluto"]
     });
@@ -297,9 +462,9 @@ export function cargarTerritorios({ forzar = false } = {}) {
     carencias.push({
       id: "verificacion",
       titulo: "Nomenclatura no contrastada con fuente oficial",
-      detalle: `${sinVerificar} unidades con verificado:false. Los nombres provienen de UX-WR-001 §2.1 y no han sido contrastados contra el GAD ni el INEC.`,
+      detalle: `${sinVerificar} de ${unidades.length} unidades con verificado:false.`,
       etiquetaUI: "Dato oficial pendiente de integracion",
-      origen: "GAD Municipal de Cuenca / INEC",
+      origen: "GAD Municipal de Cuenca / CONALI",
       bloquea: ["presentar_como_oficial"],
       noBloquea: ["uso_operativo_interno"]
     });
@@ -312,15 +477,29 @@ export function cargarTerritorios({ forzar = false } = {}) {
     unidades,
     denominadores,
 
+    /* Procedencia de cada dato oficial. Sin esto no es auditable. */
+    fuentesOficiales: fuentes,
+
+    geometria: {
+      disponible: geometrias.size > 0,
+      unidadesConGeometria: geometrias.size,
+      metadata: metadataGeo
+    },
+
     metricas: {
       unidades: unidades.length,
       porResolucion: unidades.reduce((acc, u) => {
         acc[u.resolucion] = (acc[u.resolucion] || 0) + 1;
         return acc;
       }, {}),
+      conGeometria,
       sinGeometria,
       sinVerificar,
-      denominadoresConValor: conteoDenominadores
+      denominadoresConValor: conteoDenominadores,
+      nivelesDenominador: Object.fromEntries(
+        Object.entries(nivelesPorCampo).map(([k, v]) => [k, [...v]])
+      ),
+      restriccionUsoComercial
     },
 
     carencias,

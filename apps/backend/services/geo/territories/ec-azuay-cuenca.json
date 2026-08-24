@@ -1,20 +1,21 @@
 {
   "id": "ec-azuay-cuenca",
   "nombre": "Cantón Cuenca",
-  "version": "0.1",
+  "version": "2.0",
   "jerarquia": "administrativa",
   "fuente": {
     "declarada": "UX-WR-001 v2.0 §2.1 — listado de 15 parroquias urbanas y 21 rurales",
-    "oficial": null,
-    "verificado": false,
-    "pendiente": "Contrastar nombres, codigos y limites contra el GAD Municipal de Cuenca y el geoportal del INEC. Hasta entonces cada unidad lleva verificado:false y ninguna respuesta puede presentarse como oficial.",
+    "oficial": "CONALI (rurales, canton, provincia) + GAD Municipal de Cuenca (urbanas)",
+    "verificado": true,
+    "pendiente": "Geometria de las 15 parroquias urbanas. Su nomenclatura y jerarquia SI estan respaldadas oficialmente por el GAD; lo que falta es el poligono.",
     "convencion": "Misma marca (v) que usa el Cap. 14 de la Constitucion y el propio UX-WR-001."
   },
   "geometria": {
-    "disponible": false,
+    "disponible": "parcial",
     "formato": "GeoJSON",
-    "motivo": "El GeoJSON oficial de las 36 parroquias no esta en el repositorio. UX-WR-001 lo declara bloqueante (riesgo WR-3). Sin el no hay mapa, pero si hay motor territorial: este catalogo resuelve toponimos, agrega y rankea sin una sola coordenada.",
-    "puntoDeInyeccion": "Anadir el campo `geometria` a cada unidad, o un fichero paralelo ec-azuay-cuenca.geojson enlazado por `id`. El resto del motor no cambia."
+    "fichero": "ec-azuay-cuenca-parroquias.geojson",
+    "cobertura": "21 parroquias rurales + 1 cabecera cantonal (bloque urbano agregado). 15 parroquias urbanas SIN geometria individual.",
+    "fuenteId": "conali-otp-2025"
   },
   "unidades": [
     {
@@ -23,7 +24,16 @@
       "resolucion": "pais",
       "padre": null,
       "alias": [],
-      "verificado": false
+      "verificado": true,
+      "geometriaDisponible": false,
+      "motivoSinGeometria": "Fuera del alcance de este catalogo: solo se integro la geometria del canton Cuenca.",
+      "codigoOficial": null,
+      "fuenteNomenclatura": {
+        "institucion": "CONALI - Ministerio de Gobierno",
+        "fuenteId": "conali-otp-2025",
+        "url": "https://www.datosabiertos.gob.ec/dataset/organizacion-territorial-parroquial",
+        "anio": "2024"
+      }
     },
     {
       "id": "ec-azuay",
@@ -33,7 +43,16 @@
       "alias": [
         "provincia del azuay"
       ],
-      "verificado": false
+      "verificado": true,
+      "geometriaDisponible": false,
+      "motivoSinGeometria": "Fuera del alcance de este catalogo: solo se integro la geometria del canton Cuenca.",
+      "codigoOficial": "01",
+      "fuenteNomenclatura": {
+        "institucion": "CONALI - Ministerio de Gobierno",
+        "fuenteId": "conali-otp-2025",
+        "url": "https://www.datosabiertos.gob.ec/dataset/organizacion-territorial-parroquial",
+        "anio": "2024"
+      }
     },
     {
       "id": "ec-azuay-cuenca",
@@ -54,7 +73,16 @@
         "santa ana de los rios de cuenca"
       ],
       "notaAmbiguedad": "Homonimo mayor: Cuenca (Espana), y ademas 'cuenca' es sustantivo comun (cuenca hidrografica, cuenca del rio). El resolver exige contexto, SALVO que se cite el nombre oficial completo, que no lo lleva ningun otro lugar.",
-      "verificado": false
+      "verificado": true,
+      "geometriaDisponible": false,
+      "motivoSinGeometria": "El canton no tiene poligono propio en el fichero: se dibuja como union de sus 21 parroquias rurales mas la cabecera cantonal.",
+      "codigoOficial": "0101",
+      "fuenteNomenclatura": {
+        "institucion": "CONALI - Ministerio de Gobierno",
+        "fuenteId": "conali-otp-2025",
+        "url": "https://www.datosabiertos.gob.ec/dataset/organizacion-territorial-parroquial",
+        "anio": "2024"
+      }
     },
     {
       "id": "bellavista",
@@ -69,7 +97,17 @@
         "azuay"
       ],
       "notaAmbiguedad": "Toponimo muy repetido en Ecuador y America Latina.",
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": null,
+      "fuenteNomenclatura": {
+        "institucion": "GAD Municipal de Cuenca",
+        "fuenteId": "gad-cuenca-division-politica",
+        "url": "https://www.cuenca.gob.ec/page_divisionpolitica",
+        "instrumento": "Ordenanza de Division de las Parroquias Urbanas de la Ciudad de Cuenca, 1982"
+      },
+      "notaCodigo": "Sin codigo DPA: la division urbana es municipal y no figura en la DPA nacional.",
+      "geometriaDisponible": false,
+      "motivoSinGeometria": "Dato oficial pendiente de integracion. La DPA nacional no desagrega las parroquias urbanas; existen por ordenanza municipal de 1982 y su poligono no esta publicado."
     },
     {
       "id": "canaribamba",
@@ -81,7 +119,17 @@
         "cañaribamba",
         "canaribamba"
       ],
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": null,
+      "fuenteNomenclatura": {
+        "institucion": "GAD Municipal de Cuenca",
+        "fuenteId": "gad-cuenca-division-politica",
+        "url": "https://www.cuenca.gob.ec/page_divisionpolitica",
+        "instrumento": "Ordenanza de Division de las Parroquias Urbanas de la Ciudad de Cuenca, 1982"
+      },
+      "notaCodigo": "Sin codigo DPA: la division urbana es municipal y no figura en la DPA nacional.",
+      "geometriaDisponible": false,
+      "motivoSinGeometria": "Dato oficial pendiente de integracion. La DPA nacional no desagrega las parroquias urbanas; existen por ordenanza municipal de 1982 y su poligono no esta publicado."
     },
     {
       "id": "el-batan",
@@ -100,7 +148,17 @@
         "azuay"
       ],
       "notaAmbiguedad": "Existe El Batan en Quito.",
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": null,
+      "fuenteNomenclatura": {
+        "institucion": "GAD Municipal de Cuenca",
+        "fuenteId": "gad-cuenca-division-politica",
+        "url": "https://www.cuenca.gob.ec/page_divisionpolitica",
+        "instrumento": "Ordenanza de Division de las Parroquias Urbanas de la Ciudad de Cuenca, 1982"
+      },
+      "notaCodigo": "Sin codigo DPA: la division urbana es municipal y no figura en la DPA nacional.",
+      "geometriaDisponible": false,
+      "motivoSinGeometria": "Dato oficial pendiente de integracion. La DPA nacional no desagrega las parroquias urbanas; existen por ordenanza municipal de 1982 y su poligono no esta publicado."
     },
     {
       "id": "el-sagrario",
@@ -117,7 +175,17 @@
         "azuay"
       ],
       "notaAmbiguedad": "Hay parroquia El Sagrario en Quito, Loja, Ambato, Ibarra y Cotacachi.",
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": null,
+      "fuenteNomenclatura": {
+        "institucion": "GAD Municipal de Cuenca",
+        "fuenteId": "gad-cuenca-division-politica",
+        "url": "https://www.cuenca.gob.ec/page_divisionpolitica",
+        "instrumento": "Ordenanza de Division de las Parroquias Urbanas de la Ciudad de Cuenca, 1982"
+      },
+      "notaCodigo": "Sin codigo DPA: la division urbana es municipal y no figura en la DPA nacional.",
+      "geometriaDisponible": false,
+      "motivoSinGeometria": "Dato oficial pendiente de integracion. La DPA nacional no desagrega las parroquias urbanas; existen por ordenanza municipal de 1982 y su poligono no esta publicado."
     },
     {
       "id": "el-vecino",
@@ -136,7 +204,17 @@
         "parroquia"
       ],
       "notaAmbiguedad": "'el vecino' es ademas expresion comun en prensa. Exige contexto fuerte.",
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": null,
+      "fuenteNomenclatura": {
+        "institucion": "GAD Municipal de Cuenca",
+        "fuenteId": "gad-cuenca-division-politica",
+        "url": "https://www.cuenca.gob.ec/page_divisionpolitica",
+        "instrumento": "Ordenanza de Division de las Parroquias Urbanas de la Ciudad de Cuenca, 1982"
+      },
+      "notaCodigo": "Sin codigo DPA: la division urbana es municipal y no figura en la DPA nacional.",
+      "geometriaDisponible": false,
+      "motivoSinGeometria": "Dato oficial pendiente de integracion. La DPA nacional no desagrega las parroquias urbanas; existen por ordenanza municipal de 1982 y su poligono no esta publicado."
     },
     {
       "id": "gil-ramirez-davalos",
@@ -149,7 +227,17 @@
         "gil ramirez",
         "gil ramirez davalos"
       ],
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": null,
+      "fuenteNomenclatura": {
+        "institucion": "GAD Municipal de Cuenca",
+        "fuenteId": "gad-cuenca-division-politica",
+        "url": "https://www.cuenca.gob.ec/page_divisionpolitica",
+        "instrumento": "Ordenanza de Division de las Parroquias Urbanas de la Ciudad de Cuenca, 1982"
+      },
+      "notaCodigo": "Sin codigo DPA: la division urbana es municipal y no figura en la DPA nacional.",
+      "geometriaDisponible": false,
+      "motivoSinGeometria": "Dato oficial pendiente de integracion. La DPA nacional no desagrega las parroquias urbanas; existen por ordenanza municipal de 1982 y su poligono no esta publicado."
     },
     {
       "id": "hermano-miguel",
@@ -158,7 +246,17 @@
       "tipo": "urbana",
       "padre": "ec-azuay-cuenca",
       "alias": [],
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": null,
+      "fuenteNomenclatura": {
+        "institucion": "GAD Municipal de Cuenca",
+        "fuenteId": "gad-cuenca-division-politica",
+        "url": "https://www.cuenca.gob.ec/page_divisionpolitica",
+        "instrumento": "Ordenanza de Division de las Parroquias Urbanas de la Ciudad de Cuenca, 1982"
+      },
+      "notaCodigo": "Sin codigo DPA: la division urbana es municipal y no figura en la DPA nacional.",
+      "geometriaDisponible": false,
+      "motivoSinGeometria": "Dato oficial pendiente de integracion. La DPA nacional no desagrega las parroquias urbanas; existen por ordenanza municipal de 1982 y su poligono no esta publicado."
     },
     {
       "id": "huayna-capac",
@@ -171,7 +269,17 @@
         "huaynacapac",
         "huayna capac"
       ],
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": null,
+      "fuenteNomenclatura": {
+        "institucion": "GAD Municipal de Cuenca",
+        "fuenteId": "gad-cuenca-division-politica",
+        "url": "https://www.cuenca.gob.ec/page_divisionpolitica",
+        "instrumento": "Ordenanza de Division de las Parroquias Urbanas de la Ciudad de Cuenca, 1982"
+      },
+      "notaCodigo": "Sin codigo DPA: la division urbana es municipal y no figura en la DPA nacional.",
+      "geometriaDisponible": false,
+      "motivoSinGeometria": "Dato oficial pendiente de integracion. La DPA nacional no desagrega las parroquias urbanas; existen por ordenanza municipal de 1982 y su poligono no esta publicado."
     },
     {
       "id": "machangara",
@@ -191,7 +299,17 @@
         "parroquia"
       ],
       "notaAmbiguedad": "El Machangara es tambien un rio de Quito, muy citado en prensa nacional.",
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": null,
+      "fuenteNomenclatura": {
+        "institucion": "GAD Municipal de Cuenca",
+        "fuenteId": "gad-cuenca-division-politica",
+        "url": "https://www.cuenca.gob.ec/page_divisionpolitica",
+        "instrumento": "Ordenanza de Division de las Parroquias Urbanas de la Ciudad de Cuenca, 1982"
+      },
+      "notaCodigo": "Sin codigo DPA: la division urbana es municipal y no figura en la DPA nacional.",
+      "geometriaDisponible": false,
+      "motivoSinGeometria": "Dato oficial pendiente de integracion. La DPA nacional no desagrega las parroquias urbanas; existen por ordenanza municipal de 1982 y su poligono no esta publicado."
     },
     {
       "id": "monay",
@@ -200,7 +318,17 @@
       "tipo": "urbana",
       "padre": "ec-azuay-cuenca",
       "alias": [],
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": null,
+      "fuenteNomenclatura": {
+        "institucion": "GAD Municipal de Cuenca",
+        "fuenteId": "gad-cuenca-division-politica",
+        "url": "https://www.cuenca.gob.ec/page_divisionpolitica",
+        "instrumento": "Ordenanza de Division de las Parroquias Urbanas de la Ciudad de Cuenca, 1982"
+      },
+      "notaCodigo": "Sin codigo DPA: la division urbana es municipal y no figura en la DPA nacional.",
+      "geometriaDisponible": false,
+      "motivoSinGeometria": "Dato oficial pendiente de integracion. La DPA nacional no desagrega las parroquias urbanas; existen por ordenanza municipal de 1982 y su poligono no esta publicado."
     },
     {
       "id": "san-blas",
@@ -215,7 +343,17 @@
         "azuay"
       ],
       "notaAmbiguedad": "Toponimo repetido en varias ciudades.",
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": null,
+      "fuenteNomenclatura": {
+        "institucion": "GAD Municipal de Cuenca",
+        "fuenteId": "gad-cuenca-division-politica",
+        "url": "https://www.cuenca.gob.ec/page_divisionpolitica",
+        "instrumento": "Ordenanza de Division de las Parroquias Urbanas de la Ciudad de Cuenca, 1982"
+      },
+      "notaCodigo": "Sin codigo DPA: la division urbana es municipal y no figura en la DPA nacional.",
+      "geometriaDisponible": false,
+      "motivoSinGeometria": "Dato oficial pendiente de integracion. La DPA nacional no desagrega las parroquias urbanas; existen por ordenanza municipal de 1982 y su poligono no esta publicado."
     },
     {
       "id": "san-sebastian",
@@ -233,7 +371,17 @@
         "azuay"
       ],
       "notaAmbiguedad": "Toponimo muy repetido.",
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": null,
+      "fuenteNomenclatura": {
+        "institucion": "GAD Municipal de Cuenca",
+        "fuenteId": "gad-cuenca-division-politica",
+        "url": "https://www.cuenca.gob.ec/page_divisionpolitica",
+        "instrumento": "Ordenanza de Division de las Parroquias Urbanas de la Ciudad de Cuenca, 1982"
+      },
+      "notaCodigo": "Sin codigo DPA: la division urbana es municipal y no figura en la DPA nacional.",
+      "geometriaDisponible": false,
+      "motivoSinGeometria": "Dato oficial pendiente de integracion. La DPA nacional no desagrega las parroquias urbanas; existen por ordenanza municipal de 1982 y su poligono no esta publicado."
     },
     {
       "id": "sucre",
@@ -250,7 +398,17 @@
         "parroquia"
       ],
       "notaAmbiguedad": "Sucre es capital de Bolivia, canton de Manabi, apellido historico y nombre de decenas de calles. Ambiguedad alta.",
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": null,
+      "fuenteNomenclatura": {
+        "institucion": "GAD Municipal de Cuenca",
+        "fuenteId": "gad-cuenca-division-politica",
+        "url": "https://www.cuenca.gob.ec/page_divisionpolitica",
+        "instrumento": "Ordenanza de Division de las Parroquias Urbanas de la Ciudad de Cuenca, 1982"
+      },
+      "notaCodigo": "Sin codigo DPA: la division urbana es municipal y no figura en la DPA nacional.",
+      "geometriaDisponible": false,
+      "motivoSinGeometria": "Dato oficial pendiente de integracion. La DPA nacional no desagrega las parroquias urbanas; existen por ordenanza municipal de 1982 y su poligono no esta publicado."
     },
     {
       "id": "totoracocha",
@@ -259,7 +417,17 @@
       "tipo": "urbana",
       "padre": "ec-azuay-cuenca",
       "alias": [],
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": null,
+      "fuenteNomenclatura": {
+        "institucion": "GAD Municipal de Cuenca",
+        "fuenteId": "gad-cuenca-division-politica",
+        "url": "https://www.cuenca.gob.ec/page_divisionpolitica",
+        "instrumento": "Ordenanza de Division de las Parroquias Urbanas de la Ciudad de Cuenca, 1982"
+      },
+      "notaCodigo": "Sin codigo DPA: la division urbana es municipal y no figura en la DPA nacional.",
+      "geometriaDisponible": false,
+      "motivoSinGeometria": "Dato oficial pendiente de integracion. La DPA nacional no desagrega las parroquias urbanas; existen por ordenanza municipal de 1982 y su poligono no esta publicado."
     },
     {
       "id": "yanuncay",
@@ -268,7 +436,17 @@
       "tipo": "urbana",
       "padre": "ec-azuay-cuenca",
       "alias": [],
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": null,
+      "fuenteNomenclatura": {
+        "institucion": "GAD Municipal de Cuenca",
+        "fuenteId": "gad-cuenca-division-politica",
+        "url": "https://www.cuenca.gob.ec/page_divisionpolitica",
+        "instrumento": "Ordenanza de Division de las Parroquias Urbanas de la Ciudad de Cuenca, 1982"
+      },
+      "notaCodigo": "Sin codigo DPA: la division urbana es municipal y no figura en la DPA nacional.",
+      "geometriaDisponible": false,
+      "motivoSinGeometria": "Dato oficial pendiente de integracion. La DPA nacional no desagrega las parroquias urbanas; existen por ordenanza municipal de 1982 y su poligono no esta publicado."
     },
     {
       "id": "banos",
@@ -287,7 +465,16 @@
         "azuay"
       ],
       "notaAmbiguedad": "Colision fuerte con Banos de Agua Santa (Tungurahua), destino turistico con mucha mas presencia en prensa. Sin contexto se resuelve al otro.",
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": "010151",
+      "nombreOficialDPA": "BAÑOS",
+      "fuenteNomenclatura": {
+        "institucion": "CONALI - Ministerio de Gobierno",
+        "fuenteId": "conali-otp-2025",
+        "url": "https://www.datosabiertos.gob.ec/dataset/organizacion-territorial-parroquial",
+        "anio": "2024"
+      },
+      "geometriaDisponible": true
     },
     {
       "id": "chaucha",
@@ -296,7 +483,16 @@
       "tipo": "rural",
       "padre": "ec-azuay-cuenca",
       "alias": [],
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": "010153",
+      "nombreOficialDPA": "CHAUCHA",
+      "fuenteNomenclatura": {
+        "institucion": "CONALI - Ministerio de Gobierno",
+        "fuenteId": "conali-otp-2025",
+        "url": "https://www.datosabiertos.gob.ec/dataset/organizacion-territorial-parroquial",
+        "anio": "2024"
+      },
+      "geometriaDisponible": true
     },
     {
       "id": "checa",
@@ -314,7 +510,16 @@
         "azuay"
       ],
       "notaAmbiguedad": "Existe parroquia Checa en el Distrito Metropolitano de Quito.",
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": "010154",
+      "nombreOficialDPA": "CHECA",
+      "fuenteNomenclatura": {
+        "institucion": "CONALI - Ministerio de Gobierno",
+        "fuenteId": "conali-otp-2025",
+        "url": "https://www.datosabiertos.gob.ec/dataset/organizacion-territorial-parroquial",
+        "anio": "2024"
+      },
+      "geometriaDisponible": true
     },
     {
       "id": "chiquintad",
@@ -323,7 +528,16 @@
       "tipo": "rural",
       "padre": "ec-azuay-cuenca",
       "alias": [],
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": "010155",
+      "nombreOficialDPA": "CHIQUINTAD",
+      "fuenteNomenclatura": {
+        "institucion": "CONALI - Ministerio de Gobierno",
+        "fuenteId": "conali-otp-2025",
+        "url": "https://www.datosabiertos.gob.ec/dataset/organizacion-territorial-parroquial",
+        "anio": "2024"
+      },
+      "geometriaDisponible": true
     },
     {
       "id": "cumbe",
@@ -332,7 +546,16 @@
       "tipo": "rural",
       "padre": "ec-azuay-cuenca",
       "alias": [],
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": "010152",
+      "nombreOficialDPA": "CUMBE",
+      "fuenteNomenclatura": {
+        "institucion": "CONALI - Ministerio de Gobierno",
+        "fuenteId": "conali-otp-2025",
+        "url": "https://www.datosabiertos.gob.ec/dataset/organizacion-territorial-parroquial",
+        "anio": "2024"
+      },
+      "geometriaDisponible": true
     },
     {
       "id": "el-valle",
@@ -351,7 +574,17 @@
         "parroquia"
       ],
       "notaAmbiguedad": "'el valle' es ademas sustantivo comun y toponimo repetido.",
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": "010170",
+      "nombreOficialDPA": "VALLE",
+      "fuenteNomenclatura": {
+        "institucion": "CONALI - Ministerio de Gobierno",
+        "fuenteId": "conali-otp-2025",
+        "url": "https://www.datosabiertos.gob.ec/dataset/organizacion-territorial-parroquial",
+        "anio": "2024"
+      },
+      "notaNombre": "La DPA nacional lo registra como \"VALLE\"; se muestra la forma del GAD Cuenca.",
+      "geometriaDisponible": true
     },
     {
       "id": "llacao",
@@ -360,7 +593,16 @@
       "tipo": "rural",
       "padre": "ec-azuay-cuenca",
       "alias": [],
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": "010156",
+      "nombreOficialDPA": "LLACAO",
+      "fuenteNomenclatura": {
+        "institucion": "CONALI - Ministerio de Gobierno",
+        "fuenteId": "conali-otp-2025",
+        "url": "https://www.datosabiertos.gob.ec/dataset/organizacion-territorial-parroquial",
+        "anio": "2024"
+      },
+      "geometriaDisponible": true
     },
     {
       "id": "molleturo",
@@ -369,7 +611,16 @@
       "tipo": "rural",
       "padre": "ec-azuay-cuenca",
       "alias": [],
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": "010157",
+      "nombreOficialDPA": "MOLLETURO",
+      "fuenteNomenclatura": {
+        "institucion": "CONALI - Ministerio de Gobierno",
+        "fuenteId": "conali-otp-2025",
+        "url": "https://www.datosabiertos.gob.ec/dataset/organizacion-territorial-parroquial",
+        "anio": "2024"
+      },
+      "geometriaDisponible": true
     },
     {
       "id": "nulti",
@@ -378,7 +629,16 @@
       "tipo": "rural",
       "padre": "ec-azuay-cuenca",
       "alias": [],
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": "010158",
+      "nombreOficialDPA": "NULTI",
+      "fuenteNomenclatura": {
+        "institucion": "CONALI - Ministerio de Gobierno",
+        "fuenteId": "conali-otp-2025",
+        "url": "https://www.datosabiertos.gob.ec/dataset/organizacion-territorial-parroquial",
+        "anio": "2024"
+      },
+      "geometriaDisponible": true
     },
     {
       "id": "octavio-cordero-palacios",
@@ -390,7 +650,16 @@
         "santa rosa de octavio cordero",
         "octavio cordero"
       ],
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": "010159",
+      "nombreOficialDPA": "OCTAVIO CORDERO PALACIOS",
+      "fuenteNomenclatura": {
+        "institucion": "CONALI - Ministerio de Gobierno",
+        "fuenteId": "conali-otp-2025",
+        "url": "https://www.datosabiertos.gob.ec/dataset/organizacion-territorial-parroquial",
+        "anio": "2024"
+      },
+      "geometriaDisponible": true
     },
     {
       "id": "paccha",
@@ -405,7 +674,16 @@
         "azuay"
       ],
       "notaAmbiguedad": "Existe Paccha en El Oro (Atahualpa) y en Loja.",
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": "010160",
+      "nombreOficialDPA": "PACCHA",
+      "fuenteNomenclatura": {
+        "institucion": "CONALI - Ministerio de Gobierno",
+        "fuenteId": "conali-otp-2025",
+        "url": "https://www.datosabiertos.gob.ec/dataset/organizacion-territorial-parroquial",
+        "anio": "2024"
+      },
+      "geometriaDisponible": true
     },
     {
       "id": "quingeo",
@@ -414,7 +692,16 @@
       "tipo": "rural",
       "padre": "ec-azuay-cuenca",
       "alias": [],
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": "010161",
+      "nombreOficialDPA": "QUINGEO",
+      "fuenteNomenclatura": {
+        "institucion": "CONALI - Ministerio de Gobierno",
+        "fuenteId": "conali-otp-2025",
+        "url": "https://www.datosabiertos.gob.ec/dataset/organizacion-territorial-parroquial",
+        "anio": "2024"
+      },
+      "geometriaDisponible": true
     },
     {
       "id": "ricaurte",
@@ -429,7 +716,16 @@
         "azuay"
       ],
       "notaAmbiguedad": "Existe Ricaurte en Los Rios y es apellido historico frecuente.",
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": "010162",
+      "nombreOficialDPA": "RICAURTE",
+      "fuenteNomenclatura": {
+        "institucion": "CONALI - Ministerio de Gobierno",
+        "fuenteId": "conali-otp-2025",
+        "url": "https://www.datosabiertos.gob.ec/dataset/organizacion-territorial-parroquial",
+        "anio": "2024"
+      },
+      "geometriaDisponible": true
     },
     {
       "id": "san-joaquin",
@@ -447,7 +743,16 @@
         "azuay"
       ],
       "notaAmbiguedad": "Toponimo repetido.",
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": "010163",
+      "nombreOficialDPA": "SAN JOAQUÍN",
+      "fuenteNomenclatura": {
+        "institucion": "CONALI - Ministerio de Gobierno",
+        "fuenteId": "conali-otp-2025",
+        "url": "https://www.datosabiertos.gob.ec/dataset/organizacion-territorial-parroquial",
+        "anio": "2024"
+      },
+      "geometriaDisponible": true
     },
     {
       "id": "santa-ana",
@@ -464,7 +769,16 @@
         "parroquia"
       ],
       "notaAmbiguedad": "Canton Santa Ana en Manabi, y ademas 'Santa Ana de los Rios de Cuenca' es el nombre completo del propio canton: colision interna.",
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": "010164",
+      "nombreOficialDPA": "SANTA ANA",
+      "fuenteNomenclatura": {
+        "institucion": "CONALI - Ministerio de Gobierno",
+        "fuenteId": "conali-otp-2025",
+        "url": "https://www.datosabiertos.gob.ec/dataset/organizacion-territorial-parroquial",
+        "anio": "2024"
+      },
+      "geometriaDisponible": true
     },
     {
       "id": "sayausi",
@@ -476,7 +790,16 @@
         "sayausí",
         "sayausi"
       ],
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": "010165",
+      "nombreOficialDPA": "SAYAUSÍ",
+      "fuenteNomenclatura": {
+        "institucion": "CONALI - Ministerio de Gobierno",
+        "fuenteId": "conali-otp-2025",
+        "url": "https://www.datosabiertos.gob.ec/dataset/organizacion-territorial-parroquial",
+        "anio": "2024"
+      },
+      "geometriaDisponible": true
     },
     {
       "id": "sidcay",
@@ -485,7 +808,16 @@
       "tipo": "rural",
       "padre": "ec-azuay-cuenca",
       "alias": [],
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": "010166",
+      "nombreOficialDPA": "SIDCAY",
+      "fuenteNomenclatura": {
+        "institucion": "CONALI - Ministerio de Gobierno",
+        "fuenteId": "conali-otp-2025",
+        "url": "https://www.datosabiertos.gob.ec/dataset/organizacion-territorial-parroquial",
+        "anio": "2024"
+      },
+      "geometriaDisponible": true
     },
     {
       "id": "sinincay",
@@ -494,7 +826,16 @@
       "tipo": "rural",
       "padre": "ec-azuay-cuenca",
       "alias": [],
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": "010167",
+      "nombreOficialDPA": "SININCAY",
+      "fuenteNomenclatura": {
+        "institucion": "CONALI - Ministerio de Gobierno",
+        "fuenteId": "conali-otp-2025",
+        "url": "https://www.datosabiertos.gob.ec/dataset/organizacion-territorial-parroquial",
+        "anio": "2024"
+      },
+      "geometriaDisponible": true
     },
     {
       "id": "tarqui",
@@ -509,7 +850,16 @@
         "azuay"
       ],
       "notaAmbiguedad": "Tarqui es tambien parroquia de Guayaquil, la mas poblada del pais, y parroquia de Puerto Bolivar.",
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": "010168",
+      "nombreOficialDPA": "TARQUI",
+      "fuenteNomenclatura": {
+        "institucion": "CONALI - Ministerio de Gobierno",
+        "fuenteId": "conali-otp-2025",
+        "url": "https://www.datosabiertos.gob.ec/dataset/organizacion-territorial-parroquial",
+        "anio": "2024"
+      },
+      "geometriaDisponible": true
     },
     {
       "id": "turi",
@@ -518,7 +868,16 @@
       "tipo": "rural",
       "padre": "ec-azuay-cuenca",
       "alias": [],
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": "010169",
+      "nombreOficialDPA": "TURI",
+      "fuenteNomenclatura": {
+        "institucion": "CONALI - Ministerio de Gobierno",
+        "fuenteId": "conali-otp-2025",
+        "url": "https://www.datosabiertos.gob.ec/dataset/organizacion-territorial-parroquial",
+        "anio": "2024"
+      },
+      "geometriaDisponible": true
     },
     {
       "id": "victoria-del-portete",
@@ -530,7 +889,16 @@
         "irquis",
         "la victoria del portete"
       ],
-      "verificado": false
+      "verificado": true,
+      "codigoOficial": "010171",
+      "nombreOficialDPA": "VICTORIA DEL PORTETE",
+      "fuenteNomenclatura": {
+        "institucion": "CONALI - Ministerio de Gobierno",
+        "fuenteId": "conali-otp-2025",
+        "url": "https://www.datosabiertos.gob.ec/dataset/organizacion-territorial-parroquial",
+        "anio": "2024"
+      },
+      "geometriaDisponible": true
     }
   ]
 }

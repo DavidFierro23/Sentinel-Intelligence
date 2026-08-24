@@ -259,23 +259,58 @@ silencioso obligaria a cada consumidor a inventarse el motivo.
 */
 
 export function denominadorDe(unidadId, campo) {
-  const { denominadores } = abrirRegistro().datos;
+  const { denominadores, fuentesOficiales } = abrirRegistro().datos;
 
   const fila = denominadores[String(unidadId)] || null;
 
-  const valor = fila && typeof fila[campo] === "number" ? fila[campo] : null;
+  const d = fila ? fila[campo] : null;
+
+  /*
+    Un valor SIN VERIFICAR no esta disponible. Da igual que
+    exista el numero: sin respaldo comprobado no habilita
+    ninguna metrica, exactamente como si faltara.
+  */
+  const disponible = Boolean(d && d.verificado === true && typeof d.valor === "number");
+
+  const fuente = d?.fuenteId
+    ? (fuentesOficiales || []).find((f) => f.id === d.fuenteId) || null
+    : null;
 
   return {
     unidadId,
     campo,
-    valor,
-    disponible: valor !== null,
-    verificado: fila?.verificado === true,
-    fuente: fila?.fuente || null,
-    motivo:
-      valor === null
-        ? "Dato oficial pendiente de integracion."
-        : null
+
+    valor: disponible ? d.valor : null,
+    disponible,
+    verificado: d?.verificado === true,
+
+    /*
+      El NIVEL del denominador. Dos unidades con poblacion de
+      niveles distintos no son comparables, y el normalizador
+      necesita saberlo antes de dividir.
+    */
+    nivel: d?.nivel || null,
+
+    tipoDato: d?.tipoDato || null,
+    anio: d?.anio ?? null,
+
+    fuenteId: d?.fuenteId || null,
+
+    fuente: fuente
+      ? {
+          institucion: fuente.institucion,
+          dataset: fuente.dataset || null,
+          url: fuente.url || null,
+          licencia: fuente.licencia || null,
+          usoComercialPermitido: fuente.usoComercialPermitido ?? null
+        }
+      : null,
+
+    usoComercialPermitido: d?.usoComercialPermitido ?? null,
+
+    estadoFuente: d?.estadoFuente || null,
+
+    motivo: disponible ? null : d?.motivo || "Dato oficial pendiente de integracion."
   };
 }
 
@@ -352,6 +387,32 @@ export function estadoRegistro() {
     catalogos: datos.catalogos,
 
     metricas: datos.metricas,
+
+    /*
+      Procedencia de la geometria y de cada dato oficial. Sin
+      esto la respuesta trae poligonos que nadie puede rastrear
+      hasta su institucion, su URL y su fecha, y un dato sin
+      procedencia es indistinguible de uno inventado.
+    */
+    geometria: datos.geometria,
+
+    fuentesOficiales: (datos.fuentesOficiales || []).map((f) => ({
+      id: f.id,
+      dominio: f.dominio,
+      estado: f.estado,
+      institucion: f.institucion,
+      dataset: f.dataset || null,
+      url: f.url || null,
+      licencia: f.licencia || null,
+      usoComercialPermitido: f.usoComercialPermitido ?? null,
+      anioDato: f.anioDato || null,
+      tipoDato: f.tipoDato || null,
+      fechaDescarga: f.fechaDescarga || null,
+      crsOrigen: f.crsOrigen || null,
+      limiteDeclarado: f.limiteDeclarado || null,
+      restriccionLicencia: f.restriccionLicencia || null,
+      motivoBloqueo: f.motivoBloqueo || null
+    })),
 
     resolucionMasFinaDisponible: [...new Set(datos.unidades.map((u) => u.resolucion))]
       .sort((a, b) => (rangoDeResolucion(b) || 0) - (rangoDeResolucion(a) || 0))[0] || null,

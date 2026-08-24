@@ -296,6 +296,15 @@ export function catalogoTerritorial() {
       catalogos: registro.catalogos,
       metricas: registro.metricas,
       carencias: registro.carencias,
+
+      /*
+        La procedencia viaja con el catalogo. Quien consuma la
+        API debe poder ver de que institucion salio cada
+        poligono y con que licencia, sin abrir el repositorio.
+      */
+      geometria: registro.geometria,
+      fuentesOficiales: registro.fuentesOficiales,
+
       errores: registro.errores,
       avisos: registro.avisos
     },
@@ -321,42 +330,102 @@ export function catalogoTerritorial() {
     */
     etiquetaDatoPendiente: "Dato oficial pendiente de integracion",
 
-    capacidades: {
-      disponible: [
-        "Resolucion de toponimos con procedencia declarada",
-        "Agregacion territorial con GEO-1",
-        "Ranking por conteo absoluto",
-        "Series temporales por unidad",
-        "Deteccion de anomalias sobre la propia serie",
-        "Variacion de una unidad respecto de si misma entre periodos"
-      ],
-
-      noDisponible: [
-        {
-          que: "Mapa y coropleta",
-          porque: "No hay GeoJSON oficial de las parroquias (riesgo WR-3).",
-          requiere: "GAD Municipal de Cuenca / geoportal INEC"
-        },
-        {
-          que: "Normalizacion por poblacion o padron",
-          porque: "No hay denominadores oficiales integrados.",
-          requiere: "INEC / CNE"
-        },
-        {
-          que: "Superficie en km2",
-          porque:
-            "Depende de la geometria oficial y de calcularla en EPSG:32717, no en Web Mercator.",
-          requiere: "GeoJSON oficial"
-        },
-        {
-          que: "Atribucion de causa",
-          porque:
-            "Prohibida por diseno. Solo cabe contribucion y secuencia, y eso es el Attribution Engine (UX-3).",
-          requiere: "no aplica: es una restriccion congelada (WR-D13)"
-        }
-      ]
-    }
+    /*
+      Las capacidades se DERIVAN del estado real del registro,
+      no se escriben a mano. Una lista fija se queda obsoleta el
+      dia que se integra una fuente, y entonces el modulo sigue
+      diciendo que no puede hacer algo que ya hace.
+    */
+    capacidades: derivarCapacidades(registro)
   };
+}
+
+
+function derivarCapacidades(registro) {
+  const m = registro.metricas || {};
+
+  const conGeo = m.conGeometria || 0;
+
+  const sinGeo = m.sinGeometria || 0;
+
+  const den = m.denominadoresConValor || {};
+
+  const nivelesPob = m.nivelesDenominador?.poblacionOficial || [];
+
+  const disponible = [
+    "Resolucion de toponimos con procedencia declarada",
+    "Agregacion territorial con GEO-1",
+    "Ranking por conteo absoluto",
+    "Series temporales por unidad",
+    "Deteccion de anomalias sobre la propia serie",
+    "Variacion de una unidad respecto de si misma entre periodos"
+  ];
+
+  const noDisponible = [];
+
+  if (conGeo > 0) {
+    disponible.push(
+      `Mapa PARCIAL: ${conGeo} unidades con geometria oficial (${sinGeo} sin ella)`
+    );
+  }
+
+  if (den.superficieKm2 > 0) {
+    disponible.push(
+      `Superficie en km2 para ${den.superficieKm2} unidades, calculada en EPSG:32717`
+    );
+  }
+
+  if (sinGeo > 0) {
+    noDisponible.push({
+      que: "Mapa completo de parroquias",
+      porque: `${sinGeo} unidades sin poligono, incluidas las 15 parroquias urbanas: la DPA nacional no las desagrega.`,
+      requiere: "GAD Municipal de Cuenca — poligono urbano no publicado"
+    });
+  }
+
+  if (den.poblacionOficial === 0) {
+    noDisponible.push({
+      que: "Normalizacion por poblacion",
+      porque: "No hay denominadores poblacionales oficiales integrados.",
+      requiere: "INEC / GAD"
+    });
+  } else if (nivelesPob.length > 1) {
+    noDisponible.push({
+      que: "Normalizacion por poblacion MEZCLANDO niveles",
+      porque: `Los denominadores pertenecen a ${nivelesPob.length} niveles distintos (${nivelesPob.join(
+        ", "
+      )}) y no son comparables entre si.`,
+      requiere: "poblacion desagregada por parroquia urbana",
+      matiz: "Dentro de un mismo nivel la normalizacion SI esta disponible."
+    });
+  }
+
+  if (m.restriccionUsoComercial) {
+    noDisponible.push({
+      que: "Uso COMERCIAL de metricas normalizadas por poblacion",
+      porque:
+        "El denominador poblacional integrado tiene licencia Creative Commons NonCommercial.",
+      requiere: "permiso del GAD o sustitucion por la fuente primaria del INEC"
+    });
+  }
+
+  if (den.padronElectoral === 0) {
+    noDisponible.push({
+      que: "Normalizacion por padron electoral",
+      porque:
+        "cne.gob.ec devuelve HTTP 403 a acceso automatizado; no se pudo obtener el dataset oficial.",
+      requiere: "obtencion manual y verificable del padron del CNE"
+    });
+  }
+
+  noDisponible.push({
+    que: "Atribucion de causa",
+    porque:
+      "Prohibida por diseno. Solo cabe contribucion y secuencia, y eso es el Attribution Engine (UX-3).",
+    requiere: "no aplica: es una restriccion congelada (WR-D13)"
+  });
+
+  return { disponible, noDisponible };
 }
 
 

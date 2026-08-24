@@ -3,23 +3,18 @@
   "nombre": "Sectores especiales del canton Cuenca",
   "version": "0.1",
   "jerarquia": "sectorial",
-
   "porQueUnaJerarquiaAPARTE": "Un sector especial NO es una parroquia y no cuelga del arbol administrativo. Vive en su propia jerarquia y se cruza con la administrativa. Esta es exactamente la capacidad que UX-WR-001 §12.3 usa como prueba de que el motor es generico: si el registro solo admitiera parroquias, el Centro Historico no cabria, y tampoco las cuencas hidrograficas del paquete Agua.",
-
   "fuente": {
     "declarada": "UX-WR-001 v2.0 §6.2 y WR-D10",
-    "oficial": null,
+    "oficial": "CONALI para la cabecera cantonal. El Centro Historico sigue sin fuente.",
     "verificado": false,
     "pendiente": "Poligono oficial del Centro Historico (GAD Municipal de Cuenca / delimitacion UNESCO 1999). Sin el, el sector existe como unidad nombrable pero no como area calculable."
   },
-
   "geometria": {
-    "disponible": false,
-    "formato": "GeoJSON",
-    "motivo": "Riesgo WR-4: el Centro Historico NO se puede pintar sumando parroquias enteras. El Sagrario no es solo Centro Historico. Sin poligono propio, este sector no se agrega por composicion: se declara sin dato.",
-    "puntoDeInyeccion": "Anadir `geometria` a la unidad. El resto del motor no cambia."
+    "disponible": "parcial",
+    "fichero": "ec-azuay-cuenca-parroquias.geojson",
+    "cobertura": "cuenca-cabecera SI. centro-historico NO."
   },
-
   "unidades": [
     {
       "id": "centro-historico",
@@ -27,21 +22,36 @@
       "resolucion": "sector",
       "tipo": "patrimonial",
       "padre": "ec-azuay-cuenca",
-      "alias": ["centro historico de cuenca", "centro histórico", "casco historico"],
-      "verificado": false,
-
-      "solapa": [
-        { "unidadId": "el-sagrario", "cobertura": "total" },
-        { "unidadId": "san-blas", "cobertura": "total" },
-        { "unidadId": "gil-ramirez-davalos", "cobertura": "total" },
-        { "unidadId": "huayna-capac", "cobertura": "parcial" },
-        { "unidadId": "sucre", "cobertura": "parcial" }
+      "alias": [
+        "centro historico de cuenca",
+        "centro histórico",
+        "casco historico"
       ],
-
+      "verificado": false,
+      "solapa": [
+        {
+          "unidadId": "el-sagrario",
+          "cobertura": "total"
+        },
+        {
+          "unidadId": "san-blas",
+          "cobertura": "total"
+        },
+        {
+          "unidadId": "gil-ramirez-davalos",
+          "cobertura": "total"
+        },
+        {
+          "unidadId": "huayna-capac",
+          "cobertura": "parcial"
+        },
+        {
+          "unidadId": "sucre",
+          "cobertura": "parcial"
+        }
+      ],
       "reglaDeAgregacion": "prohibida_por_composicion",
-
       "notaReglaDeAgregacion": "WR-D10 y riesgo WR-4. Este sector NO se calcula sumando las parroquias que solapa: dos de ellas solo lo hacen parcialmente, y las otras tres tienen area fuera del poligono patrimonial. Mientras no exista el poligono oficial, cualquier consulta a resolucion `sector` sobre esta unidad devuelve `sin_dato` con motivo declarado, nunca una suma aproximada.",
-
       "denominadores": {
         "poblacion": null,
         "padronElectoral": null,
@@ -50,9 +60,96 @@
         "verificado": false,
         "nota": "Dato oficial pendiente de integracion."
       }
+    },
+    {
+      "id": "cuenca-cabecera",
+      "nombre": "Cuenca (area urbana)",
+      "resolucion": "sector",
+      "tipo": "urbana_agregada",
+      "padre": "ec-azuay-cuenca",
+      "alias": [
+        "cabecera cantonal de cuenca",
+        "area urbana de cuenca"
+      ],
+      "codigoOficial": "010150",
+      "nombreOficialDPA": "CUENCA",
+      "tipoOficialDPA": "CABECERA CANTONAL",
+      "verificado": true,
+      "fuenteNomenclatura": {
+        "institucion": "CONALI - Ministerio de Gobierno",
+        "fuenteId": "conali-otp-2025",
+        "url": "https://www.datosabiertos.gob.ec/dataset/organizacion-territorial-parroquial",
+        "anio": "2024"
+      },
+      "geometriaDisponible": true,
+      "porQueExiste": "Es el UNICO poligono oficial que cubre la zona urbana de Cuenca. La DPA nacional no desagrega las 15 parroquias urbanas, asi que sin esta unidad el mapa dejaria la ciudad entera en blanco pese a existir geometria oficial para ella.",
+      "solapa": [
+        {
+          "unidadId": "bellavista",
+          "cobertura": "total"
+        },
+        {
+          "unidadId": "canaribamba",
+          "cobertura": "total"
+        },
+        {
+          "unidadId": "el-batan",
+          "cobertura": "total"
+        },
+        {
+          "unidadId": "el-sagrario",
+          "cobertura": "total"
+        },
+        {
+          "unidadId": "el-vecino",
+          "cobertura": "total"
+        },
+        {
+          "unidadId": "gil-ramirez-davalos",
+          "cobertura": "total"
+        },
+        {
+          "unidadId": "hermano-miguel",
+          "cobertura": "total"
+        },
+        {
+          "unidadId": "huayna-capac",
+          "cobertura": "total"
+        },
+        {
+          "unidadId": "machangara",
+          "cobertura": "total"
+        },
+        {
+          "unidadId": "monay",
+          "cobertura": "total"
+        },
+        {
+          "unidadId": "san-blas",
+          "cobertura": "total"
+        },
+        {
+          "unidadId": "san-sebastian",
+          "cobertura": "total"
+        },
+        {
+          "unidadId": "sucre",
+          "cobertura": "total"
+        },
+        {
+          "unidadId": "totoracocha",
+          "cobertura": "total"
+        },
+        {
+          "unidadId": "yanuncay",
+          "cobertura": "total"
+        }
+      ],
+      "reglaDeAgregacion": "composicion_autorizada",
+      "notaReglaDeAgregacion": "A diferencia del Centro Historico, las 15 parroquias urbanas TESELAN exactamente esta unidad por ordenanza: su suma es la cabecera, sin solapes ni huecos. Por eso su valor SI puede componerse desde ellas. Componer hacia arriba es agregar, no desagregar: GEO-1 no se toca.",
+      "noEsUnaParroquia": "No participa en rankings a resolucion parroquia. Es un bloque agregado y compararlo con una parroquia rural mezclaria niveles."
     }
   ],
-
   "extensible": {
     "como": "Anadir objetos al array `unidades` con la misma forma. Una unidad puede solapar cualquier conjunto de la jerarquia administrativa y declarar su propia regla de agregacion.",
     "casosPrevistos": [
