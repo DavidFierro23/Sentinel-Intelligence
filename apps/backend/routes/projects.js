@@ -8,6 +8,8 @@ import { absolutizarAvatares } from "../services/avatar/avatarIntelligenceEngine
 import {
   crearProyecto,
   obtenerProyecto,
+  listarProyectos,
+  contenidoDeProyecto,
   agregarCandidato,
   obtenerCandidato,
   agregarActor,
@@ -53,6 +55,23 @@ router.get("/catalogo", (req, res) => {
 
 /*
 -----------------------------------------------------------
+LISTAR PROYECTOS — lo que faltaba para que la recarga funcione
+-----------------------------------------------------------
+*/
+
+router.get("/", async (req, res) => {
+  try {
+    const proyectos = await listarProyectos();
+
+    res.json({ total: proyectos.length, proyectos });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo al listar proyectos" });
+  }
+});
+
+
+/*
+-----------------------------------------------------------
 CREAR PROYECTO
 -----------------------------------------------------------
 */
@@ -73,16 +92,31 @@ router.post("/", async (req, res) => {
 });
 
 
+/*
+  Devuelve el proyecto CON sus candidatos, actores y expedientes.
+
+  Que el expediente venga aqui es lo que permite que una recarga
+  muestre "investigacion completada" en lugar de volver a lanzar
+  la investigacion: recargar recupera, no descubre, y no gasta
+  cuota de SerpAPI.
+*/
 router.get("/:proyectoId", async (req, res) => {
-  const p = await obtenerProyecto(req.params.proyectoId);
+  try {
+    const c = await contenidoDeProyecto(req.params.proyectoId);
 
-  if (!p) {
-    return res
-      .status(404)
-      .json({ error: `no existe el proyecto ${req.params.proyectoId}` });
+    if (!c) {
+      return res
+        .status(404)
+        .json({ error: `no existe el proyecto ${req.params.proyectoId}` });
+    }
+
+    res.json({
+      ...c,
+      contextoMaestro: construirContextoMaestro(c.proyecto)
+    });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo al leer el proyecto" });
   }
-
-  res.json({ proyecto: p, contextoMaestro: construirContextoMaestro(p) });
 });
 
 

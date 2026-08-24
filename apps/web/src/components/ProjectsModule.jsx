@@ -1,6 +1,7 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   FolderPlus,
+  FolderOpen,
   UserPlus,
   Users,
   Landmark,
@@ -110,8 +111,48 @@ function colorCobertura(p) {
   return "#EF4444";
 }
 
+/*
+-----------------------------------------------------------
+EL ID DEL PROYECTO VIVE EN LA URL
+
+Antes vivia solo en useState, y ahi estaba el defecto: al
+recargar, React se reinicia y el proyecto parecia haber
+desaparecido. No habia desaparecido —estaba en disco— pero la
+interfaz no tenia como volver a el.
+
+Se reutiliza el mecanismo de deep link que ya existe (?q=), sin
+montar un segundo sistema de rutas.
+-----------------------------------------------------------
+*/
+function proyectoDeLaUrl() {
+  try {
+    return new URLSearchParams(window.location.search).get("proyecto") || null;
+  } catch {
+    return null;
+  }
+}
+
+function fijarProyectoEnUrl(id) {
+  try {
+    const u = new URL(window.location.href);
+
+    if (id) u.searchParams.set("proyecto", id);
+    else u.searchParams.delete("proyecto");
+
+    window.history.replaceState({}, "", u);
+  } catch {
+    /* Sin history API el modulo sigue funcionando, solo pierde el
+       enlace directo. */
+  }
+}
+
+
 export default function ProjectsModule() {
   const [proyecto, setProyecto] = useState(null);
+
+  const [lista, setLista] = useState(null);
+
+  const [cargando, setCargando] = useState(true);
 
   const [candidatos, setCandidatos] = useState([]);
 
@@ -156,6 +197,8 @@ export default function ProjectsModule() {
 
   const [verFormActor, setVerFormActor] = useState(false);
 
+  const [verFormProyecto, setVerFormProyecto] = useState(false);
+
   const pedir = useCallback(async (ruta, cuerpo = null) => {
     const r = await fetch(`${BACKEND}/api/proyectos${ruta}`, {
       method: cuerpo === null ? "GET" : "POST",
@@ -170,6 +213,82 @@ export default function ProjectsModule() {
     return j;
   }, []);
 
+  /*
+    Abrir un proyecto: se pide su contenido al backend, que es la
+    fuente de verdad. React solo cachea lo que llega.
+  */
+  const abrir = useCallback(
+    async (id) => {
+      setCargando(true);
+      setAviso(null);
+
+      try {
+        const j = await pedir(`/${id}`);
+
+        setProyecto({ ...j.proyecto, contextoMaestro: j.contextoMaestro });
+
+        setCandidatos(j.candidatos || []);
+
+        setActores(j.actores || []);
+
+        fijarProyectoEnUrl(id);
+      } catch (e) {
+        setAviso(e.message);
+
+        fijarProyectoEnUrl(null);
+      } finally {
+        setCargando(false);
+      }
+    },
+    [pedir]
+  );
+
+  /*
+    CARGA INICIAL. Se ejecuta al entrar al modulo y tras cada
+    recarga del navegador. Solo LEE: no lanza ninguna
+    investigacion, asi que recargar no gasta cuota de SerpAPI.
+  */
+  useEffect(() => {
+    let vigente = true;
+
+    (async () => {
+      try {
+        const j = await pedir("");
+
+        if (!vigente) return;
+
+        setLista(j.proyectos || []);
+
+        const idUrl = proyectoDeLaUrl();
+
+        if (idUrl && (j.proyectos || []).some((p) => p.id === idUrl)) {
+          await abrir(idUrl);
+
+          return;
+        }
+      } catch (e) {
+        if (vigente) setAviso(e.message);
+      }
+
+      if (vigente) setCargando(false);
+    })();
+
+    return () => {
+      vigente = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const recargarLista = useCallback(async () => {
+    try {
+      const j = await pedir("");
+
+      setLista(j.proyectos || []);
+    } catch {
+      /* La lista se recupera en la siguiente entrada al modulo. */
+    }
+  }, [pedir]);
+
   const crear = async () => {
     setOcupado("proyecto");
     setAviso(null);
@@ -180,6 +299,10 @@ export default function ProjectsModule() {
       setProyecto({ ...j.proyecto, contextoMaestro: j.contextoMaestro });
       setCandidatos([]);
       setActores([]);
+
+      fijarProyectoEnUrl(j.proyecto.id);
+
+      recargarLista();
     } catch (e) {
       setAviso(e.message);
     } finally {
@@ -192,12 +315,15 @@ export default function ProjectsModule() {
     setAviso(null);
 
     try {
-      const j = await pedir(`/${proyecto.id}/candidatos`, nuevoCandidato);
+      await pedir(`/${proyecto.id}/candidatos`, nuevoCandidato);
 
-      setCandidatos((c) => [
-        ...c.filter((x) => x.id !== j.candidato.id),
-        { ...j.candidato, contextoMaestro: j.contextoMaestro }
-      ]);
+      /*
+        Se relee del backend en lugar de confiar en el estado
+        local: la fuente de verdad es el almacenamiento, y asi la
+        fusion de cuentas de referencia que hace el servidor se ve
+        reflejada.
+      */
+      await abrir(proyecto.id);
 
       setNuevoCandidato({
         nombre: "",
@@ -225,10 +351,7 @@ export default function ProjectsModule() {
     try {
       const j = await pedir(`/${proyecto.id}/actores`, nuevoActor);
 
-      setActores((a) => [
-        ...a.filter((x) => x.id !== j.actor.id),
-        { ...j.actor, contextoMaestro: j.contextoMaestro }
-      ]);
+      await abrir(proyecto.id);
 
       setNuevoActor({
         nombre: "",
@@ -307,6 +430,128 @@ export default function ProjectsModule() {
      SIN PROYECTO — formulario de creación
      ============================================================= */
 
+  if (cargando) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "10px",
+          color: "var(--sentinel-texto-suave)",
+          fontSize: "13px"
+        }}
+      >
+        <Loader2 size={16} color="var(--sentinel-cyan)" />
+        Recuperando proyectos…
+      </div>
+    );
+  }
+
+  /* =============================================================
+     MIS PROYECTOS — lo que faltaba: la lista persistente
+     ============================================================= */
+
+  if (!proyecto && lista && lista.length > 0 && !verFormProyecto) {
+    return (
+      <section className="sentinel-fade">
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "11px",
+            flexWrap: "wrap",
+            marginBottom: "6px"
+          }}
+        >
+          <FolderOpen size={21} color="var(--sentinel-cyan)" />
+
+          <h1 style={{ margin: 0, color: "#FFFFFF", fontSize: "21px" }}>
+            Mis proyectos
+          </h1>
+
+          <span
+            style={{ color: "var(--sentinel-texto-tenue)", fontSize: "11px" }}
+          >
+            {lista.length} guardado(s)
+          </span>
+
+          <button
+            className="sentinel-boton sentinel-boton-primario"
+            onClick={() => setVerFormProyecto(true)}
+            style={{ marginLeft: "auto" }}
+          >
+            + Nuevo proyecto
+          </button>
+        </div>
+
+        <p
+          style={{
+            color: "var(--sentinel-texto-suave)",
+            fontSize: "12px",
+            lineHeight: 1.7,
+            margin: "0 0 18px 0"
+          }}
+        >
+          Un proyecto es un expediente permanente: sigue aquí hasta que lo
+          elimines. Abrirlo recupera sus candidatos y sus investigaciones sin
+          volver a buscar nada.
+        </p>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+          {lista.map((p) => (
+            <div
+              key={p.id}
+              style={{
+                ...caja,
+                display: "flex",
+                alignItems: "center",
+                gap: "14px",
+                flexWrap: "wrap"
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: "#FFFFFF", fontSize: "14.5px", fontWeight: 600 }}>
+                  {p.nombre}
+                </div>
+
+                <div
+                  style={{
+                    color: "var(--sentinel-cyan)",
+                    fontSize: "11px",
+                    marginTop: "4px"
+                  }}
+                >
+                  {[p.canton, p.provincia, p.pais].filter(Boolean).join(" · ")}
+                  {p.dignidad ? ` — ${p.dignidad}` : ""}
+                </div>
+
+                {p.creadoEn && (
+                  <div
+                    style={{
+                      color: "var(--sentinel-texto-tenue)",
+                      fontSize: "10px",
+                      marginTop: "4px"
+                    }}
+                  >
+                    creado el {String(p.creadoEn).slice(0, 10)}
+                  </div>
+                )}
+              </div>
+
+              <button
+                className="sentinel-boton"
+                onClick={() => abrir(p.id)}
+                style={{ marginLeft: "auto" }}
+              >
+                Abrir
+              </button>
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
   if (!proyecto) {
     return (
       <section className="sentinel-fade" style={{ maxWidth: "620px" }}>
@@ -337,6 +582,16 @@ export default function ProjectsModule() {
           contexto lo fijas tú, y tiene prioridad sobre lo que devuelva un
           buscador: una noticia de un homónimo no puede desplazarlo.
         </p>
+
+        {lista?.length > 0 && (
+          <button
+            className="sentinel-boton"
+            onClick={() => setVerFormProyecto(false)}
+            style={{ marginBottom: "14px" }}
+          >
+            ← volver a mis proyectos
+          </button>
+        )}
 
         <div style={caja}>
           <Campo
@@ -435,7 +690,13 @@ export default function ProjectsModule() {
      VISTA DEL PROYECTO
      ============================================================= */
 
-  const comparables = candidatos.filter((c) => c.cobertura != null);
+  const comparables = candidatos
+    .map((c) => ({
+      ...c,
+      cobertura: c.resumen?.huellaDigital ?? c.cobertura ?? null,
+      cuentas: c.resumen?.cuentas ?? c.cuentas ?? 0
+    }))
+    .filter((c) => c.cobertura != null);
 
   const actoresActivos = actores.filter((a) => a.incluirEnComparativo);
 
@@ -443,9 +704,32 @@ export default function ProjectsModule() {
     <section className="sentinel-fade">
       {/* CABECERA */}
 
-      <h1 style={{ margin: 0, color: "#FFFFFF", fontSize: "23px" }}>
-        {proyecto.nombre}
-      </h1>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "12px",
+          flexWrap: "wrap"
+        }}
+      >
+        <h1 style={{ margin: 0, color: "#FFFFFF", fontSize: "23px" }}>
+          {proyecto.nombre}
+        </h1>
+
+        <button
+          className="sentinel-boton"
+          onClick={() => {
+            setProyecto(null);
+            setCandidatos([]);
+            setActores([]);
+            fijarProyectoEnUrl(null);
+            recargarLista();
+          }}
+          style={{ marginLeft: "auto", padding: "6px 14px", fontSize: "11px" }}
+        >
+          ← mis proyectos
+        </button>
+      </div>
 
       <div
         style={{
@@ -526,22 +810,52 @@ export default function ProjectsModule() {
                   </span>
                 )}
 
-                {c.cobertura != null && (
+                {/*
+                  ESTADO PERSISTENTE. Viene del backend, derivado de
+                  que exista expediente. Si ya se investigo, el boton
+                  principal deja de invitar a investigar.
+                */}
+                {c.estadoInvestigacion === "completada" && (
                   <span
                     style={{
-                      color: colorCobertura(c.cobertura),
+                      color: "#22C55E",
+                      fontSize: "10.5px",
+                      border: "1px solid rgba(34,197,94,.4)",
+                      borderRadius: "var(--radio-pill)",
+                      padding: "3px 10px"
+                    }}
+                  >
+                    ● Investigación completada
+                  </span>
+                )}
+
+                {(c.resumen?.huellaDigital ?? c.cobertura) != null && (
+                  <span
+                    style={{
+                      color: colorCobertura(
+                        c.resumen?.huellaDigital ?? c.cobertura
+                      ),
                       fontFamily: "monospace",
                       fontSize: "15px"
                     }}
                   >
-                    {c.cobertura}%
+                    {c.resumen?.huellaDigital ?? c.cobertura}%
                   </span>
                 )}
 
                 <button
-                  className="sentinel-boton"
+                  className={
+                    c.estadoInvestigacion === "completada"
+                      ? "sentinel-boton"
+                      : "sentinel-boton sentinel-boton-primario"
+                  }
                   onClick={() => investigar("candidato", c.id)}
                   disabled={ocupado === `candidato:${c.id}`}
+                  title={
+                    c.estadoInvestigacion === "completada"
+                      ? "Vuelve a consultar los proveedores y consume cuota"
+                      : "Lanza la investigación"
+                  }
                   style={{
                     marginLeft: "auto",
                     padding: "6px 14px",
@@ -557,7 +871,10 @@ export default function ProjectsModule() {
                     </>
                   ) : (
                     <>
-                      <Play size={12} /> Investigar candidato
+                      <Play size={12} />
+                      {c.estadoInvestigacion === "completada"
+                        ? "Actualizar investigación"
+                        : "Investigar candidato"}
                     </>
                   )}
                 </button>
@@ -597,12 +914,29 @@ export default function ProjectsModule() {
                 </div>
               )}
 
-              {c.expediente && (
+              {c.resumen && (
+                <div
+                  style={{
+                    color: "var(--sentinel-texto-suave)",
+                    fontSize: "11px",
+                    marginTop: "10px",
+                    lineHeight: 1.65
+                  }}
+                >
+                  +{c.resumen.cuentas} cuentas · +{c.resumen.medios} medios · +
+                  {c.resumen.evidenciasWeb} evidencias web
+                  {c.resumen.actualizadoEn
+                    ? ` · última actualización ${String(c.resumen.actualizadoEn).slice(0, 10)}`
+                    : ""}
+                </div>
+              )}
+
+              {c.expediente?.mensaje && (
                 <div
                   style={{
                     color: "var(--sentinel-texto-tenue)",
                     fontSize: "10.5px",
-                    marginTop: "10px",
+                    marginTop: "8px",
                     lineHeight: 1.6
                   }}
                 >

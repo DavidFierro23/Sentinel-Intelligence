@@ -5,7 +5,8 @@ import { normalizarTexto } from "../textUtils.js";
 import {
   escribirEnLake,
   obtenerHistorialEntidad,
-  obtenerVersionEntidad
+  obtenerVersionEntidad,
+  obtenerEventosProyecto
 } from "../knowledgeLake/lakeQuery.js";
 
 /*
@@ -67,6 +68,14 @@ const TIPO_EXPEDIENTE = "persona";
   proyectos no quede dentro de ningún proyecto.
 */
 const CATALOGO = "catalogo-proyectos";
+
+/*
+  Prefijos de entidad. Son lo que mantiene separados candidatos y
+  actores dentro del mismo proyecto.
+*/
+const PREFIJO_CANDIDATO = "candidato-";
+
+const PREFIJO_ACTOR = "actor-";
 
 
 function idDesde(texto) {
@@ -150,6 +159,174 @@ export async function obtenerProyecto(proyectoId) {
 
 /*
 ===========================================================
+RECUPERACIÓN — el hotfix de persistencia
+===========================================================
+
+El defecto que motivó este hotfix no estaba en el
+almacenamiento: los proyectos SÍ se escribían a disco, y ahí
+seguían. Lo que no existía era cómo LEERLOS de vuelta.
+
+No había forma de listar proyectos ni de listar los candidatos de
+un proyecto, así que el frontend solo podía enseñar lo que tenía
+en memoria. Al recargar, la memoria se vaciaba y el proyecto
+parecía haber desaparecido. No había desaparecido: estaba en
+disco, inalcanzable.
+
+Estas dos funciones se apoyan en `obtenerEventosProyecto`, que el
+Knowledge Lake ya exponía. No se modifica el Lake.
+===========================================================
+*/
+
+async function entidadesDe(proyectoId) {
+  try {
+    const r = await obtenerEventosProyecto(proyectoId, { tenantId: TENANT });
+
+    const vistas = new Set();
+
+    /* Un evento por version; solo interesa la lista de entidades. */
+    return (r?.eventos || [])
+      .map((e) => ({ entidad: e.entidad, claveEntidad: e.claveEntidad }))
+      .filter((e) => {
+        if (!e.entidad || vistas.has(e.entidad)) return false;
+
+        vistas.add(e.entidad);
+
+        return true;
+      });
+  } catch {
+    return [];
+  }
+}
+
+
+export async function listarProyectos() {
+  const entidades = await entidadesDe(CATALOGO);
+
+  const proyectos = [];
+
+  for (const e of entidades) {
+    const p = await obtenerProyecto(e.entidad);
+
+    if (p) proyectos.push(p);
+  }
+
+  /* Los mas recientes primero. */
+  return proyectos.sort((a, b) =>
+    String(b.creadoEn || "").localeCompare(String(a.creadoEn || ""))
+  );
+}
+
+
+/*
+  Contenido completo de un proyecto: candidatos, actores y el
+  expediente de cada uno si ya fue investigado.
+
+  Devolver el expediente AQUI es lo que permite que la interfaz
+  muestre "investigación completada" tras una recarga en lugar de
+  volver a lanzar la investigación. Recargar no debe gastar cuota.
+*/
+export async function contenidoDeProyecto(proyectoId) {
+  const proyecto = await obtenerProyecto(proyectoId);
+
+  if (!proyecto) return null;
+
+  const entidades = await entidadesDe(proyectoId);
+
+  const candidatos = [];
+
+  const actores = [];
+
+  for (const e of entidades) {
+    const nombre = e.entidad;
+
+    if (nombre.startsWith("expediente-")) continue;
+
+    const esActor = nombre.startsWith(PREFIJO_ACTOR);
+
+    const esCandidato = nombre.startsWith(PREFIJO_CANDIDATO);
+
+    if (!esActor && !esCandidato) continue;
+
+    const id = nombre.replace(esActor ? PREFIJO_ACTOR : PREFIJO_CANDIDATO, "");
+
+    const datos = esActor
+      ? await obtenerActor(proyectoId, id)
+      : await obtenerCandidato(proyectoId, id);
+
+    if (!datos) continue;
+
+    /* Expediente, si existe. Sin investigar nada. */
+    let expediente = null;
+
+    /*
+      Nombre actual primero, nombre heredado despues. Ver la nota
+      del renombrado: en disco existen los dos.
+    */
+    const nombresExpediente = [
+      `expediente-${esActor ? "actor" : "candidato"}-${id}`,
+      `expediente-${id}`
+    ];
+
+    for (const nombreExp of nombresExpediente) {
+      if (expediente) break;
+
+      try {
+        const v = await obtenerVersionEntidad(
+          claveLake(proyectoId, TIPO_EXPEDIENTE, nombreExp),
+          {}
+        );
+
+        expediente = v?.registro?.datos || null;
+      } catch {
+        /* Se prueba el siguiente nombre. */
+      }
+    }
+
+    const registro = {
+      ...datos,
+
+      /*
+        ESTADO PERSISTENTE de la investigacion. Se deriva de que
+        exista expediente, no de una bandera que alguien tenga que
+        acordarse de escribir.
+      */
+      estadoInvestigacion: expediente ? "completada" : "sin_investigar",
+
+      expediente,
+
+      resumen: expediente
+        ? {
+            cuentas: (expediente.cuentas || []).length,
+            medios: (expediente.medios || []).length,
+            evidenciasWeb: expediente.evidenciasWeb ?? null,
+            evidenciasSociales: expediente.evidenciasSociales ?? null,
+            huellaDigital: expediente.huellaDigital ?? null,
+            actualizadoEn: expediente.actualizadoEn || null
+          }
+        : null
+    };
+
+    if (esActor) actores.push(registro);
+    else candidatos.push(registro);
+  }
+
+  return {
+    proyecto,
+    candidatos,
+    actores,
+    metricas: {
+      candidatos: candidatos.length,
+      actores: actores.length,
+      investigaciones: [...candidatos, ...actores].filter(
+        (x) => x.estadoInvestigacion === "completada"
+      ).length
+    }
+  };
+}
+
+
+/*
+===========================================================
 CANDIDATOS DEL PROYECTO
 ===========================================================
 */
@@ -207,20 +384,42 @@ export async function agregarCandidato(proyectoId, datos = {}) {
   registrarReferencia(datos.linkedin, "LinkedIn");
   registrarReferencia(datos.urlReferencia, datos.plataformaReferencia || null);
 
+  /*
+    FUSION, NO REEMPLAZO. Si el candidato ya existe se conserva lo
+    que ya tenia y solo se sobrescribe lo que llega con valor. Sin
+    esto, reañadirlo con el formulario vacio le borraba las cuentas
+    de referencia que el analista habia aportado.
+  */
+  const previo = await obtenerCandidato(proyectoId, id);
+
   const candidato = {
     id,
     nombre,
     /* El rol lo escribe el analista. Sentinel no inventa candidaturas. */
-    rol: datos.rol || null,
-    rolOrigen: datos.rol ? "analista" : null,
-    dignidad: datos.dignidad || proyecto.dignidad || null,
-    cuentasReferencia,
-    agregadoEn: new Date().toISOString()
+    rol: datos.rol || previo?.rol || null,
+    rolOrigen: datos.rol || previo?.rol ? "analista" : null,
+    nivel: datos.nivel || previo?.nivel || null,
+    dignidad: datos.dignidad || previo?.dignidad || proyecto.dignidad || null,
+
+    /*
+      Las cuentas de referencia se ACUMULAN y se deduplican por
+      URL: aportar una nueva no borra las anteriores.
+    */
+    cuentasReferencia: [
+      ...(previo?.cuentasReferencia || []),
+      ...cuentasReferencia
+    ].filter(
+      (r, i, todas) =>
+        todas.findIndex((x) => x.url === r.url) === i
+    ),
+
+    agregadoEn: previo?.agregadoEn || new Date().toISOString(),
+    actualizadoEn: previo ? new Date().toISOString() : null
   };
 
   const r = await escribirEnLake(
     {
-      entidad: `candidato-${id}`,
+      entidad: `${PREFIJO_CANDIDATO}${id}`,
       tipoEntidad: TIPO_EXPEDIENTE,
       tenantId: TENANT,
       proyectoId,
@@ -243,7 +442,7 @@ export async function agregarCandidato(proyectoId, datos = {}) {
 export async function obtenerCandidato(proyectoId, candidatoId) {
   try {
     const v = await obtenerVersionEntidad(
-      claveLake(proyectoId, TIPO_EXPEDIENTE, `candidato-${candidatoId}`),
+      claveLake(proyectoId, TIPO_EXPEDIENTE, `${PREFIJO_CANDIDATO}${candidatoId}`),
       {}
     );
 
@@ -282,11 +481,6 @@ actor existe, se puede investigar y tiene su propio expediente,
 pero no toca nada de los candidatos.
 ===========================================================
 */
-
-const PREFIJO_CANDIDATO = "candidato-";
-
-const PREFIJO_ACTOR = "actor-";
-
 
 export async function agregarActor(proyectoId, datos = {}) {
   const proyecto = await obtenerProyecto(proyectoId);
@@ -610,6 +804,8 @@ export async function registrarInvestigacion(
 export default {
   crearProyecto,
   obtenerProyecto,
+  listarProyectos,
+  contenidoDeProyecto,
   agregarCandidato,
   obtenerCandidato,
   agregarActor,

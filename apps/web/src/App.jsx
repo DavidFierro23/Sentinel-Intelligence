@@ -146,7 +146,23 @@ function Reservado({ titulo, descripcion, definidoEn, requiere }) {
 }
 
 export default function App() {
-  const [modulo, setModulo] = useState("investigaciones");
+  /*
+    Si la URL trae ?proyecto=, se abre el modulo de proyectos.
+
+    Forma parte del arreglo de persistencia: sin esto, recargar
+    con un proyecto abierto devolvia al usuario a Investigaciones
+    y el proyecto seguia pareciendo perdido, aunque estuviera en
+    disco y el modulo supiera recuperarlo.
+  */
+  const [modulo, setModulo] = useState(() => {
+    try {
+      return new URLSearchParams(window.location.search).get("proyecto")
+        ? "candidatos"
+        : "investigaciones";
+    } catch {
+      return "investigaciones";
+    }
+  });
 
   const [consulta, setConsulta] = useState(consultaDeLaUrl);
 
