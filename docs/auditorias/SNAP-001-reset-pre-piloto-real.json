@@ -1,0 +1,211 @@
+{
+  "esquema": "sentinel.snapshot.reset.v1",
+  "razon": "reset_pre_piloto_real",
+  "generadoEn": "2026-08-24T00:00:00Z",
+  "commitAlGenerar": "a4f6b75c927aaca080e12c58e0b9bced425d6be4",
+  "notaDeFecha": "La marca temporal se fija a la fecha de la sesion; el detalle por entrada vive en el campo escritoEn de cada registro del Lake.",
+  "naturalezaDeLaOperacion": {
+    "lakeEsAppendOnly": true,
+    "entradasDelLakeEliminadas": 0,
+    "explicacion": "El Knowledge Lake no admite eliminar: la operacion no existe en la interfaz del adaptador y esta listada en OPERACIONES_PROHIBIDAS. Ninguna entrada se borro. La limpieza se logro por AISLAMIENTO: el proyecto nuevo usa un proyectoId propio, y la clave tenant::proyecto::tipo::entidad impide que vea entradas ajenas. Los proyectos de prueba quedan con estado eliminado y fuera de la vista, con sus datos intactos y auditables."
+  },
+  "proyectosRetirados": [
+    {
+      "proyectoId": "elecciones-alcaldia-cuenca-2027-hf",
+      "nombre": "Elecciones Alcaldia Cuenca 2027 HF",
+      "estadoAlMomentoDelSnapshot": "activo",
+      "creadoEn": "2026-08-24T04:00:54.043Z",
+      "territorio": {
+        "pais": "Ecuador",
+        "provincia": "Azuay",
+        "canton": "Cuenca"
+      },
+      "dignidad": "Alcald�a de Cuenca",
+      "codificacionSospechosa": true,
+      "versionesDelDocumentoEnCatalogo": 1,
+      "entradasConSuProyectoId": 8,
+      "entidadesDistintas": 8,
+      "porClase": {
+        "candidato": 4,
+        "expediente": 4
+      },
+      "candidatos": [
+        "juan-cristobal-lloret-valdivieso",
+        "paul-carrasco-carpio",
+        "pedro-palacios",
+        "yaku-perez-guartambel"
+      ],
+      "actores": [],
+      "expedientes": [
+        "expediente-candidato-juan-cristobal-lloret-valdivieso",
+        "expediente-candidato-paul-carrasco-carpio",
+        "expediente-candidato-pedro-palacios",
+        "expediente-candidato-yaku-perez-guartambel"
+      ]
+    },
+    {
+      "proyectoId": "elecciones-alcaldia-cuenca-2027",
+      "nombre": "Elecciones Alcaldia Cuenca 2027",
+      "estadoAlMomentoDelSnapshot": "eliminado",
+      "creadoEn": "2026-08-24T02:34:46.366Z",
+      "territorio": {
+        "pais": "Ecuador",
+        "provincia": "Azuay",
+        "canton": "Cuenca"
+      },
+      "dignidad": "Alcald�a de Cuenca",
+      "codificacionSospechosa": true,
+      "versionesDelDocumentoEnCatalogo": 2,
+      "entradasConSuProyectoId": 10,
+      "entidadesDistintas": 5,
+      "porClase": {
+        "candidato": 4,
+        "actor": 1
+      },
+      "candidatos": [
+        "juan-cristobal-lloret",
+        "marcelo-cabrera",
+        "pedro-palacios",
+        "yaku-perez"
+      ],
+      "actores": [
+        "daniel-noboa"
+      ],
+      "expedientes": []
+    },
+    {
+      "proyectoId": "elecciones-seccionales-cuenca-2027",
+      "nombre": "Elecciones Seccionales Cuenca 2027",
+      "estadoAlMomentoDelSnapshot": "eliminado",
+      "creadoEn": "2026-08-24T02:10:29.002Z",
+      "territorio": {
+        "pais": "Ecuador",
+        "provincia": "Azuay",
+        "canton": "Cuenca"
+      },
+      "dignidad": "Alcald�a de Cuenca",
+      "codificacionSospechosa": true,
+      "versionesDelDocumentoEnCatalogo": 3,
+      "entradasConSuProyectoId": 6,
+      "entidadesDistintas": 4,
+      "porClase": {
+        "candidato": 2,
+        "expediente": 2
+      },
+      "candidatos": [
+        "daniel-noboa",
+        "pedro-palacios"
+      ],
+      "actores": [],
+      "expedientes": [
+        "expediente-daniel-noboa",
+        "expediente-pedro-palacios"
+      ]
+    },
+    {
+      "proyectoId": "elecciones-loja-2027",
+      "nombre": "Elecciones Loja 2027",
+      "estadoAlMomentoDelSnapshot": "eliminado",
+      "creadoEn": "2026-08-24T02:36:08.206Z",
+      "territorio": {
+        "pais": "Ecuador",
+        "provincia": "Loja",
+        "canton": "Loja"
+      },
+      "dignidad": "Alcald�a de Loja",
+      "codificacionSospechosa": true,
+      "versionesDelDocumentoEnCatalogo": 3,
+      "entradasConSuProyectoId": 2,
+      "entidadesDistintas": 1,
+      "porClase": {
+        "candidato": 1
+      },
+      "candidatos": [
+        "pedro-palacios"
+      ],
+      "actores": [],
+      "expedientes": []
+    },
+    {
+      "proyectoId": "elecciones-alcaldia-2026",
+      "nombre": "Elecciones alcaldia 2026",
+      "estadoAlMomentoDelSnapshot": "eliminado",
+      "creadoEn": "2026-08-24T03:17:37.595Z",
+      "territorio": {
+        "pais": "Ecuador",
+        "provincia": "Azuay ",
+        "canton": "Cuenca"
+      },
+      "dignidad": "Alcaldia de Cuenca ",
+      "codificacionSospechosa": false,
+      "versionesDelDocumentoEnCatalogo": 2,
+      "entradasConSuProyectoId": 2,
+      "entidadesDistintas": 2,
+      "porClase": {
+        "candidato": 1,
+        "expediente": 1
+      },
+      "candidatos": [
+        "pedro-palacios"
+      ],
+      "actores": [],
+      "expedientes": [
+        "expediente-candidato-pedro-palacios"
+      ]
+    },
+    {
+      "proyectoId": "prueba-utf-8-naeiou",
+      "nombre": "Prueba renombrada — Cuenca ñí",
+      "estadoAlMomentoDelSnapshot": "eliminado",
+      "creadoEn": "2026-08-24T05:08:41.283Z",
+      "territorio": {
+        "pais": "España",
+        "provincia": "Azuay",
+        "canton": "Cuenca"
+      },
+      "dignidad": "Alcaldía de Cuenca",
+      "codificacionSospechosa": true,
+      "versionesDelDocumentoEnCatalogo": 6,
+      "entradasConSuProyectoId": 0,
+      "entidadesDistintas": 0,
+      "porClase": {},
+      "candidatos": [],
+      "actores": [],
+      "expedientes": []
+    }
+  ],
+  "totalEntradasAtribuiblesAProyectosDePrueba": 45,
+  "datosNoExclusivosConservados": [
+    {
+      "proyectoId": "osint-investigacion-adhoc",
+      "entradas": 24,
+      "tenants": [
+        "sentinel-local"
+      ],
+      "entidadesDistintas": 12,
+      "decision": "CONSERVAR — no pertenece a ningun proyecto de prueba"
+    },
+    {
+      "proyectoId": "p",
+      "entradas": 2,
+      "tenants": [
+        "t"
+      ],
+      "entidadesDistintas": 2,
+      "decision": "CONSERVAR — no pertenece a ningun proyecto de prueba"
+    }
+  ],
+  "fueraDeLaSuperficieDePurga": {
+    "territorial": "apps/backend/services/geo/territories/ — arbol de codigo, no el Lake",
+    "datasetsOficiales": "CONALI / INEC / Gazetteer / GeoJSON: no viven en el Lake",
+    "searchLayer": "sin tocar",
+    "providers": "sin tocar",
+    "tests": "conservados, incluidos los de Lloret, Carrasco, Yaku, Pedro, autoverificacion, apellidos y persistencia"
+  },
+  "proyectoNuevo": {
+    "proyectoId": "alcaldia-cuenca-2027-piloto",
+    "nombre": "Elecciones Alcaldia Cuenca 2027",
+    "motivoDelIdExplicito": "El id derivado del nombre seria elecciones-alcaldia-cuenca-2027, que YA EXISTE con 4 candidatos, 1 actor y una dignidad con U+FFFD. crearProyecto no comprueba colisiones: recrear ese nombre habria resucitado el proyecto a estado activo con sus datos heredados. Ver BUG-09."
+  },
+  "sinSecretos": "Este snapshot no contiene claves de API, credenciales ni contenido de evidencias: solo identificadores, recuentos y estados."
+}

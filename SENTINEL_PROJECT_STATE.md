@@ -894,6 +894,114 @@ Fuera del alcance de esta autorización. Ver BUG-07 y BUG-08 en §22.
 
 ---
 
+## 18-ter. Reset controlado pre-piloto (2026-08-24)
+
+Objetivo: partir de un estado limpio antes del piloto real de candidatos.
+
+### Lo que NO se pudo hacer, y por qué
+
+**No se eliminó ninguna entrada del Knowledge Lake. No se puede.**
+
+El Lake es append-only **por diseño de interfaz**, no por convención. El
+adaptador expone solo `anexar` y `leerTodos`; `eliminar` está en
+`OPERACIONES_PROHIBIDAS` y `lakeWriter` la define como una función que lanza
+excepción. El propio módulo lo dice:
+
+> «La ausencia de esas dos operaciones EN LA INTERFAZ es lo que hace real el
+> append-only: no basta con no llamarlas, es que no hay forma de llamarlas.»
+
+Un `purgeProject` que borrara entradas exigiría **añadir `eliminar` al
+adaptador** —destruyendo la garantía sobre la que se apoya toda la
+auditabilidad— y reescribir ficheros JSONL con read-modify-write, que es
+exactamente lo que el diseño prohíbe. No se hizo, y no se debe hacer sin una
+decisión de arquitectura explícita.
+
+### Lo que sí se hizo: aislamiento, no borrado
+
+La limpieza no requería borrar. El baseline cero se logró por la clave de
+aislamiento `tenant::proyecto::tipo::entidad`: un `proyectoId` nuevo no puede
+leer entradas de otro. **Verificado**, no supuesto.
+
+| Operación | Mecanismo | Entradas borradas |
+|---|---|---|
+| Retirar los 6 proyectos de prueba | `cambiarEstadoProyecto(id,'eliminado')`, API oficial existente | 0 |
+| Crear el proyecto del piloto | `POST /api/proyectos`, ruta normal | 0 |
+
+El Lake pasó de **71 a 73 entradas**: solo se anexó. Sus datos siguen
+íntegros y auditables, fuera de la vista.
+
+### El riesgo real que se encontró — y que era el verdadero problema
+
+El peligro no era la basura acumulada. Era éste:
+
+`crearProyecto` deriva el id del nombre (`idDesde(nombre)`) y **no comprueba
+colisiones**. El nombre pedido, `Elecciones Alcaldía Cuenca 2027`, genera
+`elecciones-alcaldia-cuenca-2027`, que **ya existía** como proyecto eliminado
+con 4 candidatos, 1 actor de referencia y una `dignidad` con U+FFFD.
+
+Crear el proyecto por el camino obvio habría escrito una versión nueva de esa
+misma entidad: el proyecto habría **resucitado a `activo`** heredando sus 4
+candidatos y reintroduciendo BUG-04. Reproducido en lake aislado antes de
+tocar nada. Es el fallo exacto que §13 del reset manda detectar.
+
+Solución sin código nuevo: `crearProyecto` ya acepta `datos.id`, y la ruta
+pasa `req.body` completo. El proyecto del piloto usa un id explícito distinto
+y conserva el nombre exacto. Ver **BUG-09**.
+
+### Estado resultante
+
+| Campo | Valor |
+|---|---|
+| `proyectoId` | `alcaldia-cuenca-2027-piloto` |
+| `nombre` | `Elecciones Alcaldía Cuenca 2027` |
+| Territorio | Ecuador · Azuay · Cuenca |
+| Dignidad | `Alcaldía de Cuenca` |
+| Nivel / anclas | cantonal — `Cuenca` 24, `alcaldia` 22 |
+| `codificacionSospechosa` | `false` |
+| Baseline | candidatos 0 · actores 0 · expedientes 0 · evidencias propias 0 |
+
+UTF-8 verificado **por bytes** en el JSONL: `Alcald` + `c3 ad` + `a`. Sin
+U+FFFD y sin doble codificación. Durante la verificación mi propia consola
+mostró `AlcaldÃ­a`; el dato en disco era correcto y el fallo estaba en la
+tubería de lectura. Es la misma disciplina de BUG-04: comprobar los bytes
+antes de culpar a una capa.
+
+### Proyectos retirados
+
+| `proyectoId` | Candidatos | Actores | Entradas en el Lake |
+|---|---|---|---|
+| `elecciones-alcaldia-cuenca-2027-hf` | 4 | 0 | 8 + 1 doc |
+| `elecciones-alcaldia-cuenca-2027` | 4 | 1 | 10 + 2 doc |
+| `elecciones-seccionales-cuenca-2027` | 2 | 0 | 6 + 3 doc |
+| `elecciones-loja-2027` | 1 | 0 | 2 + 3 doc |
+| `elecciones-alcaldia-2026` | 1 | 0 | 2 + 2 doc |
+| `prueba-utf-8-naeiou` | 0 | 0 | 0 + 6 doc |
+
+Auditoría: `docs/auditorias/SNAP-001-reset-pre-piloto-real.json`.
+
+### Conservado a propósito
+
+- **`osint-investigacion-adhoc`** — 24 entradas. Son investigaciones de modo
+  individual: no pertenecen a ningún proyecto. **Dato compartido, no se toca.**
+- **`t::p::persona::x1` y `x2`** — 2 entradas de un ensayo del Lake del
+  2026-08-21, tenant `t`, `datos` vacíos. No están en el catálogo de
+  proyectos y no pertenecen a ninguno. Ante la duda, no se borran: se
+  declaran.
+- **Territorial y datasets oficiales** — viven en
+  `apps/backend/services/geo/territories/` (árbol de código, no el Lake).
+  Fuera de toda superficie de purga. `git status` limpio, 107/107 pruebas.
+- **`pedro-palacios` aparecía en 5 proyectos distintos.** Ninguna operación se
+  hizo por nombre de candidato, solo por `proyectoId`.
+
+### Límite honesto de este reset
+
+Los expedientes retirados **siguen siendo recuperables** por id directo,
+porque nada se borró. Para el piloto es irrelevante —viven en otros
+`proyectoId` y el proyecto nuevo no puede alcanzarlos—, pero no debe
+describirse como una purga destructiva: no lo es.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -971,6 +1079,7 @@ es del analista.
 | BUG-05 | Media | `KnowledgeGraph.jsx` | Grafo radial: no hay relaciones entre nodos | Abierto | No | Aristas cuenta↔medio y cuenta↔cuenta |
 | BUG-06 | Baja | `PlausibleIdentitiesPanel.jsx` | «Investigar esta identidad» presente sin acción conectada | Abierto | No | Conectar reinvestigación con la evidencia del grupo |
 | BUG-07 | Media | `projects/projectContext.js:134` | `nivelPorDefecto` compara contra `prefectura` / `presidencia` (el cargo), pero el analista escribe `Prefecto` / `Presidente` / `Asambleísta` (la persona). **Todas** las dignidades en forma personal caen a `cantonal`, y en un proyecto provincial o nacional sin `nivel` declarado la provincia o el país se quedan en fuerza 6 —por debajo del umbral de evidencia— y **no llegan a ser ancla**. Detectado en LÍNEA A (§18-bis) | Abierto, **no corregido: fuera de la autorización L-1/L-2/L-3** | No | Aceptar la forma personal de cada dignidad, o exigir `nivel` explícito en el formulario |
+| BUG-09 | **Alta** | `projects/projectStore.js` `crearProyecto` | El id se deriva del nombre (`idDesde`) y **no se comprueba si ya existe**. Crear un proyecto cuyo nombre coincida con uno eliminado escribe una versión nueva de la MISMA entidad: el proyecto **resucita a `activo` heredando candidatos, actores y expedientes**, y con ellos cualquier dato corrupto previo. Reproducido en lake aislado durante el reset (§18-ter) | Abierto, **evitado con un id explícito, no corregido** | **Sí, para cualquier reset futuro** | Rechazar la creación si el id existe —incluso eliminado— y ofrecer recuperar o usar otro id. No resucitar en silencio |
 | BUG-08 | Baja | `social/discovery/discoveryEngine.js:398` | `planificarConsultasSociales` está exportada y **nadie la llama**: el motor planifica con `planificarConsultasDerivadas`. Cubre 3 de 6 plataformas (deja fuera X, YouTube y LinkedIn) y no aplica anclas. Si alguien la conectara creyendo que es el planificador, perdería la mitad de la cobertura. Fijado por prueba en `tests/contexto.test.mjs` | Abierto, **no corregido: archivo congelado** | No | Eliminarla o marcarla como obsoleta en una limpieza autorizada |
 
 BUG-03 **queda cerrado en modo proyecto** por el Contexto Maestro (§9); sigue
@@ -1009,6 +1118,8 @@ resueltos y verificados.
 | Alias que alimenten el planificador del backend | 🔴 hoy solo `localStorage`. **No implementado en LÍNEA A**: requiere anuncio `PATCH ALIAS DISPONIBLE` y autorización aparte |
 | `nivelPorDefecto` no reconoce las dignidades en forma personal | 🔴 BUG-07, declarado en LÍNEA A y no corregido |
 | `planificarConsultasSociales` huérfana y con cobertura parcial | 🔴 BUG-08, declarado en LÍNEA A y no corregido |
+| `crearProyecto` resucita proyectos eliminados al coincidir el nombre | 🔴 **BUG-09**, declarado en el reset §18-ter y no corregido |
+| El Lake no tiene forma de purgar por proyecto | 🔴 append-only por diseño. Si alguna vez se necesita de verdad, exige decisión de arquitectura: lápida versionada, o retención por partición. **No añadir `eliminar` al adaptador** |
 | Credencial de Brave | 🔴 externa al equipo |
 
 ---
@@ -1227,5 +1338,6 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-24 | reset pre-piloto | Retirados los 6 proyectos de prueba con la API oficial y creado `alcaldia-cuenca-2027-piloto` con baseline cero verificado. **0 entradas del Lake eliminadas**: es append-only por diseño. BUG-09 encontrado y evitado: crear el nombre pedido habría resucitado un proyecto eliminado con 4 candidatos. Snapshot en `docs/auditorias/SNAP-001`. Nueva §18-ter. |
 | 2026-08-24 | LÍNEA A | Tubería de identidad corregida: L-1 zona de apellidos, L-2 semilla de referencia sin autoverificación, L-3 contexto destilado. Nueva §18-bis. BUG-07 y BUG-08 declarados sin corregir. 189 pruebas sin cuota, 0 fallos. Pilotos reales NO ejecutados. |
 | 2026-08-24 | `b2dcdc5` | Creación del documento maestro de continuidad. Estado verificado por inspección del repositorio: 4 routers, 12 endpoints de proyecto, 14 componentes congelados existentes, Knowledge Lake en fichero con persistencia verificada, LÍNEA B territorial sin integrar. |
