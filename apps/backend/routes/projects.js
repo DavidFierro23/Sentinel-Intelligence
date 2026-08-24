@@ -10,13 +10,19 @@ import {
   obtenerProyecto,
   agregarCandidato,
   obtenerCandidato,
+  agregarActor,
+  obtenerActor,
+  activarComparativo,
   registrarInvestigacion
 } from "../services/projects/projectStore.js";
+
+import { correlacionObservable } from "../services/projects/actorCorrelation.js";
 
 import {
   construirContextoMaestro,
   DIGNIDADES,
-  TIPOS_ELECCION
+  TIPOS_ELECCION,
+  NIVELES
 } from "../services/projects/projectContext.js";
 
 /*
@@ -37,7 +43,11 @@ const router = express.Router();
 
 
 router.get("/catalogo", (req, res) => {
-  res.json({ dignidades: DIGNIDADES, tiposEleccion: TIPOS_ELECCION });
+  res.json({
+    dignidades: DIGNIDADES,
+    tiposEleccion: TIPOS_ELECCION,
+    niveles: NIVELES
+  });
 });
 
 
@@ -161,6 +171,158 @@ router.post("/:proyectoId/candidatos/:candidatoId/investigar", async (req, res) 
     res.status(500).json({ error: e?.message || "fallo la investigación" });
   }
 });
+
+
+/*
+-----------------------------------------------------------
+ACTORES DE REFERENCIA — opcionales
+-----------------------------------------------------------
+*/
+
+router.post("/:proyectoId/actores", async (req, res) => {
+  try {
+    const r = await agregarActor(req.params.proyectoId, req.body || {});
+
+    if (!r.agregado) return res.status(400).json(r);
+
+    res.json({
+      ...r,
+      contextoMaestro: construirContextoMaestro(r.proyecto, r.actor)
+    });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo al agregar actor" });
+  }
+});
+
+
+router.post("/:proyectoId/actores/:actorId/comparativo", async (req, res) => {
+  try {
+    const r = await activarComparativo(
+      req.params.proyectoId,
+      req.params.actorId,
+      req.body?.activar === true
+    );
+
+    if (!r.actualizado) return res.status(400).json(r);
+
+    res.json(r);
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo al cambiar el estado" });
+  }
+});
+
+
+/*
+  Investigar un ACTOR. Expediente independiente y contexto segun
+  SU nivel, no segun el territorio del proyecto.
+*/
+router.post("/:proyectoId/actores/:actorId/investigar", async (req, res) => {
+  const { proyectoId, actorId } = req.params;
+
+  try {
+    const proyecto = await obtenerProyecto(proyectoId);
+
+    if (!proyecto) {
+      return res.status(404).json({ error: `no existe el proyecto ${proyectoId}` });
+    }
+
+    const actor = await obtenerActor(proyectoId, actorId);
+
+    if (!actor) {
+      return res.status(404).json({ error: `no existe el actor ${actorId}` });
+    }
+
+    const contextoMaestro = construirContextoMaestro(proyecto, actor);
+
+    const resultado = await investigarObjetivo(actor.nombre, {
+      contextoMaestro,
+      cuentasReferencia: actor.cuentasReferencia || []
+    });
+
+    if (resultado?.error) return res.status(502).json(resultado);
+
+    const expediente = await registrarInvestigacion(
+      proyectoId,
+      actorId,
+      resultado,
+      "actor"
+    );
+
+    res.json(
+      absolutizarAvatares(
+        {
+          ...resultado,
+          proyecto,
+          actor,
+          expediente,
+          /*
+            Aviso permanente: mientras el comparativo este
+            desactivado, este expediente no toca a ningun
+            candidato.
+          */
+          aislamiento: actor.incluirEnComparativo
+            ? "Análisis comparativo ACTIVADO: se puede calcular correlación observable con los candidatos."
+            : "Análisis comparativo desactivado: este actor no afecta a ningún candidato, ni a su cobertura, ni a su grafo."
+        },
+        req
+      )
+    );
+  } catch (e) {
+    console.error("[proyectos] investigación de actor falló:", e);
+
+    res.status(500).json({ error: e?.message || "fallo la investigación" });
+  }
+});
+
+
+/*
+-----------------------------------------------------------
+CORRELACIÓN OBSERVABLE — solo si el analista la activó
+-----------------------------------------------------------
+*/
+
+router.post(
+  "/:proyectoId/correlacion/:actorId/:candidatoId",
+  async (req, res) => {
+    const { proyectoId, actorId, candidatoId } = req.params;
+
+    try {
+      const actor = await obtenerActor(proyectoId, actorId);
+
+      const candidato = await obtenerCandidato(proyectoId, candidatoId);
+
+      if (!actor || !candidato) {
+        return res
+          .status(404)
+          .json({ error: "actor o candidato inexistente en este proyecto" });
+      }
+
+      /*
+        PUERTA. Sin activacion explicita del analista no se calcula
+        nada: el actor no debe influir en el candidato mientras
+        siga desactivado.
+      */
+      if (!actor.incluirEnComparativo) {
+        return res.status(409).json({
+          disponible: false,
+          motivo:
+            'El análisis comparativo de este actor está desactivado. Actívalo con "Incluir en análisis comparativo" para calcular la correlación observable.'
+        });
+      }
+
+      res.json(
+        correlacionObservable({
+          actor,
+          candidato,
+          expedienteActor: req.body?.expedienteActor || null,
+          expedienteCandidato: req.body?.expedienteCandidato || null
+        })
+      );
+    } catch (e) {
+      res.status(500).json({ error: e?.message || "fallo la correlación" });
+    }
+  }
+);
 
 
 export default router;

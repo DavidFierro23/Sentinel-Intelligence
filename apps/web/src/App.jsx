@@ -8,6 +8,7 @@ import Header from "./components/Header";
 import OSINT from "./components/OSINT";
 import AIRouter from "./components/AIRouter";
 import Dashboard from "./components/Dashboard";
+import ProjectsModule from "./components/ProjectsModule";
 
 /*
 ===========================================================
@@ -303,11 +304,16 @@ export default function App() {
             una investigación, no motores distintos. Montarlo una
             sola vez evita perder el resultado al cambiar de vista.
           */}
+          {/*
+            "Candidatos" pasa a ser el modulo de PROYECTOS: los
+            candidatos viven dentro de un proyecto, asi que es su
+            sitio natural y el menu definitivo no cambia.
+          */}
+          {modulo === "candidatos" && <ProjectsModule />}
+
           <div
             style={{
-              display: ["investigaciones", "knowledge_graph", "candidatos"].includes(
-                modulo
-              )
+              display: ["investigaciones", "knowledge_graph"].includes(modulo)
                 ? "block"
                 : "none"
             }}

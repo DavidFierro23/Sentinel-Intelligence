@@ -11,6 +11,7 @@ import { ejecutarSocialIntelligence } from "./social/socialIntelligenceLayer.js"
 /* ARQ-PUI-001 — Bloques C, E y F. */
 import { clasificarYSeparar } from "./social/classification/accountClassifier.js";
 import { aplicarContextoMaestro } from "./projects/projectContext.js";
+import { detectarIdentidadesPlausibles } from "./identity/plausibleIdentities.js";
 import { construirPerfilEjecutivo } from "./social/executive/executiveProfile.js";
 import { registrarEnPerfilPermanente } from "./social/pip/permanentIdentityProfile.js";
 import { consolidarFichaObjetivo } from "./referenceProfileService.js";
@@ -625,6 +626,35 @@ export async function investigarObjetivo(objetivo, opciones = {}) {
 
   const origenDescubrimiento = origenDescubrimientoCalculado;
 
+  /*
+    ---------------------------------------------------------
+    IDENTIDADES PLAUSIBLES — solo en MODO INDIVIDUAL
+    ---------------------------------------------------------
+
+    En modo proyecto no se calculan, y no por ahorrar trabajo: el
+    analista ya declaro el territorio y la dignidad, asi que la
+    ambiguedad de identidad esta resuelta por decision suya.
+    Ofrecerle ahi una lista de identidades plausibles seria
+    devolverle una duda que el ya despejo.
+  */
+  let identidadesPlausibles = null;
+
+  if (!opciones.contextoMaestro) {
+    try {
+      identidadesPlausibles = detectarIdentidadesPlausibles(
+        (fusion?.evidencias || resultados || []).map((e) => ({
+          url: e.url || e.enlace,
+          titulo: e.titulo,
+          descripcion: e.descripcion,
+          fecha: e.fecha
+        })),
+        perfilReferencia?.nombrePrincipal || objetivo
+      );
+    } catch (error) {
+      console.error("[identidades] fallo la separacion:", error);
+    }
+  }
+
   try {
     if (social?.fichas?.length) {
       /*
@@ -1056,6 +1086,8 @@ export async function investigarObjetivo(objetivo, opciones = {}) {
       tenga que adivinarlo.
     */
     modoInvestigacion: opciones.contextoMaestro ? "proyecto" : "individual",
+
+    identidadesPlausibles,
 
     contextoMaestro: opciones.contextoMaestro || null,
 

@@ -93,6 +93,61 @@ export const ESTADOS_PROYECTO = Object.freeze([
 
 /*
 -----------------------------------------------------------
+NIVELES DE ACTOR — ARQ-INV-003
+
+El territorio del proyecto NO se aplica igual a todos.
+
+Defecto medido en el QA anterior: Daniel Noboa, presidente, se
+investigo dentro del proyecto de Cuenca y la consulta salio
+
+    "Daniel Noboa" Cuenca presidencia
+
+Funciono por la fuerza de su presencia, pero para una figura
+nacional el canton no discrimina: DISTORSIONA. Buscar al
+presidente de Ecuador acotado a un canton devuelve su relacion
+con ese canton, no su perfil.
+
+Asi que el ancla territorial depende del nivel:
+
+  cantonal      canton      es lo que discrimina
+  provincial    provincia
+  nacional      pais        el canton quedaria fuera
+  internacional ninguna     ni pais acota util
+
+El nivel lo declara el analista. Sentinel no lo adivina.
+-----------------------------------------------------------
+*/
+
+export const NIVELES = Object.freeze([
+  "cantonal",
+  "provincial",
+  "nacional",
+  "internacional"
+]);
+
+/*
+  Un candidato a una dignidad local es cantonal por defecto; un
+  actor sin nivel declarado se trata como cantonal solo si el
+  proyecto es cantonal, porque es la lectura conservadora: acotar
+  de mas se corrige mirando, inventar alcance no.
+*/
+export function nivelPorDefecto(dignidad) {
+  const d = normalizarTexto(dignidad || "");
+
+  if (!d) return "cantonal";
+
+  if (/presidencia|vicepresidencia|asamblea nacional|parlamento/.test(d)) {
+    return "nacional";
+  }
+
+  if (/prefectura|asamblea provincial/.test(d)) return "provincial";
+
+  return "cantonal";
+}
+
+
+/*
+-----------------------------------------------------------
 FUERZAS DE ANCLA
 
 Por encima de 10, que es el máximo que puede alcanzar un
@@ -102,10 +157,20 @@ es decorativa: es lo que hace imposible el desplazamiento.
 */
 
 const FUERZA = Object.freeze({
-  CANTON: 24,
+  /*
+    El territorio QUE CORRESPONDE AL NIVEL, y la dignidad. Solo
+    estas dos superan el 10 que puede alcanzar un termino derivado
+    de evidencia, asi que solo estas dos pueden ocupar las dos
+    plazas que usa el planificador.
+  */
+  TERRITORIO_DEL_NIVEL: 24,
   DIGNIDAD: 22,
-  PROVINCIA: 20,
-  PAIS: 18
+
+  /*
+    El resto del territorio del proyecto queda declarado pero por
+    debajo del umbral: informa al analista sin acotar la consulta.
+  */
+  RESPALDO: 6
 });
 
 
@@ -163,10 +228,29 @@ export function construirContextoMaestro(proyecto, candidato = null) {
   };
 
   /*
-    Orden por poder discriminante, no por jerarquía
-    administrativa. Ver la nota de la cabecera.
+    ---------------------------------------------------------
+    ANCLA TERRITORIAL SEGUN EL NIVEL DEL ACTOR
+    ---------------------------------------------------------
+
+    Solo el ancla que corresponde al nivel entra con fuerza de
+    territorio. Las demas quedan por debajo, como respaldo, para
+    que el planificador —que usa dos— no las tome.
+
+    Ver la nota de NIVELES: acotar a un presidente por canton
+    devuelve su relacion con ese canton, no su perfil.
   */
-  agregar(proyecto.canton, FUERZA.CANTON, "proyecto_canton");
+  const nivel =
+    candidato?.nivel ||
+    nivelPorDefecto(candidato?.dignidad || proyecto.dignidad);
+
+  const territorioDelNivel = {
+    cantonal: proyecto.canton,
+    provincial: proyecto.provincia,
+    nacional: proyecto.pais,
+    internacional: null
+  }[nivel];
+
+  agregar(territorioDelNivel, FUERZA.TERRITORIO_DEL_NIVEL, `proyecto_${nivel}`);
 
   agregar(
     palabraDeDignidad(candidato?.dignidad || proyecto.dignidad),
@@ -174,9 +258,18 @@ export function construirContextoMaestro(proyecto, candidato = null) {
     "proyecto_dignidad"
   );
 
-  agregar(proyecto.provincia, FUERZA.PROVINCIA, "proyecto_provincia");
-
-  agregar(proyecto.pais, FUERZA.PAIS, "proyecto_pais");
+  /*
+    Respaldo por debajo de 10 —el maximo de un termino derivado de
+    evidencia— para que no compitan por las dos plazas del
+    planificador pero queden declaradas.
+  */
+  [
+    [proyecto.canton, "proyecto_canton"],
+    [proyecto.provincia, "proyecto_provincia"],
+    [proyecto.pais, "proyecto_pais"]
+  ].forEach(([valor, origen]) => {
+    agregar(valor, FUERZA.RESPALDO, origen);
+  });
 
   return {
     version: "1.0",
@@ -196,6 +289,27 @@ export function construirContextoMaestro(proyecto, candidato = null) {
     */
     rolDeclarado: candidato?.rol || null,
     rolOrigen: candidato?.rol ? "analista" : null,
+
+    nivel,
+
+    /*
+      DOS NIVELES DE ANALISIS para un actor cuyo alcance no
+      coincide con el territorio del proyecto. No se mezclan: el
+      perfil se construye en su propio ambito y la presencia
+      territorial es un analisis aparte, que solo se calcula si el
+      analista lo pide.
+    */
+    ambitoDelPerfil: territorioDelNivel || proyecto.pais || null,
+
+    territorioDelProyecto: proyecto.canton || proyecto.provincia || null,
+
+    requiereDosNiveles:
+      nivel !== "cantonal" && Boolean(proyecto.canton),
+
+    notaDeNivel:
+      nivel === "cantonal"
+        ? "Actor de alcance cantonal: el cantón del proyecto es su ancla principal."
+        : `Actor de alcance ${nivel}: su perfil se construye en su propio ámbito, no acotado al cantón del proyecto. La presencia territorial, si se pide, es un análisis aparte.`,
 
     anclas,
 
@@ -325,6 +439,8 @@ export default {
   DIGNIDADES,
   TIPOS_ELECCION,
   ESTADOS_PROYECTO,
+  NIVELES,
+  nivelPorDefecto,
   construirContextoMaestro,
   aplicarContextoMaestro,
   palabraDeDignidad

@@ -256,6 +256,162 @@ export async function obtenerCandidato(proyectoId, candidatoId) {
 
 /*
 ===========================================================
+ACTORES DE REFERENCIA — ARQ-INV-003
+===========================================================
+
+OPCIONAL. Un proyecto funciona perfectamente con cero actores, y
+ese es el caso por defecto.
+
+POR QUE SON UNA ENTIDAD APARTE Y NO UN CANDIDATO CON UNA
+ETIQUETA
+-----------------------------------------------------------
+
+Porque la separacion tiene que ser estructural, no una
+convencion que alguien pueda saltarse. Un actor de referencia se
+guarda bajo un prefijo de entidad distinto, asi que:
+
+  · no aparece al listar candidatos
+  · no entra en la comparacion de candidatos
+  · no entra en el calculo de cobertura de ningun candidato
+
+Daniel Noboa no puede colarse en la lista de candidatos a la
+alcaldia de Cuenca por accidente: no esta guardado ahi.
+
+`incluirEnComparativo` nace en FALSE. Mientras siga en false el
+actor existe, se puede investigar y tiene su propio expediente,
+pero no toca nada de los candidatos.
+===========================================================
+*/
+
+const PREFIJO_CANDIDATO = "candidato-";
+
+const PREFIJO_ACTOR = "actor-";
+
+
+export async function agregarActor(proyectoId, datos = {}) {
+  const proyecto = await obtenerProyecto(proyectoId);
+
+  if (!proyecto) {
+    return { agregado: false, motivo: `no existe el proyecto ${proyectoId}` };
+  }
+
+  const nombre = String(datos.nombre || "").trim();
+
+  if (!nombre) {
+    return { agregado: false, motivo: "el actor necesita un nombre" };
+  }
+
+  const id = idDesde(nombre);
+
+  const cuentasReferencia = [];
+
+  if (datos.urlReferencia) {
+    cuentasReferencia.push({
+      plataforma: datos.plataformaReferencia || null,
+      url: String(datos.urlReferencia).trim(),
+      tipo: "cuenta_referencia",
+      origen: "analista",
+      estado: "proporcionada_por_analista",
+      verificadaPorSentinel: false,
+      nota:
+        "Cuenta proporcionada por el analista como referencia inicial. Sentinel no la ha verificado."
+    });
+  }
+
+  const actor = {
+    id,
+    nombre,
+    rol: datos.rol || null,
+    rolOrigen: datos.rol ? "analista" : null,
+    /* El nivel lo declara el analista; Sentinel no lo adivina. */
+    nivel: datos.nivel || null,
+    territorio: datos.territorio || null,
+    dignidad: datos.dignidad || null,
+    cuentasReferencia,
+
+    /*
+      NACE DESACTIVADO. Mientras siga asi, este actor no toca
+      ningun candidato.
+    */
+    incluirEnComparativo: datos.incluirEnComparativo === true,
+
+    esActorDeReferencia: true,
+
+    agregadoEn: new Date().toISOString()
+  };
+
+  const r = await escribirEnLake(
+    {
+      entidad: `${PREFIJO_ACTOR}${id}`,
+      tipoEntidad: TIPO_EXPEDIENTE,
+      tenantId: TENANT,
+      proyectoId,
+      fuente: SUBMOTOR,
+      linaje: linaje("agregar_actor"),
+      datos: actor
+    },
+    {}
+  );
+
+  return {
+    agregado: r?.escrito === true,
+    actor,
+    proyecto,
+    aviso:
+      "Actor de referencia creado. No es candidato y no afecta a los candidatos mientras el análisis comparativo esté desactivado.",
+    motivo: r?.motivo || null
+  };
+}
+
+
+export async function obtenerActor(proyectoId, actorId) {
+  try {
+    const v = await obtenerVersionEntidad(
+      claveLake(proyectoId, TIPO_EXPEDIENTE, `${PREFIJO_ACTOR}${actorId}`),
+      {}
+    );
+
+    return v?.registro?.datos || null;
+  } catch {
+    return null;
+  }
+}
+
+
+export async function activarComparativo(proyectoId, actorId, activar) {
+  const actor = await obtenerActor(proyectoId, actorId);
+
+  if (!actor) {
+    return { actualizado: false, motivo: `no existe el actor ${actorId}` };
+  }
+
+  const nuevo = { ...actor, incluirEnComparativo: activar === true };
+
+  const r = await escribirEnLake(
+    {
+      entidad: `${PREFIJO_ACTOR}${actorId}`,
+      tipoEntidad: TIPO_EXPEDIENTE,
+      tenantId: TENANT,
+      proyectoId,
+      fuente: SUBMOTOR,
+      linaje: linaje("activar_comparativo"),
+      datos: nuevo
+    },
+    {}
+  );
+
+  return {
+    actualizado: r?.escrito === true,
+    actor: nuevo,
+    aviso: nuevo.incluirEnComparativo
+      ? "Análisis comparativo activado. La correlación que se calcule es OBSERVABLE: coincidencia de temas, medios y tiempo. No implica transferencia de votos ni causalidad."
+      : "Análisis comparativo desactivado. El actor no afecta a ningún candidato."
+  };
+}
+
+
+/*
+===========================================================
 EXPEDIENTE VIVO
 ===========================================================
 */
@@ -312,8 +468,17 @@ function resumirExpediente(resultado) {
 }
 
 
-export async function registrarInvestigacion(proyectoId, candidatoId, resultado) {
-  const entidad = `expediente-${candidatoId}`;
+export async function registrarInvestigacion(
+  proyectoId,
+  candidatoId,
+  resultado,
+  tipo = "candidato"
+) {
+  /*
+    Expedientes separados por tipo: el de un actor de referencia no
+    puede pisar el de un candidato ni aparecer en su lugar.
+  */
+  const entidad = `expediente-${tipo}-${candidatoId}`;
 
   const clave = claveLake(proyectoId, TIPO_EXPEDIENTE, entidad);
 
@@ -447,5 +612,8 @@ export default {
   obtenerProyecto,
   agregarCandidato,
   obtenerCandidato,
+  agregarActor,
+  obtenerActor,
+  activarComparativo,
   registrarInvestigacion
 };

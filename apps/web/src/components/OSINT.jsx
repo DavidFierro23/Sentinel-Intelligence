@@ -21,6 +21,7 @@ import LoadingInvestigation from "./LoadingInvestigation";
 import { recordar } from "../services/aliasMemory";
 import ExecutiveDashboard from "./ExecutiveDashboard";
 import CoverageIndexPanel from "./CoverageIndexPanel";
+import PlausibleIdentitiesPanel from "./PlausibleIdentitiesPanel";
 import PlatformGrid from "./PlatformGrid";
 import EvidenceConfidencePanel from "./EvidenceConfidencePanel";
 
@@ -373,6 +374,16 @@ const OSINT = forwardRef(function OSINT(
               un hallazgo conviene saber si el expediente esta
               completo.
             */}
+            {/*
+              ARQ-INV-003 — las posibles identidades van PRIMERO:
+              si la evidencia describe a varias personas, saberlo
+              antes de leer cualquier hallazgo cambia como se lee
+              todo lo demas.
+            */}
+            <PlausibleIdentitiesPanel
+              identidades={resultado.identidadesPlausibles}
+            />
+
             <CoverageIndexPanel
               resultado={resultado}
               alias={recordar(resultado.fichaObjetivo?.nombrePrincipal)}
