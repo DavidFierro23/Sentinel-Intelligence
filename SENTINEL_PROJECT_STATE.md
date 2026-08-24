@@ -701,6 +701,18 @@ en esta tarea:
 | OSINT Engine | `services/osintEngine.js` |
 | Platform Adapters | `services/social/discovery/platformAdapters.js` |
 
+### Excepciones autorizadas
+
+| Fecha | Componente | Autorización | Alcance |
+|---|---|---|---|
+| 2026-08-24 | `accountClassifier.js` | LÍNEA A, L-1 | **Exclusivamente** la regla de apellido. Ver §18-bis |
+| 2026-08-24 | `discoveryEngine.js` | LÍNEA A, L-2 | VÍA 0 y marca de no corroboración |
+| 2026-08-24 | `osintEngine.js` | LÍNEA A, L-2 | Entregar `cuentasReferencia` al Social Intelligence |
+
+`platformAdapters.js` y `socialUrlClassifier.js` (SD-1A) se **usaron** como
+autoridades —anclas y lectura de URL— sin modificarse. `socialIntelligenceLayer.js`
+no está en la lista de congelados: es un conducto.
+
 ---
 
 ## 18. Pruebas realizadas
@@ -724,6 +736,161 @@ Auditoría formal: `docs/auditorias/AUD-001-Discovery-Planner-Pedro-Palacios.jso
 ⚠️ Los resultados detallados de cada prueba viven en los mensajes de commit, no
 en un informe consolidado. **Prueba registrada históricamente; consolidación
 pendiente.**
+
+---
+
+## 18-bis. LÍNEA A — Tubería de identidad corregida (2026-08-24)
+
+Commit `fix(projects): restore candidate identity discovery coverage`.
+HEAD auditado en la autorización: `c37d1e0`. HEAD real al implementar:
+`4a0e2d8` — la sesión Territorial commiteó entre la auditoría y la
+implementación. Sin conflicto: ningún archivo territorial se tocó y sus
+107 pruebas siguen pasando.
+
+### Causa raíz
+
+Tres defectos independientes, en tres capas distintas, que se sumaban para
+producir el mismo síntoma —«el candidato del proyecto no tiene cuentas»— y
+que **empeoraban cuanto más preciso era el analista**.
+
+**1 · La regla de apellido exigía el ÚLTIMO token.**
+`accountClassifier.llevaNombreDelObjetivo` pedía que la coincidencia cayera
+en el último token de ≥4 caracteres del nombre escrito. Con dos tokens
+funciona. Con tres o cuatro, cada apellido añadido estrechaba el filtro:
+
+| Nombre escrito | Token exigido | Consecuencia |
+|---|---|---|
+| `Yaku Pérez Guartambel` | `guartambel` | perdía 5 de 6 cuentas |
+| `Juan Cristóbal Lloret Valdivieso` | `valdivieso` | perdía `@jotalloretv` |
+| `Paúl Carrasco Carpio` | `carpio` | 0 cuentas |
+
+Escribir el nombre completo —lo que un analista hace para ser exacto— hacía
+la atribución más estricta. El incentivo estaba invertido.
+
+**2 · `cuentasReferencia` era decorativa.**
+Las URLs que el analista escribía se guardaban en el expediente y
+`osintEngine` las devolvía en la respuesta (línea 1098, un eco). No llegaban
+al planificador, ni al Discovery, ni al matcher. El motor volvía a buscar a
+ciegas y, si no las reencontraba, la cuenta que el analista había escrito no
+aparecía en el resultado.
+
+**3 · Fusion usaba la frase del formulario como contexto.**
+`planificarConsultas` concatenaba `contexto.rol` + `contexto.pais`. En modo
+proyecto `contexto.rol` es el texto libre del analista, así que la consulta
+salía con ocho palabras:
+
+    "Pedro Palacios" Candidato a Alcalde de Cuenca Ecuador
+
+Un buscador web con ocho palabras devuelve lo que las contiene casi todas, y
+las cuentas sociales no lo hacen. La consulta era tan precisa que no
+encontraba nada. Fusion no leía `contextoMaestro.anclas`, que ya existían
+destiladas.
+
+### Correcciones
+
+| ID | Archivo | Cambio |
+|---|---|---|
+| L-1 | `services/social/classification/accountClassifier.js` | `zonaDeApellidos(tokens)`: descarta los nombres de pila iniciales y exige **uno cualquiera** de los apellidos restantes. Léxico `NOMBRES_DE_PILA` (~200 nombres, tipo de token, sin ningún nombre de objetivo) con **respaldo posicional** cuando no reconoce el primer token. |
+| L-2 | `services/social/discovery/discoveryEngine.js` | **VÍA 0** — las URLs del analista entran al Discovery con `via: "cuenta_referencia"`, `origen: "analista"` y `noCuentaComoCorroboracion: true`. |
+| L-2 | `services/social/socialIntelligenceLayer.js` | Conducto de `cuentasReferencia`. |
+| L-2 | `services/osintEngine.js` | Entrega la semilla al Social Intelligence en lugar de solo devolverla. |
+| L-3 | `services/fusionSearchEngine.js` | La consulta de contexto usa las **dos anclas más fuertes** vía `extraerAnclas`, una sola autoridad compartida con el planificador social. |
+
+**L-1 no se convirtió en «cualquier token vale».** La coincidencia sigue
+teniendo que caer en un apellido: `Juan Carlos Vega` continúa exigiendo
+`vega`, y `@juan-carlos-garcía-macías` continúa rechazado. Ese es el falso
+positivo que la regla vieja existía para frenar, y sigue frenado.
+
+**L-1 es inerte para nombres de dos tokens.** Con dos tokens la zona de
+apellidos es el segundo, exactamente lo que exigía la regla anterior. Ningún
+objetivo de dos tokens —`Pedro Palacios`, `Daniel Noboa`— puede empeorar por
+construcción, no por medición.
+
+### Regla absoluta — no autoverificación
+
+Una cuenta que el analista escribió **no puede servir de prueba de sí
+misma**. Si entrara como un hallazgo cualquiera, Sentinel se sumaría puntos
+de corroboración por «encontrar» lo que le acaban de dictar.
+
+El filtro se aplica **en el límite del Discovery**, no en cada señal: los
+orígenes marcados quedan fuera de las dos listas que alimentan S6.
+
+| Lista | Alimenta | La referencia entra |
+|---|---|---|
+| `proveedores` | corroboración multi-proveedor (`officialLinkSignal.js:181`) | **no** |
+| `vias` | vías independientes (`officialLinkSignal.js:220`) | **no** |
+| `origenes` | trazabilidad | sí, con su marca |
+| `viasDeclaradas` | transparencia hacia el analista | sí |
+
+El segundo punto era el menos evidente y el más peligroso:
+`cuenta_referencia` **no** está en `VIAS_DERIVADAS`, así que habría contado
+como «vía que aporta información nueva». Filtrar en el límite significa que
+una señal futura que lea `vias` hereda la garantía sin tener que acordarse
+de ella.
+
+Negarle puntos no es esconderla: el origen consta con `origen: "analista"`,
+y `aportadaPorAnalista` lo expone a la interfaz. Y si un proveedor real
+encuentra la misma cuenta por su cuenta, **ese** origen sí corrobora, porque
+es independiente.
+
+### Reclasificación a cuota cero
+
+Sin ejecutar ninguna búsqueda: se reclasificaron los grupos de candidatos
+reales que el Discovery ya había producido, contra el nombre largo del
+proyecto, con la regla vieja y con la nueva. El grupo es idéntico en ambos
+casos; lo único que cambia es la regla.
+
+| Candidato | Grupo | Antes | Después | Recuperadas | Rechazadas |
+|---|---|---|---|---|---|
+| Paúl Carrasco Carpio | — | — | — | — | sin grupo guardado |
+| Juan Cristóbal Lloret Valdivieso | 42 | 0 | 1 | 1 | 0 |
+| Pedro Palacios | 71 | 0 | 0 | 0 | 0 |
+| Yaku Pérez Guartambel | 40 | 0 | 6 | 6 | 2 |
+| Juan Carlos Vega *(control)* | 56 | 4 | 4 | 0 | 1 |
+
+Recuperadas: `@jotalloretv` (X) y las seis de Yaku Pérez —X, Instagram ×2,
+Facebook ×2, TikTok—, todas rechazadas antes por no llevar `guartambel`.
+
+**Pedro Palacios 0 → 0 no es un fallo de L-1.** Su grupo de 71 candidatos no
+contiene **ninguna** URL con la cadena `palacio`: la cuenta nunca llegó al
+clasificador. Es un problema de Discovery, que es lo que atacan L-2 y L-3, y
+solo el piloto real puede medirlo.
+
+**Paúl Carrasco Carpio no tiene grupo guardado.** Su caso solo puede
+validarse en el piloto real. Lo que sí está demostrado en prueba unitaria es
+el mecanismo: la zona pasa a ser `{carrasco, carpio}` y `@paulcarrascoc`
+—rechazada por la regla vieja, que exigía `carpio`— ahora se atribuye.
+
+### Pruebas
+
+`npm test --workspace apps/backend` — **189 comprobaciones, 0 fallos.**
+Ninguna consume cuota ni red.
+
+| Fichero | Cubre | Resultado |
+|---|---|---|
+| `tests/territorial.test.mjs` | LÍNEA B, preexistente | 107 / 0 |
+| `tests/identidad.test.mjs` | T8 zona de apellidos + **regresión de falso positivo** | 19 / 0 |
+| `tests/referencia.test.mjs` | T3 semilla + T4 no autoverificación | 19 / 0 |
+| `tests/contexto.test.mjs` | T5 cobertura de plataformas + T6 contexto destilado | 28 / 0 |
+| `tests/persistencia.test.mjs` | T7 expediente persistente | 16 / 0 |
+
+Decisiones de las pruebas que conviene no deshacer:
+
+- **`identidad.test.mjs` prueba los dos defectos opuestos.** El bloque T8.c
+  (falsos positivos) no es un extra: un test que solo cubriera los falsos
+  negativos permitiría «cualquier token vale» como corrección válida.
+- **`referencia.test.mjs` usa un helper `async`.** Varias comprobaciones
+  vuelven a llamar al Discovery; con un `t()` sincrónico una promesa siempre
+  es verdadera y esas pruebas habrían pasado sin comprobar nada.
+- **`persistencia.test.mjs` fuerza `SENTINEL_LAKE_ADAPTER=memoria`** antes de
+  importar el store, y su primera comprobación verifica que el lake arranca
+  vacío. El Lake es append-only: un test que escribiera en
+  `data/knowledge-lake` ensuciaría datos de trabajo en cada ejecución.
+- **T1 y T2 no se ejecutaron**: consumen cuota de proveedor.
+
+### Hallazgos declarados, NO corregidos
+
+Fuera del alcance de esta autorización. Ver BUG-07 y BUG-08 en §22.
 
 ---
 
@@ -803,9 +970,13 @@ es del analista.
 | BUG-04 | Baja | 4 proyectos de QA | Texto con U+FFFD en `dignidad` y `tipoEleccion` | Declarado (§21) | No | Decisión del analista: eliminar o recrear |
 | BUG-05 | Media | `KnowledgeGraph.jsx` | Grafo radial: no hay relaciones entre nodos | Abierto | No | Aristas cuenta↔medio y cuenta↔cuenta |
 | BUG-06 | Baja | `PlausibleIdentitiesPanel.jsx` | «Investigar esta identidad» presente sin acción conectada | Abierto | No | Conectar reinvestigación con la evidencia del grupo |
+| BUG-07 | Media | `projects/projectContext.js:134` | `nivelPorDefecto` compara contra `prefectura` / `presidencia` (el cargo), pero el analista escribe `Prefecto` / `Presidente` / `Asambleísta` (la persona). **Todas** las dignidades en forma personal caen a `cantonal`, y en un proyecto provincial o nacional sin `nivel` declarado la provincia o el país se quedan en fuerza 6 —por debajo del umbral de evidencia— y **no llegan a ser ancla**. Detectado en LÍNEA A (§18-bis) | Abierto, **no corregido: fuera de la autorización L-1/L-2/L-3** | No | Aceptar la forma personal de cada dignidad, o exigir `nivel` explícito en el formulario |
+| BUG-08 | Baja | `social/discovery/discoveryEngine.js:398` | `planificarConsultasSociales` está exportada y **nadie la llama**: el motor planifica con `planificarConsultasDerivadas`. Cubre 3 de 6 plataformas (deja fuera X, YouTube y LinkedIn) y no aplica anclas. Si alguien la conectara creyendo que es el planificador, perdería la mitad de la cobertura. Fijado por prueba en `tests/contexto.test.mjs` | Abierto, **no corregido: archivo congelado** | No | Eliminarla o marcarla como obsoleta en una limpieza autorizada |
 
 BUG-03 **queda cerrado en modo proyecto** por el Contexto Maestro (§9); sigue
-abierto en modo individual, donde no hay contexto del analista.
+abierto en modo individual, donde no hay contexto del analista. L-3 (§18-bis)
+**no lo cierra**: destila las anclas que el proyecto ya declara, y en modo
+individual deja el comportamiento anterior intacto a propósito.
 
 ---
 
@@ -818,7 +989,9 @@ resueltos y verificados.
 ### P1 — necesario para MVP
 | Pendiente | Estado |
 |---|---|
-| Prueba real de candidato en proyecto con semilla del analista | 🔴 planificada, ver §24 |
+| Prueba real de candidato en proyecto con semilla del analista | 🔴 planificada, ver §24. **Tubería corregida y probada sin cuota (§18-bis); los pilotos de Paúl, Lloret, Pedro y Yaku NO se han ejecutado** |
+| Verificar en piloto real que Pedro Palacios recibe candidatos al Discovery | 🔴 su grupo guardado no contenía ninguna URL con `palacio`; L-1 no podía cambiarlo |
+| Verificar Paúl Carrasco Carpio con búsqueda real | 🔴 no existe grupo guardado; el mecanismo está probado en unitario |
 | Expediente visual completo del candidato dentro del proyecto | 🔴 hoy solo hay resumen |
 | Comparación entre candidatos con más de una dimensión | 🟡 cobertura y cuentas |
 | Histórico / evolución del expediente | 🔴 el Lake versiona; no hay vista |
@@ -833,7 +1006,9 @@ resueltos y verificados.
 | Relaciones en el Knowledge Graph | 🔴 BUG-05 |
 | Errores ESLint preexistentes | 🟡 BUG-01, BUG-02 |
 | Selección de identidad plausible | 🔴 BUG-06 |
-| Alias que alimenten el planificador del backend | 🔴 hoy solo `localStorage` |
+| Alias que alimenten el planificador del backend | 🔴 hoy solo `localStorage`. **No implementado en LÍNEA A**: requiere anuncio `PATCH ALIAS DISPONIBLE` y autorización aparte |
+| `nivelPorDefecto` no reconoce las dignidades en forma personal | 🔴 BUG-07, declarado en LÍNEA A y no corregido |
+| `planificarConsultasSociales` huérfana y con cobertura parcial | 🔴 BUG-08, declarado en LÍNEA A y no corregido |
 | Credencial de Brave | 🔴 externa al equipo |
 
 ---
@@ -1052,4 +1227,5 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-24 | LÍNEA A | Tubería de identidad corregida: L-1 zona de apellidos, L-2 semilla de referencia sin autoverificación, L-3 contexto destilado. Nueva §18-bis. BUG-07 y BUG-08 declarados sin corregir. 189 pruebas sin cuota, 0 fallos. Pilotos reales NO ejecutados. |
 | 2026-08-24 | `b2dcdc5` | Creación del documento maestro de continuidad. Estado verificado por inspección del repositorio: 4 routers, 12 endpoints de proyecto, 14 componentes congelados existentes, Knowledge Lake en fichero con persistencia verificada, LÍNEA B territorial sin integrar. |

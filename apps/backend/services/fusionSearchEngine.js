@@ -3,6 +3,17 @@
 import { buscarGoogleNews } from "./googleNewsService.js";
 import { correlacionarIdentidades } from "./identityCorrelationService.js";
 
+/*
+  L-3 — UNA SOLA AUTORIDAD PARA LAS ANCLAS.
+
+  `extraerAnclas` ya resuelve, ordenadas por fuerza, el contexto
+  del proyecto y el derivado de evidencia. Se reutiliza en lugar
+  de volver a decidir aqui: dos sitios decidiendo el contexto es
+  como se llega a dos respuestas distintas para la misma
+  pregunta.
+*/
+import { extraerAnclas } from "./social/discovery/platformAdapters.js";
+
 import {
   buscarWeb,
   crearSesion,
@@ -203,12 +214,56 @@ export function planificarConsultas(perfil, objetivo) {
   if (!perfil) return plan;
 
   /*
-    2. CONTEXTO — rol y país encontrados en las evidencias.
-       Es lo que separa a un homónimo del objetivo.
+    ---------------------------------------------------------
+    2. CONTEXTO — lo que separa a un homónimo del objetivo.
+    ---------------------------------------------------------
+
+    QUE SE CORRIGIO EN L-3
+
+    Antes se concatenaba `contexto.rol` con `contexto.pais`. En
+    modo individual eso es corto y funciona. Pero en modo
+    proyecto `contexto.rol` es la frase que el analista escribio
+    en el formulario, y la consulta salia asi:
+
+        "Pedro Palacios" Candidato a Alcalde de Cuenca Ecuador
+
+    Ocho palabras. Un buscador web con ocho palabras devuelve lo
+    que las contiene casi todas, y las cuentas sociales rara vez
+    lo hacen: la consulta era tan precisa que no encontraba nada.
+
+    Ahora se usan las anclas DESTILADAS, las dos mas fuertes:
+
+        "Pedro Palacios" Cuenca alcalde
+
+    Es el mismo contexto, sin la sintaxis de la frase. No hay
+    nada de Pedro, de Cuenca ni de la alcaldia escrito aqui: se
+    lee de las anclas, que las produce el proyecto del analista,
+    cualquiera que sea.
+
+    EL CONTEXTO NO SUSTITUYE LA BUSQUEDA AMPLIA
+
+    Esta consulta se AÑADE. La del punto 1 —solo el nombre, sin
+    contexto— sigue en el plan, y es la que encuentra lo que no
+    sabiamos buscar. Estrechar el contexto sirve para desempatar
+    homonimos, no para decidir de antemano que se puede hallar.
+    ---------------------------------------------------------
   */
   const contexto = perfil.contexto || {};
 
-  const piezasContexto = [contexto.rol, contexto.pais].filter(Boolean);
+  /*
+    Ordenadas por fuerza: en un proyecto ganan territorio y
+    dignidad; sin proyecto, el rol y el pais derivados de la
+    evidencia, que es el comportamiento anterior.
+  */
+  const anclas = extraerAnclas(perfil)
+    .map((a) => String(a.termino || "").trim())
+    .filter(Boolean);
+
+  /*
+    Dos. Con una no discrimina; con cuatro vuelve la consulta
+    demasiado estrecha, que es el defecto que se esta corrigiendo.
+  */
+  const piezasContexto = anclas.slice(0, 2);
 
   if (piezasContexto.length) {
     agregar(

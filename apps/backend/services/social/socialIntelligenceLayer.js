@@ -57,7 +57,13 @@ export async function ejecutarSocialIntelligence(perfil, opciones = {}) {
     descubrimiento = await descubrirCandidatos(perfil, {
       evidenciasPrevias: opciones.evidenciasPrevias || [],
       omitirConsultas: opciones.omitirConsultas === true,
-      sesion: opciones.sesion
+      sesion: opciones.sesion,
+
+      /*
+        L-2 — las URLs que escribio el analista. Van a la VIA 0
+        del Discovery, marcadas para no corroborarse a si mismas.
+      */
+      cuentasReferencia: opciones.cuentasReferencia || []
     });
 
     etapas.push({

@@ -442,7 +442,17 @@ export async function investigarObjetivo(objetivo, opciones = {}) {
     try {
       social = await ejecutarSocialIntelligence(perfilReferencia, {
         evidenciasPrevias: fusion?.evidencias || resultados,
-        objetivo
+        objetivo,
+
+        /*
+          L-2 — SEMILLA DE DESCUBRIMIENTO.
+
+          Antes esta opcion solo se devolvia en la respuesta:
+          el analista escribia la URL y el motor no la miraba.
+          Ahora entra al Discovery por la VIA 0. Marcada, sin
+          derecho a corroborarse.
+        */
+        cuentasReferencia: opciones.cuentasReferencia || []
       });
     } catch (error) {
       console.error("Error en ejecutarSocialIntelligence:", error);

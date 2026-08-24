@@ -134,6 +134,52 @@ const LEXICO_INSTITUCION = Object.freeze([
 
 
 /*
+-----------------------------------------------------------
+NOMBRES DE PILA — L-1
+
+Sirven para una sola cosa: separar la ZONA DE APELLIDOS del
+nombre que el analista escribio.
+
+Es un lexico de TIPO de token, no de identidad: dice "esto suele
+ser un nombre de pila", nunca "esta persona es X". La misma
+categoria que el lexico de medios, y por el mismo motivo: no hay
+ni un nombre de objetivo aqui.
+
+Deliberadamente INCOMPLETO, y no es un problema: cuando ningun
+token inicial se reconoce, se usa el respaldo posicional
+—descartar solo el primero—, que es lo que hace funcionar
+"Yaku Perez Guartambel" sin que "Yaku" este en esta lista.
+-----------------------------------------------------------
+*/
+
+const NOMBRES_DE_PILA = new Set(
+  ("juan jose maria luis carlos jorge miguel manuel pedro pablo daniel " +
+    "david andres diego javier fernando ricardo roberto rafael ramon " +
+    "antonio francisco alberto eduardo enrique esteban felipe gabriel " +
+    "guillermo gustavo hector hugo ignacio jaime joaquin julio marcelo " +
+    "mario martin mauricio nestor oscar patricio raul rene rodrigo " +
+    "santiago sebastian sergio tomas vicente victor cristobal cristian " +
+    "christian alejandro alfredo angel arturo bernardo bruno cesar " +
+    "claudio damian edgar edwin efrain eliseo emilio ernesto fabian " +
+    "fausto felix fidel freddy geovanny german gonzalo isidro ivan " +
+    "jefferson jhon johnny jonathan kevin leonardo lorenzo lucas " +
+    "marco mateo matias maximo nelson nicolas norberto omar orlando " +
+    "osvaldo paul pio ramiro remigio ruben salomon samuel saul segundo " +
+    "simon teodoro ulises walter washington wilfrido wilson xavier " +
+    "ana maria carmen rosa laura sofia isabel elena patricia veronica " +
+    "monica gabriela daniela alejandra andrea beatriz blanca carla " +
+    "carolina catalina cecilia clara claudia cristina diana dolores " +
+    "esperanza estela eugenia fernanda gladys gloria graciela ines " +
+    "irene jacqueline janeth jessica johanna josefina juana julia " +
+    "leticia lorena lucia luisa magdalena manuela marcela margarita " +
+    "mariana marta martha mercedes miriam narcisa natalia nelly " +
+    "nubia olga paola paulina pilar raquel rocio ruth sandra " +
+    "silvana silvia soledad susana tatiana teresa valeria vanessa " +
+    "victoria virginia viviana yolanda zoila").split(" ")
+);
+
+
+/*
   Sufijos de país o siglas territoriales que un medio o
   institución añade a su handle. No clasifican por sí solos,
   pero refuerzan.
@@ -282,6 +328,109 @@ export function extraerNombreVisible(cuenta) {
 }
 
 
+/*
+-----------------------------------------------------------
+ZONA DE APELLIDOS — L-1
+
+QUE SE CORRIGE
+-----------------------------------------------------------
+
+La regla anterior exigia el ULTIMO token del nombre escrito.
+Funcionaba con nombres de dos tokens y castigaba los largos:
+
+    "Yaku Perez Guartambel"            exigia guartambel   -> 1 cuenta
+    "Juan Cristobal Lloret Valdivieso" exigia valdivieso   -> perdia @jotalloretv
+    "Paul Carrasco Carpio"             exigia carpio       -> 0 cuentas
+
+Escribir mas apellidos hacia la atribucion MAS estricta, que es
+justo lo contrario de lo que un analista espera al ser mas
+preciso.
+
+POR QUE NO BASTA "CUALQUIER TOKEN"
+-----------------------------------------------------------
+
+Porque reintroduce el falso positivo que la regla anterior
+existia para frenar:
+
+    objetivo "Juan Carlos Vega"
+    cuenta   @juan-carlos-garcia-macias
+    coincide en juan y carlos -> otra persona
+
+"Juan" y "Carlos" son nombres de pila que comparten miles de
+personas. La coincidencia tiene que caer en un APELLIDO.
+
+COMO SE DETERMINA LA ZONA
+-----------------------------------------------------------
+
+Se descartan los tokens INICIALES que sean nombres de pila
+conocidos; el resto es la zona de apellidos.
+
+    "Paul Carrasco Carpio"              pila{paul}          -> {carrasco, carpio}
+    "Juan Cristobal Lloret Valdivieso"  pila{juan,cristobal}-> {lloret, valdivieso}
+    "Juan Carlos Vega"                  pila{juan,carlos}   -> {vega}
+    "Pedro Palacios"                    pila{pedro}         -> {palacios}
+
+Y cuando el primer token NO esta en el lexico, se descarta solo
+el primero, por posicion:
+
+    "Yaku Perez Guartambel"             pila{} -> {perez, guartambel}
+
+Asi "Juan Carlos Vega" sigue exigiendo "vega" —garcia-macias
+sigue rechazado— mientras los nombres largos aceptan cualquiera
+de sus apellidos.
+
+Nunca se vacia la zona: si todos los tokens fueran nombres de
+pila, se conserva el ultimo como apellido. Un objetivo llamado
+"Juan Carlos" no puede quedarse sin ninguna exigencia.
+-----------------------------------------------------------
+*/
+
+export function zonaDeApellidos(tokens) {
+  if (!tokens?.length) return { apellidos: [], pila: [], criterio: "sin_tokens" };
+
+  if (tokens.length === 1) {
+    return { apellidos: [tokens[0]], pila: [], criterio: "token_unico" };
+  }
+
+  /* Cuantos tokens iniciales son nombres de pila conocidos. */
+  let corte = 0;
+
+  while (corte < tokens.length && NOMBRES_DE_PILA.has(tokens[corte])) {
+    corte += 1;
+  }
+
+  if (corte === 0) {
+    /*
+      El lexico no reconocio el primer token. Respaldo posicional:
+      se descarta solo el primero.
+    */
+    return {
+      apellidos: tokens.slice(1),
+      pila: [tokens[0]],
+      criterio: "posicional"
+    };
+  }
+
+  if (corte >= tokens.length) {
+    /*
+      Todos son nombres de pila. Se conserva el ultimo como
+      apellido para no quedarse sin exigencia.
+    */
+    return {
+      apellidos: [tokens[tokens.length - 1]],
+      pila: tokens.slice(0, -1),
+      criterio: "todos_nombres_de_pila"
+    };
+  }
+
+  return {
+    apellidos: tokens.slice(corte),
+    pila: tokens.slice(0, corte),
+    criterio: "lexico"
+  };
+}
+
+
 export function llevaNombreDelObjetivo(cuenta, perfil) {
   const tokensNombre = tokenizar(
     normalizarTexto(perfil?.nombrePrincipal || ""),
@@ -317,37 +466,45 @@ export function llevaNombreDelObjetivo(cuenta, perfil) {
 
   /*
     ---------------------------------------------------------
-    EL APELLIDO ES OBLIGATORIO
+    UN APELLIDO ES OBLIGATORIO — CUALQUIERA DE ELLOS
     ---------------------------------------------------------
 
-    Defecto detectado en el QA de los cinco casos. Con "basta un
-    token" se atribuyo a Juan Carlos Vega la cuenta
+    Lo que sigue vigente: la coincidencia tiene que caer en un
+    APELLIDO. Con "basta un token" se atribuyo a Juan Carlos Vega
+    la cuenta
 
         @juan-carlos-garcia-macias
 
     que es otra persona: coincidian "juan" y "carlos", nombres de
     pila que comparten miles de personas.
 
-    El ultimo token del nombre buscado es el que discrimina.
-    Comprobado en los cinco objetivos del QA:
+    Lo que se corrigio en L-1: antes se exigia el ULTIMO token, y
+    eso convertia cada apellido adicional que el analista escribia
+    en un filtro mas estrecho —"Paul Carrasco Carpio" exigia
+    "carpio" y se quedaba en cero—. Ahora basta UNO cualquiera de
+    los apellidos de la zona.
 
-        Daniel Noboa           -> noboa    en DanielNoboaOk
-        Juan Cristobal Lloret  -> lloret   en jotalloretv
-        Yaku Perez             -> perez    en yakuperezg
-        Marcelo Cabrera        -> cabrera  en MarceloHCabrera
-        Juan Carlos Vega       -> vega     en JuanCVegaEC
+        Paul Carrasco Carpio              carrasco O carpio
+        Juan Cristobal Lloret Valdivieso  lloret   O valdivieso
+        Yaku Perez Guartambel             perez    O guartambel
+        Juan Carlos Vega                  vega
+        Daniel Noboa                      noboa
 
-    y rechaza garcia-macias, que es el resultado correcto.
-
-    LIMITE CONOCIDO: si la consulta anade apellidos finales que
-    la cuenta no usa ("Yaku Perez Guartambel" frente a
-    @yakuperezg), la regla es mas estricta de lo necesario. Es
-    el lado seguro del error: mejor no atribuir que atribuir a
-    quien no es.
+    La ultima linea es la que importa para el falso positivo:
+    "Juan Carlos Vega" sigue exigiendo "vega", asi que
+    garcia-macias sigue rechazado. Ver la nota de zonaDeApellidos.
   */
-  const apellido = tokensNombre[tokensNombre.length - 1];
+  const zona = zonaDeApellidos(tokensNombre);
 
-  const llevaApellido = coincidencias.includes(apellido);
+  /*
+    Basta UNO de los apellidos, no el ultimo obligatoriamente.
+    Ver la nota de zonaDeApellidos.
+  */
+  const apellidosCoincidentes = coincidencias.filter((t) =>
+    zona.apellidos.includes(t)
+  );
+
+  const llevaApellido = apellidosCoincidentes.length > 0;
 
   const lleva = coincidencias.length > 0 && llevaApellido;
 
@@ -357,7 +514,10 @@ export function llevaNombreDelObjetivo(cuenta, perfil) {
     enHandle: coincidencias.some((t) => handlePlano.includes(t)),
     nombreVisible: nombreVisible || null,
 
-    apellidoRequerido: apellido,
+    apellidosAceptados: zona.apellidos,
+    apellidosCoincidentes,
+    criterioZona: zona.criterio,
+    nombresDePila: zona.pila,
     llevaApellido,
 
     motivo: lleva
@@ -365,7 +525,9 @@ export function llevaNombreDelObjetivo(cuenta, perfil) {
           nombreVisible ? ` (titular: "${nombreVisible}")` : ""
         }`
       : coincidencias.length
-        ? `coincide en ${coincidencias.join(", ")} pero NO en el apellido "${apellido}", que es el token discriminante`
+        ? `coincide en ${coincidencias.join(", ")}, que ${
+            coincidencias.length === 1 ? "es nombre de pila" : "son nombres de pila"
+          }, pero en ningún apellido (${zona.apellidos.join(" / ")})`
         : "ni el handle ni el nombre del titular contienen el nombre del objetivo"
   };
 }

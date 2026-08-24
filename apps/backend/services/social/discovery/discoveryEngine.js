@@ -106,7 +106,16 @@ function registrarCandidato(mapa, datos) {
     etiquetaConsulta,
     titulo,
     descripcion,
-    evidenciaId
+    evidenciaId,
+
+    /*
+      L-2 — NO AUTOVERIFICACION.
+
+      Un origen marcado asi ENTRA en la trazabilidad y NO cuenta
+      como corroboracion. Ver la nota de la VIA 0.
+    */
+    noCuentaComoCorroboracion,
+    origenDeclarado
   } = datos;
 
   const clave = `${plataforma.id}:${normalizarTexto(handle)}`;
@@ -164,6 +173,14 @@ function registrarCandidato(mapa, datos) {
       consulta: consulta || null,
       etiquetaConsulta: etiquetaConsulta || null,
       evidenciaId: evidenciaId || null,
+
+      /*
+        Quien lo aporto —"analista" o, por omision, el propio
+        sistema— y si ese aporte puede corroborar.
+      */
+      origen: origenDeclarado || "sentinel",
+      noCuentaComoCorroboracion: noCuentaComoCorroboracion === true,
+
       registradoEn: new Date().toISOString()
     });
   }
@@ -447,6 +464,126 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
   const trazas = [];
 
   const plataformasObjetivo = PLATAFORMAS;
+
+  /*
+    ---------------------------------------------------------
+    VÍA 0 — CUENTAS DE REFERENCIA DEL ANALISTA
+    ---------------------------------------------------------
+
+    QUE ES
+
+    Cuando el analista crea un candidato en un proyecto puede
+    escribir las URLs que ya conoce. Hasta L-2 esas URLs se
+    guardaban en el expediente y NO entraban al Discovery: el
+    motor volvia a buscar a ciegas y, si no las reencontraba,
+    la cuenta que el analista habia escrito simplemente no
+    aparecia en el resultado. Aqui entran.
+
+    ---------------------------------------------------------
+    REGLA ABSOLUTA — NO AUTOVERIFICACION
+    ---------------------------------------------------------
+
+    Una cuenta que el analista escribio NO PUEDE servir de
+    prueba de si misma. Si entrara como un hallazgo cualquiera,
+    Sentinel le sumaria puntos de corroboracion por haberla
+    "encontrado", y estaria confirmando lo que le acaban de
+    dictar. Eso no es inteligencia: es un eco.
+
+    Por eso el origen se marca `noCuentaComoCorroboracion` y
+    queda FUERA de las dos listas que alimentan la señal S6:
+
+        proveedores  -> corroboracion multi-proveedor
+        vias         -> vias independientes
+
+    La marca no la esconde: el origen sigue en `origenes`, con
+    `origen: "analista"` y `via: "cuenta_referencia"`, asi que
+    la trazabilidad es completa. Lo unico que se le niega es el
+    derecho a puntuar.
+
+    QUE SI GANA LA CUENTA AQUI
+
+    Entrar al pipeline en igualdad de condiciones: se clasifica
+    con el accountClassifier, se puntua por nombre y handle
+    —señales que miran la cuenta, no quien la aporto— y si
+    ademas la encuentra un proveedor por su cuenta, ESE origen
+    si corrobora, porque es independiente.
+
+    Y si el nombre no corresponde al objetivo, se rechaza. El
+    analista puede equivocarse al pegar una URL; que la haya
+    escrito una persona no la vuelve cierta.
+    ---------------------------------------------------------
+  */
+  const referencias = Array.isArray(opciones.cuentasReferencia)
+    ? opciones.cuentasReferencia
+    : [];
+
+  const referenciasNoUtilizables = [];
+
+  referencias.forEach((ref) => {
+    /*
+      SD-1A es la autoridad para leer una URL. No se adivina la
+      plataforma por el campo `plataforma` que venga escrito:
+      se lee del dominio real.
+    */
+    const clasificacion = clasificarUrlSocial(ref?.url);
+
+    if (!clasificacion.esSocial || !clasificacion.esCuenta) {
+      referenciasNoUtilizables.push({
+        url: ref?.url || null,
+        plataformaDeclarada: ref?.plataforma || null,
+        motivo: clasificacion.motivo || "URL no utilizable"
+      });
+      return;
+    }
+
+    const plataforma = PLATAFORMAS.find(
+      (x) => x.id === clasificacion.plataformaId
+    );
+
+    if (!plataforma) {
+      referenciasNoUtilizables.push({
+        url: ref.url,
+        plataformaDeclarada: ref?.plataforma || null,
+        motivo: `plataforma ${clasificacion.plataformaId} no está en el catálogo`
+      });
+      return;
+    }
+
+    registrarCandidato(mapa, {
+      plataforma,
+      handle: clasificacion.handle,
+      url: clasificacion.urlCanonica || ref.url,
+      urlNormalizada: clasificacion.urlNormalizada,
+      handleTipo: "declarado_por_analista",
+      via: "cuenta_referencia",
+
+      /*
+        Sin proveedor: no la encontro ningun buscador. Ademas de
+        la marca explicita, esto la mantiene fuera de la lista
+        de proveedores por construccion.
+      */
+      proveedor: null,
+      consulta: null,
+      etiquetaConsulta: null,
+      titulo: null,
+      descripcion: null,
+      evidenciaId: null,
+
+      origenDeclarado: "analista",
+      noCuentaComoCorroboracion: true
+    });
+  });
+
+  trazas.push({
+    via: "cuenta_referencia",
+    entrada: referencias.length,
+    utilizables: referencias.length - referenciasNoUtilizables.length,
+    noUtilizables: referenciasNoUtilizables,
+    candidatos: mapa.size,
+    corrobora: false,
+    nota:
+      "URLs escritas por el analista. Entran al pipeline y no cuentan como corroboración de sí mismas."
+  });
 
   /*
     ---------------------------------------------------------
@@ -791,15 +928,54 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
     totalOrigenes: c.origenes.length,
 
     /*
-      Vías distintas por las que se descubrió. Insumo directo
-      de la señal S7 (presencia cruzada) y de la calidad.
+      ---------------------------------------------------------
+      LO QUE CORROBORA Y LO QUE SOLO CONSTA
+      ---------------------------------------------------------
+
+      `vias` y `proveedores` son las dos listas que las señales
+      leen para dar puntos de corroboracion. De ellas se excluye
+      todo origen marcado `noCuentaComoCorroboracion` —hoy, las
+      URLs que escribio el analista—.
+
+      El filtro se hace AQUI, en el limite del Discovery, y no
+      en cada señal: una señal futura que lea `vias` heredara la
+      garantia sin tener que acordarse de ella. Que la regla
+      dependa de recordarla es como se rompen las reglas.
+
+      Nada se oculta: `origenes` conserva todos los origenes con
+      su marca, y `viasDeclaradas` dice de donde vino lo que no
+      puntua.
+      ---------------------------------------------------------
     */
-    vias: [...new Set(c.origenes.map((o) => o.via))],
+    vias: [
+      ...new Set(
+        c.origenes
+          .filter((o) => o.noCuentaComoCorroboracion !== true)
+          .map((o) => o.via)
+      )
+    ],
+
+    viasDeclaradas: [
+      ...new Set(
+        c.origenes
+          .filter((o) => o.noCuentaComoCorroboracion === true)
+          .map((o) => o.via)
+      )
+    ],
+
+    proveedores: [
+      ...new Set(
+        c.origenes
+          .filter((o) => o.noCuentaComoCorroboracion !== true)
+          .map((o) => o.proveedor)
+          .filter(Boolean)
+      )
+    ],
 
     /*
-      Proveedores distintos que lo aportaron: corroboración.
+      Bandera legible para la interfaz: la aporto una persona.
     */
-    proveedores: [...new Set(c.origenes.map((o) => o.proveedor).filter(Boolean))]
+    aportadaPorAnalista: c.origenes.some((o) => o.origen === "analista")
   }));
 
   /*
