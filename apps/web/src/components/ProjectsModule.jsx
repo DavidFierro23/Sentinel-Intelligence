@@ -822,21 +822,58 @@ export default function ProjectsModule() {
         {}
       );
 
-      const actualizar = (lista) =>
-        lista.map((x) =>
-          x.id === id
-            ? {
-                ...x,
-                resultado: j,
-                cobertura: j?.perfilEjecutivo?.huellaDigital?.valor ?? null,
-                cuentas: (j?.perfilEjecutivo?.tarjetas || []).length,
-                expediente: j?.expediente || null
-              }
-            : x
+      /*
+        -----------------------------------------------------------
+        ESTADO AUTORITATIVO — BUG-11
+        -----------------------------------------------------------
+
+        Antes se parcheaba el candidato en memoria con `cobertura`,
+        `cuentas` y `expediente`, y NO con `estadoInvestigacion`.
+        El porcentaje tiene respaldo —`c.resumen?.huellaDigital ??
+        c.cobertura`— y el estado no tenia ninguno, asi que los
+        numeros se actualizaban y el boton seguia diciendo
+        "Investigar candidato".
+
+        No fue cosmetico: el analista volvia a pulsar y se gastaba
+        cuota por duplicado. Ocurrio en el piloto de Lloret, que se
+        investigo dos veces para obtener las mismas cuentas.
+
+        Ahora el estado se RECARGA del backend, que es su unica
+        fuente legitima. No se deduce "completada" de que la
+        petición no fallara: eso seria simular un exito que no
+        consta en la persistencia.
+        -----------------------------------------------------------
+      */
+      const contenido = await pedir(`/${proyecto.id}`);
+
+      /*
+        `expediente` es lo unico que NO esta en el estado
+        persistido: es el "que hay de nuevo" de ESTA ejecucion, y
+        el unico sitio de donde puede venir es esta respuesta. Se
+        conserva sobre el candidato recargado.
+      */
+      const conNovedades = (lista) =>
+        (lista || []).map((x) =>
+          x.id === id ? { ...x, expediente: j?.expediente || null } : x
         );
 
-      if (tipo === "candidato") setCandidatos(actualizar);
-      else setActores(actualizar);
+      setProyecto((prev) => ({
+        ...prev,
+        ...contenido.proyecto,
+        contextoMaestro: contenido.contextoMaestro
+      }));
+
+      setCandidatos(
+        tipo === "candidato"
+          ? conNovedades(contenido.candidatos)
+          : contenido.candidatos || []
+      );
+
+      setActores(
+        tipo === "actor"
+          ? conNovedades(contenido.actores)
+          : contenido.actores || []
+      );
 
       setAviso(j?.expediente?.mensaje || null);
     } catch (e) {
@@ -1346,6 +1383,25 @@ export default function ProjectsModule() {
                     ● Investigación completada
                   </span>
                 )}
+
+                {/*
+                  ULTIMA ACTUALIZACION. Viene del expediente
+                  persistido, no del momento en que se pinta: dice
+                  cuando se investigo de verdad.
+                */}
+                {c.estadoInvestigacion === "completada" &&
+                  c.resumen?.actualizadoEn && (
+                    <span
+                      style={{
+                        color: "var(--sentinel-texto-tenue)",
+                        fontSize: "10px"
+                      }}
+                      title={c.resumen.actualizadoEn}
+                    >
+                      última actualización{" "}
+                      {String(c.resumen.actualizadoEn).slice(0, 16).replace("T", " ")}
+                    </span>
+                  )}
 
                 {(c.resumen?.huellaDigital ?? c.cobertura) != null && (
                   <span

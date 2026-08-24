@@ -710,6 +710,7 @@ en esta tarea:
 | 2026-08-24 | `osintEngine.js` | LÍNEA A, L-2 | Entregar `cuentasReferencia` al Social Intelligence |
 | 2026-08-24 | `platformAdapters.js` | patch alias → planner | **Solo** la PASADA 3 de alias. Ver §18-quater |
 | 2026-08-24 | `osintEngine.js` | patch alias → planner | `perfil.aliasDeclarados` |
+| 2026-08-24 | `discoveryEngine.js` | GATE P-CAND-01 | **Solo** exponer `aliasUsados` en el retorno. Ver §18-sexies |
 
 `platformAdapters.js` y `socialUrlClassifier.js` (SD-1A) se **usaron** como
 autoridades —anclas y lectura de URL— sin modificarse. `socialIntelligenceLayer.js`
@@ -1198,6 +1199,99 @@ las entradas conocidas, no registro de ejecucion.
 
 ---
 
+## 18-sexies. GATE P-CAND-01 — Observabilidad de Full Discovery (2026-08-24)
+
+Commit `fix(projects): persist discovery trace and investigation state`.
+HEAD de referencia: `d771e81`. Sin consumir cuota.
+
+**P-CAND-01: EN REPRUEBA REAL.**
+
+### BUG-12 — CERRADO POR CODIGO/TEST
+
+Pendiente de confirmacion en ejecucion real.
+
+El motor ya calculaba la traza y `resumirExpediente` la tiraba al persistir.
+Ahora sobrevive. No se recalcula nada y no hay un segundo motor: se leen las
+estructuras que `descubrirCandidatos` y `perfilEjecutivo` ya devuelven.
+
+| Seccion nueva del expediente | De donde sale |
+|---|---|
+| `traza.consultas` | `descubrimiento.intentos` (lanzadas, con proveedor, estado y resultados) **+** las de `plan` que nunca salieron |
+| `traza.coberturaPlataformas` | `social.cobertura` normalizada al contrato de cinco estados |
+| `traza.candidatosSociales` | `social.candidatos` cruzado con el veredicto de `perfilEjecutivo` |
+| `traza.urlsDescartadas` | `descubrimiento.descartados` (SD-1A) |
+| `traza.proveedores` | `resumirSesion`: intentadas, completadas, bloqueos, errores, resultados |
+| `traza.anclasUsadas` / `aliasUsados` | `planificacion` |
+
+No se persisten claves de API ni payloads de proveedor: solo consultas,
+estados y recuentos.
+
+**El coste monetario no se inventa.** `costeMonetario: null` con nota
+explicita. Lo observable son consultas, y eso es lo que se registra.
+
+**Los recortes se declaran.** Topes de 120 candidatos y 60 consultas por
+expediente, para que un Lake append-only no crezca sin limite, con
+`candidatosTruncados` y `consultasTruncadas` llevando la cuenta. Un recorte
+silencioso se leeria como «esto es todo lo que habia», que es el error que
+este patch corrige.
+
+### Contrato de Full Discovery
+
+Cada una de las seis plataformas obligatorias declara **exactamente uno** de
+cinco estados:
+
+| Estado | Significa |
+|---|---|
+| `ATRIBUIDA` | hay una cuenta atribuida al objetivo |
+| `ENCONTRADA_NO_ATRIBUIDA` | se hallaron candidatos y ninguno paso el clasificador |
+| `BUSCADA_SIN_RESULTADO` | se consulto correctamente y no habia nada |
+| `NO_EJECUTADA` | no se lanzo ninguna consulta |
+| `ERROR_PROVIDER` | se intento y el proveedor no respondio |
+
+Las tres ultimas son las que el diagnostico del piloto **no pudo
+distinguir**. `ENCONTRADA_NO_ATRIBUIDA` es la que permite preguntar, con
+datos, si el matcher pierde cuentas que el Discovery si encontro.
+
+Ninguno de los cinco afirma que la persona no tenga cuenta. Sentinel declara
+lo que observo.
+
+### BUG-11 — CERRADO POR CODIGO/TEST
+
+Pendiente de confirmacion visual real.
+
+`investigar()` parcheaba el candidato en memoria y omitia
+`estadoInvestigacion`. Ahora **recarga el estado autoritativo del backend**
+tras investigar. No se deduce «completada» de que la peticion no fallara: eso
+seria simular un exito que no consta en la persistencia.
+
+Lo unico que se conserva del parche es `expediente`, el «que hay de nuevo» de
+esa ejecucion, que no esta en el estado persistido y solo puede venir de esa
+respuesta. `resultado` se elimino del parche: se escribia y no se leia en
+ningun sitio.
+
+La tarjeta muestra ahora insignia, boton **Actualizar investigacion** y
+**ultima actualizacion** desde `resumen.actualizadoEn`.
+
+Efecto practico: se detiene el gasto de cuota duplicado que produjo el segundo
+expediente de Lloret.
+
+### Pruebas
+
+`tests/traza.test.mjs` — 31 comprobaciones sobre un resultado fijo, sin red.
+Prueban el viaje completo `resultado -> registrarInvestigacion -> Lake ->
+contenidoDeProyecto`, porque el defecto estaba justamente en el paso de
+persistir; un test sobre el objeto en memoria no habria detectado nada.
+
+Suite completa: **239 comprobaciones, 0 fallos** (antes 208).
+
+### Retrocompatibilidad
+
+Los dos expedientes del piloto anterior no tienen `traza` y siguen leyendose
+sin error: la interfaz no la lee, y `estadoInvestigacion` se sigue derivando
+de que exista expediente. La traza aparecera en la primera reejecucion.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -1275,8 +1369,8 @@ es del analista.
 | BUG-05 | Media | `KnowledgeGraph.jsx` | Grafo radial: no hay relaciones entre nodos | Abierto | No | Aristas cuenta↔medio y cuenta↔cuenta |
 | BUG-06 | Baja | `PlausibleIdentitiesPanel.jsx` | «Investigar esta identidad» presente sin acción conectada | Abierto | No | Conectar reinvestigación con la evidencia del grupo |
 | BUG-07 | Media | `projects/projectContext.js:134` | `nivelPorDefecto` compara contra `prefectura` / `presidencia` (el cargo), pero el analista escribe `Prefecto` / `Presidente` / `Asambleísta` (la persona). **Todas** las dignidades en forma personal caen a `cantonal`, y en un proyecto provincial o nacional sin `nivel` declarado la provincia o el país se quedan en fuerza 6 —por debajo del umbral de evidencia— y **no llegan a ser ancla**. Detectado en LÍNEA A (§18-bis) | Abierto, **no corregido: fuera de la autorización L-1/L-2/L-3** | No | Aceptar la forma personal de cada dignidad, o exigir `nivel` explícito en el formulario |
-| BUG-11 | **Alta** | `apps/web/src/components/ProjectsModule.jsx` `investigar()` | Al terminar una investigacion se parchea el candidato en memoria con `resultado`, `cobertura`, `cuentas` y `expediente`, pero **no con `estadoInvestigacion`**, que es el campo del que dependen el boton y la insignia «Investigacion completada». El porcentaje tiene respaldo (`c.resumen?.huellaDigital ?? c.cobertura`); el estado no. Resultado: los numeros se actualizan y el boton sigue diciendo «Investigar candidato». **Provoca gasto de cuota duplicado**: en el piloto el analista volvio a pulsar y Lloret se investigo dos veces (§18-quinquies) | Abierto, **causa raiz demostrada, no corregido** | No, pero **gasta cuota** | Escribir `estadoInvestigacion: "completada"` y `resumen` en el parche, o recargar el contenido del proyecto tras investigar |
-| BUG-12 | **Alta** | `services/projects/projectStore.js` `resumirExpediente` | El expediente **descarta la traza de auditoria que el motor ya calculo**: no persiste consultas ejecutadas, cobertura por plataforma, trazas del Discovery ni candidatos rechazados (`perfilEjecutivo.indeterminadas` y `coberturaPlataformas` se producen y se tiran). Sin logs en disco, una investigacion no se puede diagnosticar despues: no hay forma de saber si una plataforma se busco y no habia nada, o no se busco. Bloqueo el diagnostico de la regresion de Lloret (§18-quinquies) | Abierto, **no corregido** | **Si, para diagnosticar pilotos** | Persistir consultas, cobertura por plataforma y rechazados con su motivo. Es la doctrina de `ausencia` != `no_comprobada` aplicada al expediente |
+| BUG-11 | **Alta** | `apps/web/src/components/ProjectsModule.jsx` `investigar()` | **CERRADO POR CODIGO/TEST** (§18-sexies), pendiente confirmacion visual real. Descripcion original: | Al terminar una investigacion se parchea el candidato en memoria con `resultado`, `cobertura`, `cuentas` y `expediente`, pero **no con `estadoInvestigacion`**, que es el campo del que dependen el boton y la insignia «Investigacion completada». El porcentaje tiene respaldo (`c.resumen?.huellaDigital ?? c.cobertura`); el estado no. Resultado: los numeros se actualizan y el boton sigue diciendo «Investigar candidato». **Provoca gasto de cuota duplicado**: en el piloto el analista volvio a pulsar y Lloret se investigo dos veces (§18-quinquies) | Abierto, **causa raiz demostrada, no corregido** | No, pero **gasta cuota** | Escribir `estadoInvestigacion: "completada"` y `resumen` en el parche, o recargar el contenido del proyecto tras investigar |
+| BUG-12 | **Alta** | `services/projects/projectStore.js` `resumirExpediente` | **CERRADO POR CODIGO/TEST** (§18-sexies), pendiente confirmacion en ejecucion real. Descripcion original: | El expediente **descarta la traza de auditoria que el motor ya calculo**: no persiste consultas ejecutadas, cobertura por plataforma, trazas del Discovery ni candidatos rechazados (`perfilEjecutivo.indeterminadas` y `coberturaPlataformas` se producen y se tiran). Sin logs en disco, una investigacion no se puede diagnosticar despues: no hay forma de saber si una plataforma se busco y no habia nada, o no se busco. Bloqueo el diagnostico de la regresion de Lloret (§18-quinquies) | Abierto, **no corregido** | **Si, para diagnosticar pilotos** | Persistir consultas, cobertura por plataforma y rechazados con su motivo. Es la doctrina de `ausencia` != `no_comprobada` aplicada al expediente |
 | BUG-10 | Media | `apps/web/src/services/aliasMemory.js` `esAliasValido` | Exige que el alias contenga el **ultimo** token del nombre (`partes[partes.length-1]`) —el defecto exacto que L-1 corrigio en el backend— y su comentario afirma «misma regla que el clasificador», que ya es **falso**. Para `Juan Cristobal Lloret Valdivieso` exigiria `valdivieso` y rechazaria `Jota Lloret`, el propio ejemplo del encabezado del modulo. Detectado al cerrar el gate de alias (§18-quater) | Abierto, **no corregido: frontend, fuera del patch alias -> planner** | No | Reutilizar la zona de apellidos de L-1, o subir la validacion al backend |
 | BUG-09 | **Alta** | `projects/projectStore.js` `crearProyecto` | El id se deriva del nombre (`idDesde`) y **no se comprueba si ya existe**. Crear un proyecto cuyo nombre coincida con uno eliminado escribe una versión nueva de la MISMA entidad: el proyecto **resucita a `activo` heredando candidatos, actores y expedientes**, y con ellos cualquier dato corrupto previo. Reproducido en lake aislado durante el reset (§18-ter) | Abierto, **evitado con un id explícito, no corregido** | **Sí, para cualquier reset futuro** | Rechazar la creación si el id existe —incluso eliminado— y ofrecer recuperar o usar otro id. No resucitar en silencio |
 | BUG-08 | Baja | `social/discovery/discoveryEngine.js:398` | `planificarConsultasSociales` está exportada y **nadie la llama**: el motor planifica con `planificarConsultasDerivadas`. Cubre 3 de 6 plataformas (deja fuera X, YouTube y LinkedIn) y no aplica anclas. Si alguien la conectara creyendo que es el planificador, perdería la mitad de la cobertura. Fijado por prueba en `tests/contexto.test.mjs` | Abierto, **no corregido: archivo congelado** | No | Eliminarla o marcarla como obsoleta en una limpieza autorizada |
@@ -1299,8 +1393,9 @@ resueltos y verificados.
 |---|---|
 | Prueba real de candidato en proyecto con semilla del analista | 🔴 planificada, ver §24. **Tubería corregida y probada sin cuota (§18-bis); los pilotos de Paúl, Lloret, Pedro y Yaku NO se han ejecutado** |
 | Regresion de cobertura social de Lloret: 49 -> 22 respecto al historico | 🔴 **NO EXPLICADA**. La cuenta de Facebook perdio sus dos proveedores. Filtro de L-2 exonerado por prueba. Falta traza de auditoria (BUG-12) |
-| Persistir la traza de auditoria del expediente | 🔴 **BUG-12**, bloquea el diagnostico de cualquier piloto |
-| Estado de investigacion no se refleja en la interfaz | 🔴 **BUG-11**, causa gasto de cuota duplicado |
+| Persistir la traza de auditoria del expediente | 🟡 **BUG-12 cerrado por codigo y test** (§18-sexies). Pendiente verlo en una ejecucion real |
+| Estado de investigacion no se refleja en la interfaz | 🟡 **BUG-11 cerrado por codigo y test** (§18-sexies). Pendiente confirmacion visual |
+| **P-CAND-01** — reprueba real de Lloret con traza | 🔴 **EN REPRUEBA REAL**. Es la proxima accion: una sola ejecucion |
 | Verificar en piloto real que Pedro Palacios recibe candidatos al Discovery | 🔴 su grupo guardado no contenía ninguna URL con `palacio`; L-1 no podía cambiarlo |
 | Verificar Paúl Carrasco Carpio con búsqueda real | 🔴 no existe grupo guardado; el mecanismo está probado en unitario |
 | Expediente visual completo del candidato dentro del proyecto | 🔴 hoy solo hay resumen |
@@ -1542,6 +1637,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-24 | GATE P-CAND-01 | BUG-12 y BUG-11 cerrados por codigo y test. El expediente persiste consultas, cobertura por plataforma en contrato de cinco estados, candidatos rechazados con motivo y consumo por proveedor. La interfaz recarga el estado autoritativo tras investigar. 239 pruebas, 0 fallos. Nueva §18-sexies. Pendiente reprueba real de Lloret. |
 | 2026-08-24 | piloto Paul + Lloret | Diagnostico sin cuota. Las dos investigaciones terminaron; Lloret se ejecuto DOS veces por BUG-11, cuya causa raiz queda demostrada. Cobertura 14 vs 22 reproducida exactamente: el indice mide dimensiones, no volumen. L-1 y L-2 verificados en produccion. Regresion de Lloret 49 -> 22 NO explicada; filtro de L-2 exonerado por prueba. BUG-11 y BUG-12 registrados. Nueva §18-quinquies. |
 | 2026-08-24 | alias → planner | Pendiente crítico verificado ABIERTO y cerrado para los alias declarados: cadena expediente → ruta → motor → PASADA 3, sin planner paralelo. Los alias amplían el Discovery y no verifican identidad. BUG-10 declarado sin corregir. Nueva §18-quater. 208 pruebas, 0 fallos. |
 | 2026-08-24 | reset pre-piloto | Retirados los 6 proyectos de prueba con la API oficial y creado `alcaldia-cuenca-2027-piloto` con baseline cero verificado. **0 entradas del Lake eliminadas**: es append-only por diseño. BUG-09 encontrado y evitado: crear el nombre pedido habría resucitado un proyecto eliminado con 4 candidatos. Snapshot en `docs/auditorias/SNAP-001`. Nueva §18-ter. |

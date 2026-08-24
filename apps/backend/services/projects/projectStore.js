@@ -845,6 +845,303 @@ EXPEDIENTE VIVO
 ===========================================================
 */
 
+/*
+===========================================================
+CONTRATO DE FULL DISCOVERY — ESTADO POR PLATAFORMA
+===========================================================
+
+Para cada una de las seis plataformas obligatorias el
+expediente devuelve EXACTAMENTE UNO de estos cinco estados.
+
+    ATRIBUIDA               hay una cuenta atribuida al objetivo
+    ENCONTRADA_NO_ATRIBUIDA se hallaron candidatos, ninguno paso
+    BUSCADA_SIN_RESULTADO   se consulto bien y no habia nada
+    NO_EJECUTADA            no se lanzo ninguna consulta
+    ERROR_PROVIDER          se intento y el proveedor no respondio
+
+POR QUE CINCO Y NO DOS
+
+Porque "no tiene cuenta" y "no pudimos mirar" son cosas
+distintas, y colapsarlas convierte una limitacion nuestra en
+una afirmacion sobre la persona. Sentinel no dice "no tiene red
+social": dice que observo.
+
+Las tres ultimas son las que el diagnostico del piloto no pudo
+distinguir, porque el expediente no las guardaba.
+===========================================================
+*/
+
+export const ESTADOS_PLATAFORMA = Object.freeze({
+  ATRIBUIDA: "ATRIBUIDA",
+  ENCONTRADA_NO_ATRIBUIDA: "ENCONTRADA_NO_ATRIBUIDA",
+  BUSCADA_SIN_RESULTADO: "BUSCADA_SIN_RESULTADO",
+  NO_EJECUTADA: "NO_EJECUTADA",
+  ERROR_PROVIDER: "ERROR_PROVIDER"
+});
+
+
+/*
+  Tope de candidatos sociales que se guardan por expediente.
+
+  Existe para que un expediente no crezca sin limite en un Lake
+  append-only. Cuando recorta, lo DICE: `candidatosTruncados`
+  lleva la cuenta. Un recorte silencioso se leeria como "esto es
+  todo lo que habia", que es justo el error que este patch
+  corrige.
+*/
+const TOPE_CANDIDATOS = 120;
+
+const TOPE_CONSULTAS = 60;
+
+
+/*
+  Clave estable plataforma+handle, para cruzar lo que descubrio
+  el Discovery con el veredicto de la clasificacion.
+*/
+function claveCuenta(c) {
+  const plataforma = c?.plataformaId || c?.platform || c?.plataforma || "";
+
+  return `${normalizarTexto(String(plataforma))}:${normalizarTexto(
+    String(c?.handle || "")
+  )}`;
+}
+
+
+/*
+-----------------------------------------------------------
+CONSULTAS EJECUTADAS
+
+Se juntan las que se LANZARON (`intentos`, con su proveedor y su
+estado real) con las que se PLANIFICARON y nunca salieron. Las
+segundas son la diferencia entre "no habia nada" y "no se
+busco", y sin ellas el expediente no puede sostener el contrato
+de arriba.
+-----------------------------------------------------------
+*/
+function consultasDeLaInvestigacion(resultado) {
+  const d = resultado?.social?.descubrimiento || {};
+
+  const intentos = Array.isArray(d.intentos) ? d.intentos : [];
+
+  const plan = Array.isArray(d.plan) ? d.plan : [];
+
+  const lanzadas = intentos.map((i) => ({
+    consulta: i.consulta,
+    proposito: i.etiqueta || null,
+    plataformaId: i.plataformaId || null,
+    proveedor: i.proveedorUsado || null,
+    ejecutada: true,
+    estado: i.estado || null,
+    resultados: Number.isFinite(i.resultados) ? i.resultados : null,
+    coberturaParcial: i.coberturaParcial ?? null
+  }));
+
+  const consultadas = new Set(intentos.map((i) => normalizarTexto(i.consulta)));
+
+  const noLanzadas = plan
+    .filter((e) => !consultadas.has(normalizarTexto(e.consulta)))
+    .map((e) => ({
+      consulta: e.consulta,
+      proposito: e.etiqueta || null,
+      plataformaId: e.plataformaId || null,
+      proveedor: null,
+      ejecutada: false,
+      estado: "NO_EJECUTADA",
+      resultados: null,
+      motivo:
+        d.descubrimientoSocial?.motivoOmision ||
+        "Planificada y no lanzada: sin proveedor utilizable o presupuesto agotado."
+    }));
+
+  return [...lanzadas, ...noLanzadas];
+}
+
+
+/*
+-----------------------------------------------------------
+COBERTURA NORMALIZADA POR PLATAFORMA
+
+El Discovery ya calcula `estadoPresencia`. Aqui se traduce al
+contrato de cinco estados, cruzandolo con si alguna cuenta de
+esa plataforma llego a ATRIBUIRSE, que es lo que el
+`estadoPresencia` por si solo no distingue.
+-----------------------------------------------------------
+*/
+function coberturaNormalizada(resultado, consultas) {
+  const cobertura = resultado?.social?.cobertura || [];
+
+  const atribuidas = resultado?.perfilEjecutivo?.tarjetas || [];
+
+  return cobertura.map((c) => {
+    const deLaPlataforma = consultas.filter(
+      (q) => q.plataformaId === c.plataformaId
+    );
+
+    const lanzadas = deLaPlataforma.filter((q) => q.ejecutada);
+
+    const conExito = lanzadas.filter((q) => q.estado === "OK");
+
+    const nAtribuidas = atribuidas.filter(
+      (t) => (t.plataformaId || t.platform) === c.plataformaId
+    ).length;
+
+    let estado;
+
+    if (nAtribuidas > 0) {
+      estado = ESTADOS_PLATAFORMA.ATRIBUIDA;
+    } else if ((c.candidatos || 0) > 0) {
+      /*
+        Se encontro algo y no paso el clasificador. Es el caso
+        que interesa mirar: aqui vive la perdida, si la hay.
+      */
+      estado = ESTADOS_PLATAFORMA.ENCONTRADA_NO_ATRIBUIDA;
+    } else if (conExito.length > 0) {
+      estado = ESTADOS_PLATAFORMA.BUSCADA_SIN_RESULTADO;
+    } else if (lanzadas.length > 0) {
+      estado = ESTADOS_PLATAFORMA.ERROR_PROVIDER;
+    } else {
+      estado = ESTADOS_PLATAFORMA.NO_EJECUTADA;
+    }
+
+    return {
+      plataformaId: c.plataformaId,
+      plataforma: c.plataforma,
+      estado,
+      atribuidas: nAtribuidas,
+      candidatos: c.candidatos || 0,
+      consultasPlanificadas: deLaPlataforma.length,
+      consultasLanzadas: lanzadas.length,
+      consultasConExito: conExito.length,
+      estadosDeProveedor: [
+        ...new Set(lanzadas.map((q) => q.estado).filter(Boolean))
+      ],
+      /* El motivo que ya redactaba el Discovery, sin reescribirlo. */
+      motivo: c.motivoCobertura || null,
+      estadoPresencia: c.estadoPresencia || null,
+      modoAccesoDeclarado: c.modoAccesoDeclarado || null
+    };
+  });
+}
+
+
+/*
+-----------------------------------------------------------
+CANDIDATOS SOCIALES, ACEPTADOS Y RECHAZADOS
+
+Se cruza lo que el Discovery descubrio —que trae proveedor, via
+y procedencia— con el veredicto de la clasificacion, que trae el
+motivo. Ninguno de los dos lados solo alcanza: el Discovery no
+sabe por que se rechazo, y la clasificacion no sabe quien lo
+aporto.
+-----------------------------------------------------------
+*/
+function candidatosSociales(resultado) {
+  const pe = resultado?.perfilEjecutivo || null;
+
+  const descubiertos = resultado?.social?.candidatos || [];
+
+  /* Veredicto por clave, desde las listas ya normalizadas. */
+  const veredicto = new Map();
+
+  const registrar = (lista, aceptado, clase) => {
+    (lista || []).forEach((c) => {
+      veredicto.set(claveCuenta(c), {
+        aceptado,
+        clase,
+        motivo: c.motivo || c.motivoClase || null,
+        score: c.correspondencia ?? null,
+        nivel: c.nivel || null
+      });
+    });
+  };
+
+  registrar(pe?.tarjetas, true, "cuenta_personal");
+  registrar(pe?.medios, false, "medio");
+  registrar(pe?.instituciones, false, "institucion");
+  registrar(pe?.indeterminadas, false, "no_determinado");
+
+  const filas = descubiertos.map((c) => {
+    const v = veredicto.get(claveCuenta(c)) || null;
+
+    return {
+      plataforma: c.plataforma || null,
+      plataformaId: c.plataformaId || null,
+      url: c.url || null,
+      handle: c.handle || null,
+      displayName: c.nombreVisible || null,
+
+      /* De donde salio. */
+      vias: c.vias || [],
+      viasDeclaradas: c.viasDeclaradas || [],
+      origen: c.aportadaPorAnalista ? "analista" : "sentinel",
+      aportadaPorAnalista: c.aportadaPorAnalista === true,
+      proveedores: c.proveedores || [],
+      consultas: [
+        ...new Set(
+          (c.origenes || []).map((o) => o.consulta).filter(Boolean)
+        )
+      ],
+
+      /* Veredicto. */
+      aceptado: v ? v.aceptado : false,
+      clase: v ? v.clase : null,
+      score: v ? v.score : null,
+      nivelCorrespondencia: v ? v.nivel : null,
+      motivo: v
+        ? v.motivo
+        : "No apareció en ninguna lista clasificada del perfil ejecutivo."
+    };
+  });
+
+  /*
+    URLs de plataforma que SD-1A descarto antes de llegar a ser
+    candidatas: un post, un vídeo, una ruta sin propietario. Se
+    guardan aparte porque su motivo es de otra naturaleza.
+  */
+  const descartadasPorUrl = (resultado?.social?.descubrimiento?.descartados || [])
+    .map((d) => ({
+      url: d.url || d.enlace || null,
+      plataforma: d.plataforma?.nombre || d.plataforma || null,
+      motivo: d.motivo || d.motivoDescarte || null,
+      tipoUrl: d.tipo || null
+    }));
+
+  return { filas, descartadasPorUrl };
+}
+
+
+/*
+-----------------------------------------------------------
+CONSUMO OBSERVABLE POR PROVEEDOR
+
+Consultas, no dinero. El coste monetario real no lo conoce el
+sistema y no se inventa: se registra lo que si es observable
+—intentos, exitos, bloqueos, errores y resultados— que es lo
+que permite explicar despues por que una plataforma quedo sin
+mirar.
+-----------------------------------------------------------
+*/
+function consumoDeProveedores(resultado) {
+  const r = resultado?.social?.descubrimiento?.proveedores || null;
+
+  const lista = Array.isArray(r) ? r : r?.proveedores || [];
+
+  return lista.map((p) => ({
+    id: p.id || null,
+    proveedor: p.nombre || null,
+    consultasIntentadas: p.intentos ?? null,
+    consultasCompletadas: p.exitos ?? null,
+    bloqueos: p.bloqueos ?? null,
+    errores: p.errores ?? null,
+    noIntentadas: p.noIntentados ?? null,
+    resultados: p.resultados ?? null,
+    costeMonetario: null,
+    notaDeCoste:
+      "Consumo observable en consultas. El sistema no conoce el coste monetario y no lo estima."
+  }));
+}
+
+
 function resumirExpediente(resultado) {
   const pe = resultado?.perfilEjecutivo || null;
 
@@ -855,7 +1152,65 @@ function resumirExpediente(resultado) {
   const clave = (c) =>
     `${c.plataformaId || c.platform}:${String(c.handle).toLowerCase()}`;
 
+  /*
+    -----------------------------------------------------------
+    TRAZA DE AUDITORIA — BUG-12
+    -----------------------------------------------------------
+
+    El motor ya calculaba todo esto y se tiraba al persistir. Sin
+    ello una investigacion no se puede diagnosticar despues: no
+    habia forma de saber si una plataforma se busco y estaba
+    vacia, o no se busco.
+
+    No se recalcula nada aqui y no hay un segundo motor: se leen
+    las estructuras que `descubrirCandidatos` y `perfilEjecutivo`
+    ya devuelven, y se les da forma estable.
+
+    No se guardan claves de API ni payloads de proveedor: solo
+    consultas, estados y recuentos.
+    -----------------------------------------------------------
+  */
+  const consultas = consultasDeLaInvestigacion(resultado);
+
+  const cobertura = coberturaNormalizada(resultado, consultas);
+
+  const { filas: sociales, descartadasPorUrl } = candidatosSociales(resultado);
+
   return {
+    /*
+      TRAZA. Va primero porque es lo que se mira cuando algo
+      sale vacio.
+    */
+    traza: {
+      version: "1.0",
+
+      consultas: consultas.slice(0, TOPE_CONSULTAS),
+      totalConsultas: consultas.length,
+      consultasTruncadas: Math.max(0, consultas.length - TOPE_CONSULTAS),
+
+      coberturaPlataformas: cobertura,
+
+      candidatosSociales: sociales.slice(0, TOPE_CANDIDATOS),
+      totalCandidatosSociales: sociales.length,
+      candidatosTruncados: Math.max(0, sociales.length - TOPE_CANDIDATOS),
+
+      urlsDescartadas: descartadasPorUrl.slice(0, TOPE_CANDIDATOS),
+      totalUrlsDescartadas: descartadasPorUrl.length,
+
+      proveedores: consumoDeProveedores(resultado),
+
+      anclasUsadas: (resultado?.social?.descubrimiento?.anclasUsadas || []).map(
+        (a) => a.termino || a
+      ),
+
+      aliasUsados: resultado?.social?.descubrimiento?.aliasUsados || [],
+
+      advertencias: resultado?.social?.descubrimiento?.advertencias || [],
+
+      contrato:
+        "Cada plataforma declara uno de cinco estados. ATRIBUIDA, ENCONTRADA_NO_ATRIBUIDA, BUSCADA_SIN_RESULTADO, NO_EJECUTADA o ERROR_PROVIDER. Ninguno de ellos afirma que la persona no tenga cuenta."
+    },
+
     cuentas: (pe?.tarjetas || []).map((t) => ({
       plataforma: t.plataforma,
       plataformaId: t.plataformaId,

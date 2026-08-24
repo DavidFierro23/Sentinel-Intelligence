@@ -1143,6 +1143,13 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
     */
     anclas: planificacion.anclas,
     anclasUsadas: planificacion.anclasUsadas,
+
+    /*
+      Que alias del analista llegaron al plan. En la traza del
+      expediente es la unica forma de saber, despues, si una
+      ejecucion uso alias o no habia ninguno declarado.
+    */
+    aliasUsados: planificacion.aliasUsados || [],
     consultasAncladas: plan.filter((p) => p.anclada).length,
     consultasPorNombre: plan.filter((p) => !p.anclada).length,
 
