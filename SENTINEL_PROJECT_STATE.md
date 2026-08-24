@@ -708,6 +708,8 @@ en esta tarea:
 | 2026-08-24 | `accountClassifier.js` | LÍNEA A, L-1 | **Exclusivamente** la regla de apellido. Ver §18-bis |
 | 2026-08-24 | `discoveryEngine.js` | LÍNEA A, L-2 | VÍA 0 y marca de no corroboración |
 | 2026-08-24 | `osintEngine.js` | LÍNEA A, L-2 | Entregar `cuentasReferencia` al Social Intelligence |
+| 2026-08-24 | `platformAdapters.js` | patch alias → planner | **Solo** la PASADA 3 de alias. Ver §18-quater |
+| 2026-08-24 | `osintEngine.js` | patch alias → planner | `perfil.aliasDeclarados` |
 
 `platformAdapters.js` y `socialUrlClassifier.js` (SD-1A) se **usaron** como
 autoridades —anclas y lectura de URL— sin modificarse. `socialIntelligenceLayer.js`
@@ -1002,6 +1004,93 @@ describirse como una purga destructiva: no lo es.
 
 ---
 
+## 18-quater. Alias → Discovery Planner (2026-08-24)
+
+Commit `fix(projects): feed aliases into discovery planner`. El pendiente
+estaba **ABIERTO**; verificado contra HEAD siguiendo un alias de punta a
+punta, no por suposicion.
+
+### Donde moria el alias
+
+| Paso | Que pasaba |
+|---|---|
+| `apps/web/src/services/aliasMemory.js` | Aprende alias de un resultado y los guarda en `localStorage` (`sentinel.alias.v1`) |
+| `OSINT.jsx:389`, `ExecutiveDashboard.jsx:14` | `recordar()` se pasa como **prop** a `CoverageIndexPanel` |
+| — | **Fin del recorrido.** Ningun `fetch` incluye alias; ninguna ruta del backend los acepta |
+| `platformAdapters.planificarConsultasDerivadas` | Usaba solo `perfil.nombrePrincipal` |
+
+El propio modulo lo declaraba: «NO alimenta el planificador de consultas […]
+La reutilizacion es asistida, no automatica. Presentarla como automatica seria
+mentir sobre lo que hace el sistema.» Era cierto.
+
+**`perfil.variantes` no eran estos alias.** Fusion ya las usaba (pasos 5 y 7
+de `planificarConsultas`), pero las deriva `referenceProfileService` de la
+evidencia de la propia investigacion. No se mezclan con los alias declarados:
+mezclarlos perderia la procedencia.
+
+### Cadena implementada
+
+| Archivo | Cambio |
+|---|---|
+| `projects/projectStore.js` | `agregarCandidato` guarda `datos.aliases` con `origen: "analista"` y `noCuentaComoCorroboracion: true`; acumula, deduplica sin acentos ni mayusculas y descarta el que iguale al nombre principal |
+| `routes/projects.js` | Los entrega a `investigarObjetivo` |
+| `services/osintEngine.js` | Los pone en `perfil.aliasDeclarados`, campo propio, antes del planificador |
+| `social/discovery/platformAdapters.js` | **PASADA 3** del MISMO planificador. No hay planner paralelo |
+
+### Las dos reglas que lo sostienen
+
+**Amplian, no reemplazan.** El plan crece de 10 a 12 consultas. El nombre
+principal conserva **todas** las suyas y las seis plataformas siguen
+cubiertas. Los alias van **al final**: cuando el presupuesto del proveedor se
+agota debe perderse lo ultimo, no lo primero, y un alias no puede costarle a
+una plataforma su consulta. Sin alias declarados el plan es identico al
+anterior, consulta por consulta.
+
+**Un alias no verifica identidad.** Solo genera consultas. No llega al
+`accountClassifier`, que sigue juzgando la atribucion contra
+`nombrePrincipal` y solo contra el:
+
+> el alias amplia el **recall**; el nombre principal gobierna la **precision**
+
+Si un alias pudiera atribuir, bastaria escribir «Alcalde» en el formulario
+para que cualquier cuenta que lo lleve pasara a ser del candidato: el analista
+habria dictado la conclusion y Sentinel se la habria devuelto como hallazgo.
+Comprobado que declarar `Alcalde de Cuenca` **no** convierte
+`@alcaldedecuenca` en cuenta del candidato, que la atribucion es identica con
+y sin alias, y que un alias no rescata lo que el apellido rechaza.
+
+Van anclados al contexto: un alias es mas corto y ambiguo que el nombre
+completo, asi que sin anclas es justo la consulta que devuelve homonimos.
+
+### Caso verificado — nombre + alias
+
+Objetivo `Juan Cristobal Lloret Valdivieso`, alias `Jota Lloret` y
+`J. C. Lloret`, proyecto cantonal de Cuenca:
+
+```
+site:x.com "Juan Cristobal Lloret Valdivieso" Cuenca alcalde   <- 6 plataformas
+site:x.com "Juan Cristobal Lloret Valdivieso"                  <- reserva
+"Jota Lloret" Cuenca alcalde                                   <- alias, al final
+"J. C. Lloret" Cuenca alcalde
+"Juan Cristobal Lloret Valdivieso" Cuenca alcalde              <- general
+```
+
+### Pruebas
+
+`tests/alias.test.mjs` — 19 comprobaciones. Suite completa **208, 0 fallos**,
+ninguna consume cuota. Territorial 107/107.
+
+### Lo que NO queda cerrado
+
+Se cierra la ruta **autoritativa**: alias declarados en el expediente del
+candidato, persistidos en el Lake, que alimentan el planificador.
+
+**Sigue abierto** que los alias *aprendidos* en el navegador se reutilicen
+solos: `aliasMemory` continua siendo `localStorage` y de presentacion. Nadie
+los sube. Ver BUG-10.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -1079,6 +1168,7 @@ es del analista.
 | BUG-05 | Media | `KnowledgeGraph.jsx` | Grafo radial: no hay relaciones entre nodos | Abierto | No | Aristas cuenta↔medio y cuenta↔cuenta |
 | BUG-06 | Baja | `PlausibleIdentitiesPanel.jsx` | «Investigar esta identidad» presente sin acción conectada | Abierto | No | Conectar reinvestigación con la evidencia del grupo |
 | BUG-07 | Media | `projects/projectContext.js:134` | `nivelPorDefecto` compara contra `prefectura` / `presidencia` (el cargo), pero el analista escribe `Prefecto` / `Presidente` / `Asambleísta` (la persona). **Todas** las dignidades en forma personal caen a `cantonal`, y en un proyecto provincial o nacional sin `nivel` declarado la provincia o el país se quedan en fuerza 6 —por debajo del umbral de evidencia— y **no llegan a ser ancla**. Detectado en LÍNEA A (§18-bis) | Abierto, **no corregido: fuera de la autorización L-1/L-2/L-3** | No | Aceptar la forma personal de cada dignidad, o exigir `nivel` explícito en el formulario |
+| BUG-10 | Media | `apps/web/src/services/aliasMemory.js` `esAliasValido` | Exige que el alias contenga el **ultimo** token del nombre (`partes[partes.length-1]`) —el defecto exacto que L-1 corrigio en el backend— y su comentario afirma «misma regla que el clasificador», que ya es **falso**. Para `Juan Cristobal Lloret Valdivieso` exigiria `valdivieso` y rechazaria `Jota Lloret`, el propio ejemplo del encabezado del modulo. Detectado al cerrar el gate de alias (§18-quater) | Abierto, **no corregido: frontend, fuera del patch alias -> planner** | No | Reutilizar la zona de apellidos de L-1, o subir la validacion al backend |
 | BUG-09 | **Alta** | `projects/projectStore.js` `crearProyecto` | El id se deriva del nombre (`idDesde`) y **no se comprueba si ya existe**. Crear un proyecto cuyo nombre coincida con uno eliminado escribe una versión nueva de la MISMA entidad: el proyecto **resucita a `activo` heredando candidatos, actores y expedientes**, y con ellos cualquier dato corrupto previo. Reproducido en lake aislado durante el reset (§18-ter) | Abierto, **evitado con un id explícito, no corregido** | **Sí, para cualquier reset futuro** | Rechazar la creación si el id existe —incluso eliminado— y ofrecer recuperar o usar otro id. No resucitar en silencio |
 | BUG-08 | Baja | `social/discovery/discoveryEngine.js:398` | `planificarConsultasSociales` está exportada y **nadie la llama**: el motor planifica con `planificarConsultasDerivadas`. Cubre 3 de 6 plataformas (deja fuera X, YouTube y LinkedIn) y no aplica anclas. Si alguien la conectara creyendo que es el planificador, perdería la mitad de la cobertura. Fijado por prueba en `tests/contexto.test.mjs` | Abierto, **no corregido: archivo congelado** | No | Eliminarla o marcarla como obsoleta en una limpieza autorizada |
 
@@ -1115,7 +1205,9 @@ resueltos y verificados.
 | Relaciones en el Knowledge Graph | 🔴 BUG-05 |
 | Errores ESLint preexistentes | 🟡 BUG-01, BUG-02 |
 | Selección de identidad plausible | 🔴 BUG-06 |
-| Alias que alimenten el planificador del backend | 🔴 hoy solo `localStorage`. **No implementado en LÍNEA A**: requiere anuncio `PATCH ALIAS DISPONIBLE` y autorización aparte |
+| Alias que alimenten el planificador del backend | 🟡 **cerrado para los alias DECLARADOS** (§18-quater): expediente → ruta → motor → PASADA 3 del planificador. Sigue abierto que los alias *aprendidos* en el navegador se reutilicen solos |
+| Alias aprendidos en el navegador que se reutilicen sin intervención | 🔴 `aliasMemory` es `localStorage` y de presentación; nadie los sube al backend |
+| `esAliasValido` usa la regla de apellido anterior a L-1 | 🔴 **BUG-10**, declarado en §18-quater y no corregido |
 | `nivelPorDefecto` no reconoce las dignidades en forma personal | 🔴 BUG-07, declarado en LÍNEA A y no corregido |
 | `planificarConsultasSociales` huérfana y con cobertura parcial | 🔴 BUG-08, declarado en LÍNEA A y no corregido |
 | `crearProyecto` resucita proyectos eliminados al coincidir el nombre | 🔴 **BUG-09**, declarado en el reset §18-ter y no corregido |
@@ -1338,6 +1430,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-24 | alias → planner | Pendiente crítico verificado ABIERTO y cerrado para los alias declarados: cadena expediente → ruta → motor → PASADA 3, sin planner paralelo. Los alias amplían el Discovery y no verifican identidad. BUG-10 declarado sin corregir. Nueva §18-quater. 208 pruebas, 0 fallos. |
 | 2026-08-24 | reset pre-piloto | Retirados los 6 proyectos de prueba con la API oficial y creado `alcaldia-cuenca-2027-piloto` con baseline cero verificado. **0 entradas del Lake eliminadas**: es append-only por diseño. BUG-09 encontrado y evitado: crear el nombre pedido habría resucitado un proyecto eliminado con 4 candidatos. Snapshot en `docs/auditorias/SNAP-001`. Nueva §18-ter. |
 | 2026-08-24 | LÍNEA A | Tubería de identidad corregida: L-1 zona de apellidos, L-2 semilla de referencia sin autoverificación, L-3 contexto destilado. Nueva §18-bis. BUG-07 y BUG-08 declarados sin corregir. 189 pruebas sin cuota, 0 fallos. Pilotos reales NO ejecutados. |
 | 2026-08-24 | `b2dcdc5` | Creación del documento maestro de continuidad. Estado verificado por inspección del repositorio: 4 routers, 12 endpoints de proyecto, 14 componentes congelados existentes, Knowledge Lake en fichero con persistencia verificada, LÍNEA B territorial sin integrar. |
