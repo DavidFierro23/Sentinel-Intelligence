@@ -1,0 +1,84 @@
+{
+  "id": "ec-azuay-cuenca-denominadores",
+  "nombre": "Denominadores de normalizacion — canton Cuenca",
+  "version": "0.1",
+
+  "estado": "PENDIENTE — ningun denominador oficial integrado",
+
+  "porQueExisteVACIO": "La normalizacion es obligatoria y visible (UX-WR-001 §6.3). Este fichero es su punto de inyeccion. Se crea con TODAS las unidades y TODOS los valores en null, y no con estimaciones, porque el precedente que origino GEO-1 fue exactamente eso: repartir un dato provincial segun peso poblacional produjo penetraciones del 134 % y el 238 %. Un denominador inventado no degrada la respuesta, la invierte.",
+
+  "reglaDura": "Sin denominador oficial NO se calcula ninguna metrica per capita, ningun porcentaje poblacional y ninguna intensidad relativa. El normalizador devuelve `disponible:false` con motivo y la UI muestra «Dato oficial pendiente de integracion». No hay ruta de codigo que estime un denominador ausente.",
+
+  "fuentes": {
+    "poblacion": {
+      "organismo": "INEC",
+      "referencia": "Censo de Poblacion y Vivienda — proyecciones por parroquia",
+      "integrado": false,
+      "url": null
+    },
+    "padronElectoral": {
+      "organismo": "CNE",
+      "referencia": "Padron electoral por parroquia / junta receptora del voto",
+      "integrado": false,
+      "url": null
+    },
+    "superficieKm2": {
+      "organismo": "GAD Municipal de Cuenca / INEC",
+      "referencia": "Calculo sobre geometria oficial en EPSG:32717 (UTM 17S)",
+      "integrado": false,
+      "url": null,
+      "nota": "La superficie NO se calcula sobre Web Mercator: distorsiona el area. Depende del GeoJSON oficial, hoy ausente."
+    }
+  },
+
+  "comoIntegrar": [
+    "1. Rellenar `valor` y `fuente` en cada unidad de `denominadores`.",
+    "2. Poner `verificado: true` solo cuando el dato provenga del organismo citado, no de una nota de prensa.",
+    "3. Actualizar `integrado: true` en el bloque `fuentes` correspondiente.",
+    "4. No hace falta tocar una sola linea de codigo: normalizer.js lee este fichero."
+  ],
+
+  "denominadores": {
+    "ec-azuay-cuenca": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+
+    "bellavista": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "canaribamba": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "el-batan": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "el-sagrario": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "el-vecino": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "gil-ramirez-davalos": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "hermano-miguel": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "huayna-capac": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "machangara": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "monay": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "san-blas": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "san-sebastian": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "sucre": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "totoracocha": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "yanuncay": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+
+    "banos": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "chaucha": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "checa": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "chiquintad": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "cumbe": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "el-valle": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "llacao": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "molleturo": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "nulti": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "octavio-cordero-palacios": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "paccha": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "quingeo": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "ricaurte": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "san-joaquin": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "santa-ana": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "sayausi": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "sidcay": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "sinincay": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "tarqui": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "turi": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+    "victoria-del-portete": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false },
+
+    "centro-historico": { "poblacion": null, "padronElectoral": null, "superficieKm2": null, "fuente": null, "verificado": false }
+  }
+}

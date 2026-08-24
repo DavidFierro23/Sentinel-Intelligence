@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import osintRoutes from "./routes/osint.js";
 import assetRoutes from "./routes/assets.js";
 import projectRoutes from "./routes/projects.js";
+import territorioRoutes from "./routes/territorio.js";
 
 dotenv.config();
 
@@ -106,6 +107,9 @@ app.use("/api/assets", assetRoutes);
 
 /* ARQ-INV-002 — proyectos y expedientes. Mismo motor, otro contexto. */
 app.use("/api/proyectos", projectRoutes);
+
+/* ARQ-GEO-001 — inteligencia territorial y conversación pública. */
+app.use("/api/territorio", territorioRoutes);
 
 const PORT = process.env.PORT || 3001;
 

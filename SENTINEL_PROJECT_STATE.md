@@ -238,7 +238,7 @@ Enumerados desde los archivos de ruta. No se documenta nada que no exista.
 | POST | `/api/proyectos/:proyectoId/actores/:actorId/investigar` |
 | POST | `/api/proyectos/:proyectoId/correlacion/:actorId/:candidatoId` |
 
-### Territorial — `routes/territorio.js` — 🟡 LÍNEA B, sin comitear
+### Territorial — `routes/territorio.js` — ✅ LÍNEA B, núcleo verificado
 | Método | Ruta |
 |---|---|
 | GET | `/api/territorio/catalogo` |
@@ -470,63 +470,109 @@ Bug conocido: `KnowledgeGraph.jsx:95` — `setState` dentro de un efecto
 
 ---
 
-## 13. Inteligencia Territorial
+## 13. Inteligencia Territorial — LÍNEA B
 
-🟡 **DESARROLLO PARALELO — PENDIENTE DE INTEGRACIÓN**
+✅ **NÚCLEO IMPLEMENTADO Y VERIFICADO EN EJECUCIÓN REAL** — 2026-08-24
+Documento de arquitectura: `docs/architecture/Inteligencia-Territorial-y-Conversacion-Publica.md` (ARQ-GEO-001).
 
-No comiteado. Presente en el árbol de trabajo como archivos sin seguimiento y una
-modificación de `server.js`. **No verificado funcionalmente por esta línea de
-trabajo.**
+Implementa la especificación **ya congelada** en UX-WR-001 §1, §6 y §12, con los
+nombres de archivo que ese documento fijó en §10.2. No inventa arquitectura.
 
-Archivos detectados:
+### Qué está implementado y probado
+
+| Componente | Estado |
+|---|---|
+| Territory Registry (jerarquías arbitrarias) | ✅ 40 unidades · **sin geometría** |
+| Geo Resolver (4 procedencias) | ✅ verificado con 9 casos de desambiguación |
+| Spatial Aggregator (GEO-1) | ✅ nunca desagrega: por construcción, no por comprobación |
+| Normalizer | ✅ implementado y **bloqueado**: sin denominador no calcula |
+| Territorial Timeline | ✅ series por unidad + barra de observación |
+| Anomaly Detector | ✅ mediana + MAD (robusto a valores extremos) |
+| Public Conversation Engine | ✅ recolección · temas · encuadre · medios · actores · serie |
+| Trazabilidad de motores | ✅ incluye los **no ejecutados** y por qué |
+| Attribution Engine | ⛔ UX-3 — requiere histórico para calibrar |
+| Replay Reconstructor | ⛔ UX-3 |
+
+### Search Layer — sin duplicar proveedores
+
+Territorial consume los **mismos** proveedores que candidatos vía
+`searchProviderLayer.buscarWeb()`: mismo presupuesto, mismo circuito de salud,
+mismo *fallback*, mismo saldo de SerpAPI.
+
+Exclusivo de territorial: el **planner** (ancla por provincia y país), el **Geo
+Resolver**, el **Media Registry** y el extractor de temas. No se reutiliza el
+Identity Matcher para geografía.
+
+### Estados de motor — cuatro cosas distintas
+
+`OK` · `SIN_RESULTADOS` · `NO_EJECUTADO` · `SIN_CREDENCIAL` · `ERROR` ·
+`TIMEOUT` · `BLOQUEADO` · `NO_IMPLEMENTADO`.
+
+Solo los dos primeros permiten afirmar ausencia. Los demás son huecos de
+cobertura y viajan al bloque «Lo que no sabemos».
+
+### Ejecución real verificada (Cuenca, modo `noticias`, coste 0)
 
 ```
-routes/territorio.js
-services/geo/           anomalyDetector · geoContracts · geoIntelligenceEngine
-                        geoResolver · normalizer · projectTerritoryBridge
-                        spatialAggregator · territorialTimeline · territoryRegistry
-                        territories/  (ec-azuay-cuenca.json, -sectores, -denominadores,
-                                       territoryLoader.js)
-services/conversation/  actorMentions · conversationContracts · conversationHarvester
-                        conversationTimeline · framingClassifier · mediaRegistry
-                        publicConversationEngine · topicExtractor
-an.json, an2.json, an3.json   (salidas de ejemplo del módulo territorial)
-srv.log                       (registro de ejecución)
+29 evidencias · 16 publicadores · 29/29 ubicadas · 0 sin ubicar
+Cuenca 28 (con dato) · Machángara 1 (muestra insuficiente)
+GEO-1: 28 atribuciones a parroquia impedidas → agregadas en cantón
+1 medio local · 7 nacionales · 4,93 s
 ```
 
-Objetivo previsto:
+Modo `web` verificado aparte con **1** búsqueda de cuota: SerpAPI `OK`,
+9 resultados, correctamente declarado.
 
-```
-País → Provincia → Cantón → Parroquia → Sector
-```
+### Defectos encontrados y corregidos en esta línea
 
-más análisis de conversación territorial mediante fuentes abiertas.
-
-⚠️ PENDIENTE DE VERIFICACIÓN: el alcance real, la calidad de los datos y la
-integración con proyectos los debe declarar la LÍNEA B.
+1. **`Cuenca` sin anclaje devolvía Cuenca de España** (feria de San Julián, la
+   A-3). El `gl=EC` no basta. Toda consulta lleva ahora ancla territorial.
+2. **Ambigüedad interna ≠ externa.** Un diario local desambigua «Baños» pero no
+   «avenida Sucre» ni «río Machángara».
+3. **Google News ocultaba al publicador** (todo `news.google.com`). Se rescata
+   del titular: 1 → 16 publicadores.
+4. **Nombre del territorio y del medio se volvían «temas».**
+5. **`buscarGoogleNews` sin timeout** colgaba la petición HTTP más de 2 min.
+   Acotado a 12 s por consulta y 45 s totales, sin tocar el servicio compartido.
+6. **Nombres sin tildes** en la UI (`Machangara`, `Banos`). Corregidos; la
+   coincidencia sigue siendo insensible a tildes.
 
 ---
 
 ## 14. Pendientes críticos territoriales
 
-🔴 **CRÍTICO** — a integrar antes de considerar el módulo territorial utilizable:
+🔴 **CRÍTICO** — sin esto el módulo es funcional pero incompleto:
 
-1. GeoJSON oficial de parroquias.
-2. Población oficial INEC.
-3. Padrón electoral CNE cuando corresponda.
-4. Normalización territorial.
-5. Validación de fuentes.
-6. Mapa territorial con geometrías oficiales.
+| # | Pendiente | Bloquea | Punto de inyección |
+|---|---|---|---|
+| 1 | **GeoJSON oficial de parroquias** (GAD Cuenca / INEC) | mapa, coropleta, superficie km² | `territories/ec-azuay-cuenca.json` → campo `geometria` |
+| 2 | **Población oficial INEC** | normalización por población, per cápita | `territories/ec-azuay-cuenca-denominadores.json` |
+| 3 | **Padrón electoral CNE** | normalización por padrón | mismo fichero, campo **distinto** de población |
+| 4 | **Verificar nomenclatura** contra GAD/INEC | presentar como oficial | `verificado: true` por unidad |
+| 5 | **Credencial Brave** | segundo proveedor web | `BRAVE_API_KEY` en `.env` |
+| 6 | Attribution Engine · Replay Reconstructor | atribución y reconstrucción temporal | UX-3 |
+| 7 | Ingesta continua | separar actividad de observación | riesgo WR-7 |
 
-Hasta entonces, reglas obligatorias:
+`POST /api/territorio/recargar` integra 1–4 **sin reiniciar el backend y sin
+cambiar arquitectura**.
 
-- geometría = `null` / no disponible;
-- población = `null` si no existe fuente;
-- padrón = `null` si no existe fuente;
-- `verificado: false`;
-- **no inventar porcentajes**;
-- **no inventar métricas per cápita**;
-- **no inventar geometrías**.
+`poblacionOficial` y `padronElectoral` son denominadores **distintos**: nunca se
+usa uno como el otro.
+
+### Reglas obligatorias — vigentes
+
+- geometría = `null`;
+- población = `null` si no existe fuente oficial;
+- padrón = `null` si no existe fuente oficial;
+- `verificado: false` en las 40 unidades;
+- etiqueta **«Dato oficial pendiente de integración»** hasta la interfaz;
+- **no inventar porcentajes poblacionales**;
+- **no inventar métricas per cápita** — implementado como *ausencia de código*
+  en `normalizer.js`, no como aviso;
+- **no inventar geometrías**;
+- **no llamar «penetración» ni «cobertura poblacional»** a una intensidad
+  relativa. El ranking usa **conteo absoluto** con escala por **cuantiles sobre
+  las unidades con dato**, y lo declara.
 
 ---
 

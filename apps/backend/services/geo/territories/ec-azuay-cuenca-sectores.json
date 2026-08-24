@@ -1,0 +1,65 @@
+{
+  "id": "ec-azuay-cuenca-sectores",
+  "nombre": "Sectores especiales del canton Cuenca",
+  "version": "0.1",
+  "jerarquia": "sectorial",
+
+  "porQueUnaJerarquiaAPARTE": "Un sector especial NO es una parroquia y no cuelga del arbol administrativo. Vive en su propia jerarquia y se cruza con la administrativa. Esta es exactamente la capacidad que UX-WR-001 §12.3 usa como prueba de que el motor es generico: si el registro solo admitiera parroquias, el Centro Historico no cabria, y tampoco las cuencas hidrograficas del paquete Agua.",
+
+  "fuente": {
+    "declarada": "UX-WR-001 v2.0 §6.2 y WR-D10",
+    "oficial": null,
+    "verificado": false,
+    "pendiente": "Poligono oficial del Centro Historico (GAD Municipal de Cuenca / delimitacion UNESCO 1999). Sin el, el sector existe como unidad nombrable pero no como area calculable."
+  },
+
+  "geometria": {
+    "disponible": false,
+    "formato": "GeoJSON",
+    "motivo": "Riesgo WR-4: el Centro Historico NO se puede pintar sumando parroquias enteras. El Sagrario no es solo Centro Historico. Sin poligono propio, este sector no se agrega por composicion: se declara sin dato.",
+    "puntoDeInyeccion": "Anadir `geometria` a la unidad. El resto del motor no cambia."
+  },
+
+  "unidades": [
+    {
+      "id": "centro-historico",
+      "nombre": "Centro Histórico",
+      "resolucion": "sector",
+      "tipo": "patrimonial",
+      "padre": "ec-azuay-cuenca",
+      "alias": ["centro historico de cuenca", "centro histórico", "casco historico"],
+      "verificado": false,
+
+      "solapa": [
+        { "unidadId": "el-sagrario", "cobertura": "total" },
+        { "unidadId": "san-blas", "cobertura": "total" },
+        { "unidadId": "gil-ramirez-davalos", "cobertura": "total" },
+        { "unidadId": "huayna-capac", "cobertura": "parcial" },
+        { "unidadId": "sucre", "cobertura": "parcial" }
+      ],
+
+      "reglaDeAgregacion": "prohibida_por_composicion",
+
+      "notaReglaDeAgregacion": "WR-D10 y riesgo WR-4. Este sector NO se calcula sumando las parroquias que solapa: dos de ellas solo lo hacen parcialmente, y las otras tres tienen area fuera del poligono patrimonial. Mientras no exista el poligono oficial, cualquier consulta a resolucion `sector` sobre esta unidad devuelve `sin_dato` con motivo declarado, nunca una suma aproximada.",
+
+      "denominadores": {
+        "poblacion": null,
+        "padronElectoral": null,
+        "superficieKm2": null,
+        "fuente": null,
+        "verificado": false,
+        "nota": "Dato oficial pendiente de integracion."
+      }
+    }
+  ],
+
+  "extensible": {
+    "como": "Anadir objetos al array `unidades` con la misma forma. Una unidad puede solapar cualquier conjunto de la jerarquia administrativa y declarar su propia regla de agregacion.",
+    "casosPrevistos": [
+      "Sectores de planificacion del GAD",
+      "Cuencas hidrograficas (paquete Agua, UX-WR-001 §12.3)",
+      "Cuadrantes de seguridad (paquete Seguridad)"
+    ],
+    "loQueNoSeHace": "No se crean sectores por conveniencia de analisis. Un sector sin fuente oficial y sin poligono es una unidad inventada, y agregar sobre el produce un mapa con forma de mapa y contenido de suposicion."
+  }
+}

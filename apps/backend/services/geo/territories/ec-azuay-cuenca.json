@@ -1,0 +1,536 @@
+{
+  "id": "ec-azuay-cuenca",
+  "nombre": "Cantón Cuenca",
+  "version": "0.1",
+  "jerarquia": "administrativa",
+  "fuente": {
+    "declarada": "UX-WR-001 v2.0 §2.1 — listado de 15 parroquias urbanas y 21 rurales",
+    "oficial": null,
+    "verificado": false,
+    "pendiente": "Contrastar nombres, codigos y limites contra el GAD Municipal de Cuenca y el geoportal del INEC. Hasta entonces cada unidad lleva verificado:false y ninguna respuesta puede presentarse como oficial.",
+    "convencion": "Misma marca (v) que usa el Cap. 14 de la Constitucion y el propio UX-WR-001."
+  },
+  "geometria": {
+    "disponible": false,
+    "formato": "GeoJSON",
+    "motivo": "El GeoJSON oficial de las 36 parroquias no esta en el repositorio. UX-WR-001 lo declara bloqueante (riesgo WR-3). Sin el no hay mapa, pero si hay motor territorial: este catalogo resuelve toponimos, agrega y rankea sin una sola coordenada.",
+    "puntoDeInyeccion": "Anadir el campo `geometria` a cada unidad, o un fichero paralelo ec-azuay-cuenca.geojson enlazado por `id`. El resto del motor no cambia."
+  },
+  "unidades": [
+    {
+      "id": "ec",
+      "nombre": "Ecuador",
+      "resolucion": "pais",
+      "padre": null,
+      "alias": [],
+      "verificado": false
+    },
+    {
+      "id": "ec-azuay",
+      "nombre": "Azuay",
+      "resolucion": "provincia",
+      "padre": "ec",
+      "alias": [
+        "provincia del azuay"
+      ],
+      "verificado": false
+    },
+    {
+      "id": "ec-azuay-cuenca",
+      "nombre": "Cuenca",
+      "resolucion": "canton",
+      "padre": "ec-azuay",
+      "alias": [
+        "canton cuenca",
+        "santa ana de los rios de cuenca"
+      ],
+      "ambiguo": true,
+      "ambiguedad": "ambas",
+      "requiereContexto": [
+        "azuay",
+        "ecuador"
+      ],
+      "aliasInequivocos": [
+        "santa ana de los rios de cuenca"
+      ],
+      "notaAmbiguedad": "Homonimo mayor: Cuenca (Espana), y ademas 'cuenca' es sustantivo comun (cuenca hidrografica, cuenca del rio). El resolver exige contexto, SALVO que se cite el nombre oficial completo, que no lo lleva ningun otro lugar.",
+      "verificado": false
+    },
+    {
+      "id": "bellavista",
+      "nombre": "Bellavista",
+      "resolucion": "parroquia",
+      "tipo": "urbana",
+      "padre": "ec-azuay-cuenca",
+      "alias": [],
+      "ambiguo": true,
+      "requiereContexto": [
+        "cuenca",
+        "azuay"
+      ],
+      "notaAmbiguedad": "Toponimo muy repetido en Ecuador y America Latina.",
+      "verificado": false
+    },
+    {
+      "id": "canaribamba",
+      "nombre": "Cañaribamba",
+      "resolucion": "parroquia",
+      "tipo": "urbana",
+      "padre": "ec-azuay-cuenca",
+      "alias": [
+        "cañaribamba",
+        "canaribamba"
+      ],
+      "verificado": false
+    },
+    {
+      "id": "el-batan",
+      "nombre": "El Batán",
+      "resolucion": "parroquia",
+      "tipo": "urbana",
+      "padre": "ec-azuay-cuenca",
+      "alias": [
+        "batan",
+        "el batán",
+        "el batan"
+      ],
+      "ambiguo": true,
+      "requiereContexto": [
+        "cuenca",
+        "azuay"
+      ],
+      "notaAmbiguedad": "Existe El Batan en Quito.",
+      "verificado": false
+    },
+    {
+      "id": "el-sagrario",
+      "nombre": "El Sagrario",
+      "resolucion": "parroquia",
+      "tipo": "urbana",
+      "padre": "ec-azuay-cuenca",
+      "alias": [
+        "sagrario"
+      ],
+      "ambiguo": true,
+      "requiereContexto": [
+        "cuenca",
+        "azuay"
+      ],
+      "notaAmbiguedad": "Hay parroquia El Sagrario en Quito, Loja, Ambato, Ibarra y Cotacachi.",
+      "verificado": false
+    },
+    {
+      "id": "el-vecino",
+      "nombre": "El Vecino",
+      "resolucion": "parroquia",
+      "tipo": "urbana",
+      "padre": "ec-azuay-cuenca",
+      "alias": [
+        "vecino"
+      ],
+      "ambiguo": true,
+      "ambiguedad": "interna",
+      "requiereContexto": [
+        "cuenca",
+        "azuay",
+        "parroquia"
+      ],
+      "notaAmbiguedad": "'el vecino' es ademas expresion comun en prensa. Exige contexto fuerte.",
+      "verificado": false
+    },
+    {
+      "id": "gil-ramirez-davalos",
+      "nombre": "Gil Ramírez Dávalos",
+      "resolucion": "parroquia",
+      "tipo": "urbana",
+      "padre": "ec-azuay-cuenca",
+      "alias": [
+        "gil ramírez dávalos",
+        "gil ramirez",
+        "gil ramirez davalos"
+      ],
+      "verificado": false
+    },
+    {
+      "id": "hermano-miguel",
+      "nombre": "Hermano Miguel",
+      "resolucion": "parroquia",
+      "tipo": "urbana",
+      "padre": "ec-azuay-cuenca",
+      "alias": [],
+      "verificado": false
+    },
+    {
+      "id": "huayna-capac",
+      "nombre": "Huayna Cápac",
+      "resolucion": "parroquia",
+      "tipo": "urbana",
+      "padre": "ec-azuay-cuenca",
+      "alias": [
+        "huayna cápac",
+        "huaynacapac",
+        "huayna capac"
+      ],
+      "verificado": false
+    },
+    {
+      "id": "machangara",
+      "nombre": "Machángara",
+      "resolucion": "parroquia",
+      "tipo": "urbana",
+      "padre": "ec-azuay-cuenca",
+      "alias": [
+        "machángara",
+        "machangara"
+      ],
+      "ambiguo": true,
+      "ambiguedad": "ambas",
+      "requiereContexto": [
+        "cuenca",
+        "azuay",
+        "parroquia"
+      ],
+      "notaAmbiguedad": "El Machangara es tambien un rio de Quito, muy citado en prensa nacional.",
+      "verificado": false
+    },
+    {
+      "id": "monay",
+      "nombre": "Monay",
+      "resolucion": "parroquia",
+      "tipo": "urbana",
+      "padre": "ec-azuay-cuenca",
+      "alias": [],
+      "verificado": false
+    },
+    {
+      "id": "san-blas",
+      "nombre": "San Blas",
+      "resolucion": "parroquia",
+      "tipo": "urbana",
+      "padre": "ec-azuay-cuenca",
+      "alias": [],
+      "ambiguo": true,
+      "requiereContexto": [
+        "cuenca",
+        "azuay"
+      ],
+      "notaAmbiguedad": "Toponimo repetido en varias ciudades.",
+      "verificado": false
+    },
+    {
+      "id": "san-sebastian",
+      "nombre": "San Sebastián",
+      "resolucion": "parroquia",
+      "tipo": "urbana",
+      "padre": "ec-azuay-cuenca",
+      "alias": [
+        "san sebastián",
+        "san sebastian"
+      ],
+      "ambiguo": true,
+      "requiereContexto": [
+        "cuenca",
+        "azuay"
+      ],
+      "notaAmbiguedad": "Toponimo muy repetido.",
+      "verificado": false
+    },
+    {
+      "id": "sucre",
+      "nombre": "Sucre",
+      "resolucion": "parroquia",
+      "tipo": "urbana",
+      "padre": "ec-azuay-cuenca",
+      "alias": [],
+      "ambiguo": true,
+      "ambiguedad": "interna",
+      "requiereContexto": [
+        "cuenca",
+        "azuay",
+        "parroquia"
+      ],
+      "notaAmbiguedad": "Sucre es capital de Bolivia, canton de Manabi, apellido historico y nombre de decenas de calles. Ambiguedad alta.",
+      "verificado": false
+    },
+    {
+      "id": "totoracocha",
+      "nombre": "Totoracocha",
+      "resolucion": "parroquia",
+      "tipo": "urbana",
+      "padre": "ec-azuay-cuenca",
+      "alias": [],
+      "verificado": false
+    },
+    {
+      "id": "yanuncay",
+      "nombre": "Yanuncay",
+      "resolucion": "parroquia",
+      "tipo": "urbana",
+      "padre": "ec-azuay-cuenca",
+      "alias": [],
+      "verificado": false
+    },
+    {
+      "id": "banos",
+      "nombre": "Baños",
+      "resolucion": "parroquia",
+      "tipo": "rural",
+      "padre": "ec-azuay-cuenca",
+      "alias": [
+        "baños",
+        "baños de cuenca",
+        "banos"
+      ],
+      "ambiguo": true,
+      "requiereContexto": [
+        "cuenca",
+        "azuay"
+      ],
+      "notaAmbiguedad": "Colision fuerte con Banos de Agua Santa (Tungurahua), destino turistico con mucha mas presencia en prensa. Sin contexto se resuelve al otro.",
+      "verificado": false
+    },
+    {
+      "id": "chaucha",
+      "nombre": "Chaucha",
+      "resolucion": "parroquia",
+      "tipo": "rural",
+      "padre": "ec-azuay-cuenca",
+      "alias": [],
+      "verificado": false
+    },
+    {
+      "id": "checa",
+      "nombre": "Checa",
+      "resolucion": "parroquia",
+      "tipo": "rural",
+      "padre": "ec-azuay-cuenca",
+      "alias": [
+        "jidcay",
+        "checa jidcay"
+      ],
+      "ambiguo": true,
+      "requiereContexto": [
+        "cuenca",
+        "azuay"
+      ],
+      "notaAmbiguedad": "Existe parroquia Checa en el Distrito Metropolitano de Quito.",
+      "verificado": false
+    },
+    {
+      "id": "chiquintad",
+      "nombre": "Chiquintad",
+      "resolucion": "parroquia",
+      "tipo": "rural",
+      "padre": "ec-azuay-cuenca",
+      "alias": [],
+      "verificado": false
+    },
+    {
+      "id": "cumbe",
+      "nombre": "Cumbe",
+      "resolucion": "parroquia",
+      "tipo": "rural",
+      "padre": "ec-azuay-cuenca",
+      "alias": [],
+      "verificado": false
+    },
+    {
+      "id": "el-valle",
+      "nombre": "El Valle",
+      "resolucion": "parroquia",
+      "tipo": "rural",
+      "padre": "ec-azuay-cuenca",
+      "alias": [
+        "valle"
+      ],
+      "ambiguo": true,
+      "ambiguedad": "interna",
+      "requiereContexto": [
+        "cuenca",
+        "azuay",
+        "parroquia"
+      ],
+      "notaAmbiguedad": "'el valle' es ademas sustantivo comun y toponimo repetido.",
+      "verificado": false
+    },
+    {
+      "id": "llacao",
+      "nombre": "Llacao",
+      "resolucion": "parroquia",
+      "tipo": "rural",
+      "padre": "ec-azuay-cuenca",
+      "alias": [],
+      "verificado": false
+    },
+    {
+      "id": "molleturo",
+      "nombre": "Molleturo",
+      "resolucion": "parroquia",
+      "tipo": "rural",
+      "padre": "ec-azuay-cuenca",
+      "alias": [],
+      "verificado": false
+    },
+    {
+      "id": "nulti",
+      "nombre": "Nulti",
+      "resolucion": "parroquia",
+      "tipo": "rural",
+      "padre": "ec-azuay-cuenca",
+      "alias": [],
+      "verificado": false
+    },
+    {
+      "id": "octavio-cordero-palacios",
+      "nombre": "Octavio Cordero Palacios",
+      "resolucion": "parroquia",
+      "tipo": "rural",
+      "padre": "ec-azuay-cuenca",
+      "alias": [
+        "santa rosa de octavio cordero",
+        "octavio cordero"
+      ],
+      "verificado": false
+    },
+    {
+      "id": "paccha",
+      "nombre": "Paccha",
+      "resolucion": "parroquia",
+      "tipo": "rural",
+      "padre": "ec-azuay-cuenca",
+      "alias": [],
+      "ambiguo": true,
+      "requiereContexto": [
+        "cuenca",
+        "azuay"
+      ],
+      "notaAmbiguedad": "Existe Paccha en El Oro (Atahualpa) y en Loja.",
+      "verificado": false
+    },
+    {
+      "id": "quingeo",
+      "nombre": "Quingeo",
+      "resolucion": "parroquia",
+      "tipo": "rural",
+      "padre": "ec-azuay-cuenca",
+      "alias": [],
+      "verificado": false
+    },
+    {
+      "id": "ricaurte",
+      "nombre": "Ricaurte",
+      "resolucion": "parroquia",
+      "tipo": "rural",
+      "padre": "ec-azuay-cuenca",
+      "alias": [],
+      "ambiguo": true,
+      "requiereContexto": [
+        "cuenca",
+        "azuay"
+      ],
+      "notaAmbiguedad": "Existe Ricaurte en Los Rios y es apellido historico frecuente.",
+      "verificado": false
+    },
+    {
+      "id": "san-joaquin",
+      "nombre": "San Joaquín",
+      "resolucion": "parroquia",
+      "tipo": "rural",
+      "padre": "ec-azuay-cuenca",
+      "alias": [
+        "san joaquín",
+        "san joaquin"
+      ],
+      "ambiguo": true,
+      "requiereContexto": [
+        "cuenca",
+        "azuay"
+      ],
+      "notaAmbiguedad": "Toponimo repetido.",
+      "verificado": false
+    },
+    {
+      "id": "santa-ana",
+      "nombre": "Santa Ana",
+      "resolucion": "parroquia",
+      "tipo": "rural",
+      "padre": "ec-azuay-cuenca",
+      "alias": [],
+      "ambiguo": true,
+      "ambiguedad": "ambas",
+      "requiereContexto": [
+        "cuenca",
+        "azuay",
+        "parroquia"
+      ],
+      "notaAmbiguedad": "Canton Santa Ana en Manabi, y ademas 'Santa Ana de los Rios de Cuenca' es el nombre completo del propio canton: colision interna.",
+      "verificado": false
+    },
+    {
+      "id": "sayausi",
+      "nombre": "Sayausí",
+      "resolucion": "parroquia",
+      "tipo": "rural",
+      "padre": "ec-azuay-cuenca",
+      "alias": [
+        "sayausí",
+        "sayausi"
+      ],
+      "verificado": false
+    },
+    {
+      "id": "sidcay",
+      "nombre": "Sidcay",
+      "resolucion": "parroquia",
+      "tipo": "rural",
+      "padre": "ec-azuay-cuenca",
+      "alias": [],
+      "verificado": false
+    },
+    {
+      "id": "sinincay",
+      "nombre": "Sinincay",
+      "resolucion": "parroquia",
+      "tipo": "rural",
+      "padre": "ec-azuay-cuenca",
+      "alias": [],
+      "verificado": false
+    },
+    {
+      "id": "tarqui",
+      "nombre": "Tarqui",
+      "resolucion": "parroquia",
+      "tipo": "rural",
+      "padre": "ec-azuay-cuenca",
+      "alias": [],
+      "ambiguo": true,
+      "requiereContexto": [
+        "cuenca",
+        "azuay"
+      ],
+      "notaAmbiguedad": "Tarqui es tambien parroquia de Guayaquil, la mas poblada del pais, y parroquia de Puerto Bolivar.",
+      "verificado": false
+    },
+    {
+      "id": "turi",
+      "nombre": "Turi",
+      "resolucion": "parroquia",
+      "tipo": "rural",
+      "padre": "ec-azuay-cuenca",
+      "alias": [],
+      "verificado": false
+    },
+    {
+      "id": "victoria-del-portete",
+      "nombre": "Victoria del Portete",
+      "resolucion": "parroquia",
+      "tipo": "rural",
+      "padre": "ec-azuay-cuenca",
+      "alias": [
+        "irquis",
+        "la victoria del portete"
+      ],
+      "verificado": false
+    }
+  ]
+}
