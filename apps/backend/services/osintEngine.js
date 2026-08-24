@@ -10,6 +10,7 @@ import { ejecutarSocialIntelligence } from "./social/socialIntelligenceLayer.js"
 
 /* ARQ-PUI-001 — Bloques C, E y F. */
 import { clasificarYSeparar } from "./social/classification/accountClassifier.js";
+import { aplicarContextoMaestro } from "./projects/projectContext.js";
 import { construirPerfilEjecutivo } from "./social/executive/executiveProfile.js";
 import { registrarEnPerfilPermanente } from "./social/pip/permanentIdentityProfile.js";
 import { consolidarFichaObjetivo } from "./referenceProfileService.js";
@@ -270,7 +271,17 @@ function crearAvatarFallback(nombre = "") {
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }
 
-export async function investigarObjetivo(objetivo) {
+/*
+  ARQ-INV-002
+
+  `opciones` es OPCIONAL: sin ella la funcion se comporta
+  exactamente como antes, que es el MODO INDIVIDUAL. Con
+  `contextoMaestro` entra el MODO PROYECTO.
+
+  Un solo motor, dos modos. La diferencia es el contexto, no el
+  codigo que descubre.
+*/
+export async function investigarObjetivo(objetivo, opciones = {}) {
   const inicio = Date.now();
 
   const [
@@ -366,6 +377,17 @@ export async function investigarObjetivo(objetivo) {
 
   try {
     perfilReferencia = construirPerfilReferencia(objetivo, resultados);
+
+    /*
+      CONTEXTO MAESTRO — antes de que el perfil llegue al
+      planificador de consultas, que es quien lee sus anclas.
+    */
+    if (opciones.contextoMaestro && perfilReferencia) {
+      perfilReferencia = aplicarContextoMaestro(
+        perfilReferencia,
+        opciones.contextoMaestro
+      );
+    }
   } catch (error) {
     console.error("Error en construirPerfilReferencia:", error);
 
@@ -1028,6 +1050,20 @@ export async function investigarObjetivo(objetivo) {
     origenIdentidades,
     origenDescubrimiento,
     proveedoresConExito: [...proveedoresConExito],
+
+    /*
+      ARQ-INV-002 — el modo se declara para que la interfaz no
+      tenga que adivinarlo.
+    */
+    modoInvestigacion: opciones.contextoMaestro ? "proyecto" : "individual",
+
+    contextoMaestro: opciones.contextoMaestro || null,
+
+    /*
+      Cuentas que aporto el analista. Se transportan tal cual, con
+      su origen y su estado: son semilla, no veredicto.
+    */
+    cuentasReferencia: opciones.cuentasReferencia || [],
 
     /* ARQ-PUI-001 — Bloques C, E, F. */
     clasificacionCuentas: clasificacion,

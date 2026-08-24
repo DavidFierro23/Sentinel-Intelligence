@@ -209,6 +209,24 @@ export function extraerAnclas(perfil, dominio = null) {
     anclas.push({ termino: v, fuerza, origen });
   }
 
+  /*
+    0 · CONTEXTO MAESTRO DEL PROYECTO (ARQ-INV-002)
+
+    Cuando la investigacion ocurre dentro de un proyecto, el
+    territorio y la dignidad los fija el ANALISTA. Entran con
+    fuerza 18 o mas, y como esta funcion ordena por fuerza
+    descendente al final, ningun termino derivado de evidencia
+    —cuyo maximo es 10— puede desplazarlos.
+
+    No es una preferencia configurable: es una imposibilidad
+    estructural, y existe por el fallo auditado en AUD-001, donde
+    una cronica de ciclismo de Albacete sustituyo el contexto de
+    Cuenca y las seis consultas salieron buscando a un juez.
+  */
+  (perfil?.contextoMaestro?.anclas || []).forEach((a) => {
+    agregar(a.termino, a.fuerza, a.origen);
+  });
+
   /* 1 · Contexto del perfil — las anclas más fuertes. */
   agregar(perfil?.contexto?.rol, 10, "contexto_rol");
   agregar(perfil?.contexto?.pais, 9, "contexto_pais");
@@ -311,8 +329,22 @@ export function planificarConsultasDerivadas(perfil, opciones = {}) {
   }
 
   /*
-    Las dos anclas más fuertes bastan para acotar; añadir más
-    reduce demasiado el resultado.
+    DOS anclas, tambien con contexto maestro.
+
+    La primera version usaba TRES cuando habia proyecto, y se
+    midio el efecto: con
+
+        site:x.com "Pedro Palacios" Cuenca alcaldia Azuay
+
+    X no devolvio ninguna cuenta, mientras la auditoria AUD-001
+    habia encontrado x.com/pedropalaciosu con solo
+
+        site:x.com "Pedro Palacios" Cuenca
+
+    Tres anclas estrechan el resultado hasta perder cuentas que
+    existen. Con contexto maestro las dos primeras son canton y
+    dignidad, que es lo que de verdad discrimina; provincia y pais
+    quedan como respaldo si faltara alguna.
   */
   const anclasPrincipales = anclas.slice(0, 2);
 

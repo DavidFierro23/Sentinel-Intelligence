@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 
 import osintRoutes from "./routes/osint.js";
 import assetRoutes from "./routes/assets.js";
+import projectRoutes from "./routes/projects.js";
 
 dotenv.config();
 
@@ -102,6 +103,9 @@ app.use("/api/osint", osintRoutes);
 
 /* Sentinel Asset Gateway (SAG) */
 app.use("/api/assets", assetRoutes);
+
+/* ARQ-INV-002 — proyectos y expedientes. Mismo motor, otro contexto. */
+app.use("/api/proyectos", projectRoutes);
 
 const PORT = process.env.PORT || 3001;
 
