@@ -405,6 +405,79 @@ export function planificarConsultasDerivadas(perfil, opciones = {}) {
   });
 
   /*
+    ---------------------------------------------------------
+    PASADA 3 — ALIAS DECLARADOS POR EL ANALISTA
+    ---------------------------------------------------------
+
+    Otras formas de nombrar a la misma persona. Amplian el
+    descubrimiento: «Jota Lloret» encuentra lo que «Juan
+    Cristobal Lloret Valdivieso» no encuentra.
+
+    POR QUE VA AL FINAL
+
+    Porque el presupuesto del proveedor se agota, y cuando se
+    agota tiene que perderse lo ultimo, no lo primero. El orden
+    dice la prioridad: cobertura de las seis plataformas, luego
+    la reserva por nombre, y solo despues los alias. Un alias no
+    puede costarle a ninguna plataforma su consulta ni sustituir
+    la busqueda por el nombre principal.
+
+    UN ALIAS NO VERIFICA IDENTIDAD
+
+    Aqui solo se generan CONSULTAS. El alias no llega al
+    accountClassifier, que sigue juzgando la atribucion contra
+    `nombrePrincipal` y solo contra el. La distincion es la que
+    sostiene todo esto:
+
+        el alias amplia el RECALL
+        el nombre principal gobierna la PRECISION
+
+    Si el alias pudiera atribuir, bastaria escribir «Alcalde» en
+    el formulario para que cualquier cuenta que lo lleve pasara a
+    ser del candidato. El analista habria dictado la conclusion y
+    Sentinel se la habria devuelto como hallazgo.
+
+    Van anclados: un alias es mas corto y mas ambiguo que el
+    nombre completo, asi que sin contexto es justo la consulta
+    que devuelve homonimos.
+    ---------------------------------------------------------
+  */
+  const alias = (perfil?.aliasDeclarados || [])
+    .map((a) => String((typeof a === "string" ? a : a?.valor) || "").trim())
+    .filter(Boolean);
+
+  /* Deduplicado, y nunca el nombre principal repetido. */
+  const aliasUnicos = [];
+
+  const aliasVistos = new Set([normalizarTexto(nombre)]);
+
+  alias.forEach((a) => {
+    const clave = normalizarTexto(a);
+
+    if (!clave || aliasVistos.has(clave)) return;
+
+    aliasVistos.add(clave);
+
+    aliasUnicos.push(a);
+  });
+
+  /*
+    Dos como maximo. Con mas, el presupuesto se va en variantes
+    de nombre en lugar de en plataformas, que es el reparto que
+    ARQ-PUI-001 corrigio.
+  */
+  aliasUnicos.slice(0, 2).forEach((a) => {
+    if (textoAnclas) {
+      agregar(
+        `"${a}" ${textoAnclas}`,
+        `alias:${a}`,
+        null,
+        anclasPrincipales
+      );
+    }
+  });
+
+  /*
     c) CONSULTA GENERAL ANCLADA, sin acotar plataforma.
        Es la que descubre perfiles en dominios propios y
        menciones cruzadas.
@@ -422,6 +495,14 @@ export function planificarConsultasDerivadas(perfil, opciones = {}) {
     plan,
     anclas,
     anclasUsadas: anclasPrincipales,
+
+    /*
+      Que alias se usaron, para que el informe pueda decir que
+      una cuenta se hallo por un alias que escribio el analista
+      y no por el nombre.
+    */
+    aliasUsados: aliasUnicos.slice(0, 2),
+    aliasDeclarados: aliasUnicos.length,
     /*
       Diagnóstico honesto: sin anclas, este sprint no puede
       hacer su trabajo.

@@ -225,7 +225,10 @@ router.post("/:proyectoId/candidatos/:candidatoId/investigar", async (req, res) 
     */
     const resultado = await investigarObjetivo(candidato.nombre, {
       contextoMaestro,
-      cuentasReferencia: candidato.cuentasReferencia || []
+      cuentasReferencia: candidato.cuentasReferencia || [],
+
+      /* Amplian el descubrimiento; no deciden identidad. */
+      aliases: candidato.aliases || []
     });
 
     if (resultado?.error) return res.status(502).json(resultado);

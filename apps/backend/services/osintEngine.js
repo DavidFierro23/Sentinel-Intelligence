@@ -389,6 +389,26 @@ export async function investigarObjetivo(objetivo, opciones = {}) {
         opciones.contextoMaestro
       );
     }
+
+    /*
+      ALIAS DECLARADOS — tambien antes del planificador.
+
+      Van en su propio campo y NO se mezclan con
+      `perfil.variantes`, que son las que el propio Perfil de
+      Referencia derivo de la evidencia de esta investigacion.
+      Mezclarlos perderia la procedencia: dejaria de saberse que
+      lo escribio una persona y que no lo corroboro nada.
+    */
+    if (perfilReferencia) {
+      const declarados = (opciones.aliases || [])
+        .map((a) => (typeof a === "string" ? { valor: a } : a))
+        .filter((a) => a && String(a.valor || "").trim());
+
+      perfilReferencia = {
+        ...perfilReferencia,
+        aliasDeclarados: declarados
+      };
+    }
   } catch (error) {
     console.error("Error en construirPerfilReferencia:", error);
 

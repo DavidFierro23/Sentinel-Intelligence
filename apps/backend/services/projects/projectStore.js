@@ -564,11 +564,36 @@ export async function agregarCandidato(proyectoId, datos = {}) {
   registrarReferencia(datos.urlReferencia, datos.plataformaReferencia || null);
 
   /*
-    FUSION, NO REEMPLAZO. Si el candidato ya existe se conserva lo
-    que ya tenia y solo se sobrescribe lo que llega con valor. Sin
-    esto, reañadirlo con el formulario vacio le borraba las cuentas
-    de referencia que el analista habia aportado.
+    -----------------------------------------------------------
+    ALIAS DECLARADOS POR EL ANALISTA
+    -----------------------------------------------------------
+
+    Otras formas de nombrar a la misma persona: «Jota Lloret»,
+    «Paul Carrasco», el apodo con el que aparece en prensa.
+
+    QUE HACEN Y QUE NO HACEN
+
+    AMPLIAN el descubrimiento: generan consultas que el nombre
+    principal solo no habria generado.
+
+    NO deciden identidad. La atribucion sigue juzgandose contra
+    el nombre principal, nunca contra el alias. Si un alias
+    pudiera atribuir, el analista estaria dictando de quien es
+    una cuenta con solo escribir una palabra, y Sentinel
+    confirmaria su propia entrada. Ver la nota de la PASADA 3 en
+    platformAdapters.
+
+    Se admite un array o una cadena separada por comas, porque el
+    formulario escribe una cosa y la API la otra.
   */
+  const aliasEntrantes = (
+    Array.isArray(datos.aliases)
+      ? datos.aliases
+      : String(datos.aliases || datos.alias || "").split(",")
+  )
+    .map((x) => String(x || "").trim())
+    .filter(Boolean);
+
   const previo = await obtenerCandidato(proyectoId, id);
 
   const candidato = {
@@ -591,6 +616,37 @@ export async function agregarCandidato(proyectoId, datos = {}) {
       (r, i, todas) =>
         todas.findIndex((x) => x.url === r.url) === i
     ),
+
+    /*
+      Se ACUMULAN y se deduplican sin distinguir mayusculas ni
+      acentos, igual que las cuentas de referencia: aportar uno
+      nuevo no borra los anteriores, y escribir «Jota Lloret» dos
+      veces no lo guarda dos veces.
+
+      Nunca se guarda un alias igual al nombre principal: no
+      aporta ninguna consulta nueva.
+    */
+    aliases: [
+      ...(previo?.aliases || []),
+      ...aliasEntrantes.map((valor) => ({
+        valor,
+        origen: "analista",
+        declaradoEn: new Date().toISOString(),
+        /*
+          La misma marca que llevan las cuentas de referencia, y
+          por el mismo motivo.
+        */
+        noCuentaComoCorroboracion: true
+      }))
+    ].filter((al, i, todas) => {
+      const clave = normalizarTexto(al.valor);
+
+      if (!clave || clave === normalizarTexto(nombre)) return false;
+
+      return (
+        todas.findIndex((x) => normalizarTexto(x.valor) === clave) === i
+      );
+    }),
 
     agregadoEn: previo?.agregadoEn || new Date().toISOString(),
     actualizadoEn: previo ? new Date().toISOString() : null
