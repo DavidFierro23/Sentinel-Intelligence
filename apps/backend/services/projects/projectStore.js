@@ -199,7 +199,42 @@ async function entidadesDe(proyectoId) {
 }
 
 
-export async function listarProyectos() {
+/*
+-----------------------------------------------------------
+CODIFICACION SOSPECHOSA
+
+U+FFFD es el caracter de reemplazo: aparece cuando unos bytes
+no eran UTF-8 valido y alguien los decodifico igualmente. Si
+esta en un registro, ese texto se corrompio ANTES de llegar aqui.
+
+Se DETECTA y se declara; no se corrige por sustitucion. Adivinar
+que decia un texto corrupto es inventar datos, y ademas taparia
+el problema de origen en lugar de mostrarlo.
+-----------------------------------------------------------
+*/
+const REEMPLAZO = "\uFFFD";
+
+function camposCorruptos(objeto) {
+  return Object.entries(objeto || {})
+    .filter(([, v]) => typeof v === "string" && v.includes(REEMPLAZO))
+    .map(([k]) => k);
+}
+
+
+export const ESTADOS = Object.freeze({
+  ACTIVO: "activo",
+  ARCHIVADO: "archivado",
+  ELIMINADO: "eliminado"
+});
+
+
+/*
+  Por defecto se listan solo los ACTIVOS. Archivados y eliminados
+  se piden explicitamente.
+*/
+export async function listarProyectos(opciones = {}) {
+  const estados = opciones.estados || [ESTADOS.ACTIVO];
+
   const entidades = await entidadesDe(CATALOGO);
 
   const proyectos = [];
@@ -207,13 +242,150 @@ export async function listarProyectos() {
   for (const e of entidades) {
     const p = await obtenerProyecto(e.entidad);
 
-    if (p) proyectos.push(p);
+    if (!p) continue;
+
+    /*
+      Los proyectos creados antes de que existieran los estados no
+      tienen campo `estado`: se tratan como activos, que es lo que
+      eran.
+    */
+    const estado = p.estado || ESTADOS.ACTIVO;
+
+    if (!estados.includes(estado)) continue;
+
+    const corruptos = camposCorruptos(p);
+
+    proyectos.push({
+      ...p,
+      estado,
+      codificacionSospechosa: corruptos.length > 0,
+      camposConCodificacionSospechosa: corruptos
+    });
   }
 
-  /* Los mas recientes primero. */
   return proyectos.sort((a, b) =>
     String(b.creadoEn || "").localeCompare(String(a.creadoEn || ""))
   );
+}
+
+
+/*
+===========================================================
+CICLO DE VIDA DEL PROYECTO
+===========================================================
+
+Todo pasa por una version nueva en el Lake, que es append-only.
+Nada se destruye: eliminar es marcar un estado, y el expediente
+sigue ahi, recuperable.
+===========================================================
+*/
+
+async function guardarProyecto(proyecto, paso) {
+  const r = await escribirEnLake(
+    {
+      entidad: proyecto.id,
+      tipoEntidad: TIPO_PROYECTO,
+      tenantId: TENANT,
+      proyectoId: CATALOGO,
+      fuente: SUBMOTOR,
+      linaje: linaje(paso),
+      datos: proyecto
+    },
+    {}
+  );
+
+  return r?.escrito === true;
+}
+
+
+/*
+  RENOMBRAR — solo el nombre visible.
+
+  El id NO cambia, y no puede cambiar: es la clave con la que el
+  Lake guarda candidatos, actores y expedientes. Cambiarlo
+  desconectaria el proyecto de todo su contenido.
+*/
+export async function renombrarProyecto(proyectoId, nombreNuevo) {
+  const proyecto = await obtenerProyecto(proyectoId);
+
+  if (!proyecto) {
+    return { renombrado: false, motivo: `no existe el proyecto ${proyectoId}` };
+  }
+
+  const nombre = String(nombreNuevo || "").trim();
+
+  if (!nombre) {
+    return { renombrado: false, motivo: "el nombre no puede quedar vacío" };
+  }
+
+  if (nombre === proyecto.nombre) {
+    return { renombrado: false, motivo: "el nombre no cambió", proyecto };
+  }
+
+  const actualizado = {
+    ...proyecto,
+
+    nombre,
+
+    /* Se conserva el anterior: el historial no se pierde. */
+    nombreAnterior: proyecto.nombre,
+
+    renombradoEn: new Date().toISOString()
+  };
+
+  const ok = await guardarProyecto(actualizado, "renombrar_proyecto");
+
+  return {
+    renombrado: ok,
+    proyecto: actualizado,
+    aviso:
+      "Solo cambió el nombre visible. El identificador, el territorio, la dignidad, los candidatos y los expedientes siguen intactos."
+  };
+}
+
+
+/*
+  CAMBIAR ESTADO — archivar, recuperar o eliminar logicamente.
+*/
+export async function cambiarEstadoProyecto(proyectoId, estado) {
+  if (!Object.values(ESTADOS).includes(estado)) {
+    return { actualizado: false, motivo: `estado no válido: ${estado}` };
+  }
+
+  const proyecto = await obtenerProyecto(proyectoId);
+
+  if (!proyecto) {
+    return { actualizado: false, motivo: `no existe el proyecto ${proyectoId}` };
+  }
+
+  const anterior = proyecto.estado || ESTADOS.ACTIVO;
+
+  const actualizado = {
+    ...proyecto,
+
+    estado,
+
+    estadoAnterior: anterior,
+
+    /* Sello del cambio, para poder auditar cuando ocurrio. */
+    [estado === ESTADOS.ARCHIVADO
+      ? "archivadoEn"
+      : estado === ESTADOS.ELIMINADO
+        ? "eliminadoEn"
+        : "recuperadoEn"]: new Date().toISOString()
+  };
+
+  const ok = await guardarProyecto(actualizado, `estado_${estado}`);
+
+  const avisos = {
+    [ESTADOS.ARCHIVADO]:
+      "Proyecto archivado. No aparece en la vista principal, y conserva candidatos, actores, expedientes y evidencias.",
+    [ESTADOS.ELIMINADO]:
+      "Proyecto eliminado de la vista. Es un borrado lógico: sus datos siguen conservados en el Knowledge Lake y se pueden recuperar.",
+    [ESTADOS.ACTIVO]: "Proyecto recuperado. Vuelve a aparecer en Mis proyectos."
+  };
+
+  return { actualizado: ok, proyecto: actualizado, aviso: avisos[estado] };
 }
 
 
@@ -310,8 +482,15 @@ export async function contenidoDeProyecto(proyectoId) {
     else candidatos.push(registro);
   }
 
+  const corruptos = camposCorruptos(proyecto);
+
   return {
-    proyecto,
+    proyecto: {
+      ...proyecto,
+      estado: proyecto.estado || ESTADOS.ACTIVO,
+      codificacionSospechosa: corruptos.length > 0,
+      camposConCodificacionSospechosa: corruptos
+    },
     candidatos,
     actores,
     metricas: {
@@ -802,10 +981,13 @@ export async function registrarInvestigacion(
 
 
 export default {
+  ESTADOS,
   crearProyecto,
   obtenerProyecto,
   listarProyectos,
   contenidoDeProyecto,
+  renombrarProyecto,
+  cambiarEstadoProyecto,
   agregarCandidato,
   obtenerCandidato,
   agregarActor,

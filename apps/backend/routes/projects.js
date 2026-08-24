@@ -10,6 +10,9 @@ import {
   obtenerProyecto,
   listarProyectos,
   contenidoDeProyecto,
+  renombrarProyecto,
+  cambiarEstadoProyecto,
+  ESTADOS,
   agregarCandidato,
   obtenerCandidato,
   agregarActor,
@@ -61,11 +64,57 @@ LISTAR PROYECTOS — lo que faltaba para que la recarga funcione
 
 router.get("/", async (req, res) => {
   try {
-    const proyectos = await listarProyectos();
+    /*
+      Por defecto solo los activos. `?estado=archivado` o
+      `?estado=eliminado` los pide explicitamente; un eliminado no
+      puede aparecer por accidente.
+    */
+    const pedido = String(req.query.estado || "").trim();
 
-    res.json({ total: proyectos.length, proyectos });
+    const estados = pedido
+      ? pedido.split(",").filter((x) => Object.values(ESTADOS).includes(x))
+      : [ESTADOS.ACTIVO];
+
+    const proyectos = await listarProyectos({ estados });
+
+    res.json({ total: proyectos.length, estados, proyectos });
   } catch (e) {
     res.status(500).json({ error: e?.message || "fallo al listar proyectos" });
+  }
+});
+
+
+/*
+-----------------------------------------------------------
+CICLO DE VIDA
+-----------------------------------------------------------
+*/
+
+router.post("/:proyectoId/renombrar", async (req, res) => {
+  try {
+    const r = await renombrarProyecto(req.params.proyectoId, req.body?.nombre);
+
+    if (!r.renombrado) return res.status(400).json(r);
+
+    res.json(r);
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo al renombrar" });
+  }
+});
+
+
+router.post("/:proyectoId/estado", async (req, res) => {
+  try {
+    const r = await cambiarEstadoProyecto(
+      req.params.proyectoId,
+      String(req.body?.estado || "")
+    );
+
+    if (!r.actualizado) return res.status(400).json(r);
+
+    res.json(r);
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo al cambiar el estado" });
   }
 });
 
