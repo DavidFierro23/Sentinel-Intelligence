@@ -7,6 +7,7 @@ import {
   Globe,
   Users,
   Layers,
+  Landmark,
   MessageSquare
 } from "lucide-react";
 
@@ -57,6 +58,17 @@ cobertura, no un análisis de discurso. El módulo de narrativas
 no existe todavía.
 ===========================================================
 */
+
+/*
+  Vocabulario de la propia plataforma. Si aparece, no es narrativa
+  del objetivo: es Sentinel hablando de si mismo.
+*/
+const VOCABULARIO_PROPIO = new Set(
+  ("correspondencia insuficiente descubierta plataforma candidata " +
+    "handle proveedor evidencia evidencias objetivo sentinel " +
+    "wikidata serpapi duckduckgo probable candidato correlacion " +
+    "confianza atribuida atribuidas inferida comprobada").split(" ")
+);
 
 const VACIAS = new Set(
   ("de la el los las un una y o en con por para del al que se su sus es " +
@@ -300,10 +312,12 @@ export default function ExecutiveDashboard({ resultado }) {
   }, [resultado]);
 
   const narrativa = useMemo(() => {
-    const titulos = [
-      ...((ficha?.evidencias?.web || []).map((e) => e.titulo || "")),
-      ...((ficha?.evidencias?.sociales || []).map((e) => e.titulo || ""))
-    ];
+    /*
+      SOLO evidencias WEB. Las sociales llevan texto generado por
+      Sentinel, y contarlo como narrativa devolvia nuestro propio
+      vocabulario: "correspondencia", "insuficiente", "descubierta".
+    */
+    const titulos = (ficha?.evidencias?.web || []).map((e) => e.titulo || "");
 
     const nombre = new Set(
       String(ficha?.nombrePrincipal || "")
@@ -320,7 +334,11 @@ export default function ExecutiveDashboard({ resultado }) {
         .replace(/[\u0300-\u036f]/g, "")
         .split(/[^a-z0-9]+/)
         .filter(
-          (p) => p.length >= 5 && !VACIAS.has(p) && !nombre.has(p)
+          (p) =>
+            p.length >= 5 &&
+            !VACIAS.has(p) &&
+            !VOCABULARIO_PROPIO.has(p) &&
+            !nombre.has(p)
         )
         .forEach((p) => cuenta.set(p, (cuenta.get(p) || 0) + 1));
     });
@@ -498,14 +516,119 @@ export default function ExecutiveDashboard({ resultado }) {
           pie="hallazgos en dominios de plataforma"
         />
 
+        {/*
+          "Con hallazgos", no "verificadas": cuenta plataformas donde
+          se encontro ALGO —incluidos medios—, que es distinto de las
+          plataformas con una cuenta atribuida al objetivo. El panel
+          de Cobertura mide eso ultimo y lo llama "Redes
+          verificadas". Dos medidas distintas no pueden compartir
+          nombre.
+        */}
         <Metrica
           icono={<Layers size={13} />}
-          titulo="Plataformas verificadas"
+          titulo="Plataformas con hallazgos"
           valor={`${verificadas}/6`}
           color={verificadas >= 4 ? "#22C55E" : "#F59E0B"}
-          pie="con presencia atribuible, de las seis obligatorias"
+          pie="con presencia detectada, propia o de terceros"
         />
       </div>
+
+      {/*
+        BLOQUE C — INSTITUCION RELACIONADA
+
+        Se muestra SOLO cuando no hay ninguna cuenta personal
+        atribuida. Es el caso medido de Pedro Palacios: aparecio
+        @MunicipioDeCuenca, el municipio que dirige, y ninguna
+        cuenta suya.
+
+        Va en su propia tarjeta y con su propia advertencia porque
+        la tentacion de tratarla como "su" cuenta es real, y seria
+        un error grave: una institucion no es una persona.
+      */}
+      {!pe?.tarjetas?.length && (pe?.instituciones || []).length > 0 && (
+        <div
+          style={{
+            ...caja,
+            marginTop: "12px",
+            borderLeft: "3px solid #22C55E"
+          }}
+        >
+          <div style={etiqueta}>
+            <Landmark size={13} />
+            Institución relacionada
+          </div>
+
+          {pe.instituciones.slice(0, 4).map((i) => (
+            <div
+              key={`${i.plataforma}-${i.handle}`}
+              style={{
+                display: "flex",
+                gap: "10px",
+                alignItems: "center",
+                flexWrap: "wrap",
+                padding: "7px 0"
+              }}
+            >
+              <span
+                style={{
+                  color: "#22C55E",
+                  fontSize: "11px",
+                  minWidth: "70px"
+                }}
+              >
+                {i.plataforma}
+              </span>
+
+              {i.url ? (
+                <a
+                  href={i.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    color: "#FFFFFF",
+                    fontSize: "12.5px",
+                    textDecoration: "none"
+                  }}
+                >
+                  @{i.handle}
+                </a>
+              ) : (
+                <span style={{ color: "#FFFFFF", fontSize: "12.5px" }}>
+                  @{i.handle}
+                </span>
+              )}
+
+              <span
+                style={{
+                  color: "var(--sentinel-texto-tenue)",
+                  fontSize: "10px",
+                  marginLeft: "auto",
+                  maxWidth: "58%",
+                  textAlign: "right"
+                }}
+              >
+                {i.motivo}
+              </span>
+            </div>
+          ))}
+
+          <div
+            style={{
+              color: "#FCD34D",
+              fontSize: "10.5px",
+              marginTop: "9px",
+              paddingTop: "9px",
+              borderTop: "1px solid var(--sentinel-borde)",
+              lineHeight: 1.65
+            }}
+          >
+            NO es una cuenta del objetivo. Es la institución con la que la
+            evidencia lo relaciona. Aparece aquí, y no entre sus cuentas,
+            precisamente para que no se confunda: una institución donde alguien
+            trabaja no es su cuenta personal.
+          </div>
+        </div>
+      )}
 
       {/* NARRATIVA DOMINANTE */}
 

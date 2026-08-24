@@ -18,7 +18,9 @@ import ReferenceProfilePanel from "./ReferenceProfilePanel";
 import SocialAccountsPanel from "./SocialAccountsPanel";
 import ExecutiveProfilePanel from "./ExecutiveProfilePanel";
 import LoadingInvestigation from "./LoadingInvestigation";
+import { recordar } from "../services/aliasMemory";
 import ExecutiveDashboard from "./ExecutiveDashboard";
+import CoverageIndexPanel from "./CoverageIndexPanel";
 import PlatformGrid from "./PlatformGrid";
 import EvidenceConfidencePanel from "./EvidenceConfidencePanel";
 
@@ -291,7 +293,8 @@ const OSINT = forwardRef(function OSINT(
               style={{
                 fontSize: "clamp(34px,4vw,50px)",
                 marginTop: "18px",
-                marginBottom: "14px"
+                marginBottom: "14px",
+                color: "#FFFFFF"
               }}
             >
               {resultado.objetivo}
@@ -365,6 +368,16 @@ const OSINT = forwardRef(function OSINT(
               porque los medios no estan en esta lista: el
               clasificador los separo antes de llegar aqui.
             */}
+            {/*
+              Bloque A — la cobertura abre el informe: antes de leer
+              un hallazgo conviene saber si el expediente esta
+              completo.
+            */}
+            <CoverageIndexPanel
+              resultado={resultado}
+              alias={recordar(resultado.fichaObjetivo?.nombrePrincipal)}
+            />
+
             <ExecutiveDashboard resultado={resultado} />
 
             <ExecutiveProfilePanel perfil={resultado.perfilEjecutivo} />

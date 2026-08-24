@@ -76,6 +76,26 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ---- TITULARES ----
+
+   index.css, heredado de la plantilla, define
+   `h1, h2 { color: var(--text-h) }`, y en modo CLARO ese color es
+   oscuro. Sobre las superficies azul marino de Sentinel el titular
+   quedaba practicamente invisible.
+
+   Se detecto capturando la interfaz en headless, que arranca en
+   modo claro: "Daniel Noboa" no se leia en su propia tarjeta de
+   objetivo. Un usuario con el sistema en tema claro veia lo mismo.
+
+   La interfaz de Sentinel es oscura siempre, asi que el color de
+   titular lo fija el tema y no la preferencia del sistema. */
+
+h1,
+h2,
+h3 {
+  color: var(--sentinel-texto);
+}
+
 /* ===========================================================
    MICROINTERACCIONES
 

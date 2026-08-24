@@ -76,8 +76,61 @@ const SUBSISTEMAS = [
 
 const NO_MEDIDAS = ["S3", "S4", "S5"];
 
+function Campo({ k, v }) {
+  return (
+    <div style={{ fontSize: "11px", lineHeight: 1.7 }}>
+      <strong style={{ color: "var(--sentinel-cyan)" }}>{k}:</strong>{" "}
+      <span style={{ color: "var(--sentinel-texto-suave)" }}>{v}</span>
+    </div>
+  );
+}
+
+/*
+  La fuente de cada bloque sale de la corroboracion real de la
+  cuenta, no de una etiqueta fija: si Wikidata no la declaro, se
+  dice que no la declaro.
+*/
+function fuenteDe(bloque, cuenta) {
+  const proveedores = cuenta?.corroboracion?.proveedores || [];
+
+  if (bloque.id === "wikidata") {
+    const wd = proveedores.filter((x) => /wikidata/i.test(x));
+
+    return wd.length
+      ? wd.join(", ")
+      : "Wikidata no declara esta cuenta: el aporte es cero.";
+  }
+
+  if (bloque.id === "serpapi") {
+    const web = proveedores.filter((x) => !/wikidata/i.test(x));
+
+    return web.length ? web.join(", ") : "ningún proveedor web la devolvió.";
+  }
+
+  if (bloque.id === "sd1a") {
+    return `clasificador de URL sobre ${
+      cuenta?.url?.observada || cuenta?.url?.canonica || "la URL descubierta"
+    }`;
+  }
+
+  return "Context Boost sobre el texto observado de la cuenta.";
+}
+
+function fechaDe(cuenta) {
+  const f =
+    cuenta?.descubiertoEn ||
+    (cuenta?.origenes || [])[0]?.registradoEn ||
+    cuenta?.linaje?.registradoEn ||
+    null;
+
+  return f ? String(f).slice(0, 19).replace("T", " ") : "no registrada";
+}
+
 export default function EvidenceConfidencePanel({ cuentas = [] }) {
   const [abierta, setAbierta] = useState(0);
+
+  /* Bloque E — que barra tiene el detalle desplegado. */
+  const [expandido, setExpandido] = useState(null);
 
   /* Solo las cuentas atribuidas, ordenadas por su puntuación. */
   const ordenadas = useMemo(
@@ -258,12 +311,20 @@ export default function EvidenceConfidencePanel({ cuentas = [] }) {
 
       {bloques.map((b) => (
         <div key={b.id} style={{ marginBottom: "13px" }}>
-          <div
+          <button
+            onClick={() => setExpandido(expandido === b.id ? null : b.id)}
+            aria-expanded={expandido === b.id}
             style={{
               display: "flex",
               justifyContent: "space-between",
               alignItems: "baseline",
-              gap: "10px"
+              gap: "10px",
+              width: "100%",
+              background: "transparent",
+              border: "none",
+              padding: 0,
+              cursor: "pointer",
+              textAlign: "left"
             }}
           >
             <span
@@ -301,8 +362,17 @@ export default function EvidenceConfidencePanel({ cuentas = [] }) {
             >
               {b.puntos > 0 ? "+" : ""}
               {b.puntos}
+              <span
+                style={{
+                  color: "var(--sentinel-texto-tenue)",
+                  fontSize: "10px",
+                  marginLeft: "7px"
+                }}
+              >
+                {expandido === b.id ? "ocultar" : "detalle"}
+              </span>
             </strong>
-          </div>
+          </button>
 
           <div
             style={{
@@ -335,29 +405,131 @@ export default function EvidenceConfidencePanel({ cuentas = [] }) {
             {b.quePone}
           </div>
 
-          {/* Señales que componen el bloque, activas y no activas. */}
-          {b.detalle.length > 0 && (
-            <div style={{ marginTop: "6px" }}>
-              {b.detalle.map((s) => (
-                <div
-                  key={s.id}
-                  style={{
-                    color: s.activa
-                      ? "var(--sentinel-texto-suave)"
-                      : "var(--sentinel-texto-tenue)",
-                    fontSize: "10px",
-                    paddingLeft: "10px",
-                    borderLeft: `2px solid ${
-                      s.activa ? b.color : "var(--sentinel-borde)"
-                    }`,
-                    marginBottom: "3px",
-                    lineHeight: 1.55
-                  }}
-                >
-                  <strong>{s.id}</strong> {s.nombre} ·{" "}
-                  {s.activa ? `+${s.puntos}` : "no activa"} — {s.detalle}
+          {/*
+            BLOQUE E — DETALLE AUDITABLE
+
+            Se despliega bajo demanda con la evidencia utilizada, la
+            fecha, la fuente, la contribucion y el motivo. Nada de
+            esto se calcula aqui: son los campos que el motor ya
+            emitio para cada senal.
+          */}
+          {expandido === b.id && (
+            <div
+              className="sentinel-fade"
+              style={{
+                marginTop: "10px",
+                padding: "12px",
+                background: "var(--sentinel-surface)",
+                border: `1px solid ${b.color}44`,
+                borderRadius: "var(--radio-s)"
+              }}
+            >
+              <Campo k="Contribución" v={`${b.puntos > 0 ? "+" : ""}${b.puntos} puntos de la puntuación final`} />
+
+              <Campo k="Fuente" v={fuenteDe(b, cuenta)} />
+
+              <Campo k="Fecha" v={fechaDe(cuenta)} />
+
+              <Campo k="Motivo" v={b.quePone} />
+
+              {b.veredicto && (
+                <Campo k="Veredicto de contexto" v={b.veredicto} />
+              )}
+
+              {b.detalle.length > 0 && (
+                <div style={{ marginTop: "10px" }}>
+                  <div
+                    style={{
+                      color: "var(--sentinel-cyan)",
+                      fontSize: "9.5px",
+                      letterSpacing: "1.4px",
+                      textTransform: "uppercase",
+                      marginBottom: "7px"
+                    }}
+                  >
+                    Evidencia utilizada
+                  </div>
+
+                  {b.detalle.map((s) => (
+                    <div
+                      key={s.id}
+                      style={{
+                        color: s.activa
+                          ? "var(--sentinel-texto-suave)"
+                          : "var(--sentinel-texto-tenue)",
+                        fontSize: "10.5px",
+                        paddingLeft: "10px",
+                        borderLeft: `2px solid ${
+                          s.activa ? b.color : "var(--sentinel-borde)"
+                        }`,
+                        marginBottom: "6px",
+                        lineHeight: 1.6
+                      }}
+                    >
+                      <strong>{s.id}</strong> {s.nombre} ·{" "}
+                      {s.activa ? `+${s.puntos}` : "no activa"}
+                      <div>{s.detalle}</div>
+                      {s.evidencias?.length > 0 && (
+                        <div
+                          style={{
+                            color: "var(--sentinel-texto-tenue)",
+                            fontSize: "9.5px",
+                            marginTop: "2px"
+                          }}
+                        >
+                          evidencias: {s.evidencias.join(" · ")}
+                        </div>
+                      )}
+                      {s.limitacion && (
+                        <div
+                          style={{
+                            color: "#FCD34D",
+                            fontSize: "9.5px",
+                            marginTop: "2px"
+                          }}
+                        >
+                          límite: {s.limitacion}
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
+
+              {b.id === "cb1" && cb && (
+                <div style={{ marginTop: "10px" }}>
+                  {(cb.bonificaciones || []).length > 0 && (
+                    <div
+                      style={{
+                        color: "#22C55E",
+                        fontSize: "10px",
+                        lineHeight: 1.6
+                      }}
+                    >
+                      a favor:{" "}
+                      {cb.bonificaciones
+                        .map((x) => `${x.termino} (+${x.puntos})`)
+                        .join(", ")}
+                    </div>
+                  )}
+
+                  {(cb.penalizaciones || []).length > 0 && (
+                    <div
+                      style={{
+                        color: "#EF4444",
+                        fontSize: "10px",
+                        lineHeight: 1.6,
+                        marginTop: "4px"
+                      }}
+                    >
+                      en contra:{" "}
+                      {cb.penalizaciones
+                        .map((x) => `${x.termino} (${x.puntos})`)
+                        .join(", ")}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

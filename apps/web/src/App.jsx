@@ -33,6 +33,35 @@ Dos decisiones que conviene dejar escritas:
 
 const BACKEND = "http://localhost:3001";
 
+/*
+-----------------------------------------------------------
+BLOQUE D — CONSULTA DESDE LA URL
+
+  /?q=Daniel+Noboa
+  /investigacion?q=Daniel+Noboa
+
+Se lee una sola vez, al arrancar. Sirve para compartir una
+investigacion, para que el QA sea reproducible y para capturar
+pantallas sin conducir la interfaz a mano.
+
+No cambia el motor: rellena el buscador y dispara el MISMO
+handle que usa el boton, que sigue siendo la unica puerta al
+Discovery Engine.
+-----------------------------------------------------------
+*/
+function consultaDeLaUrl() {
+  try {
+    const p = new URLSearchParams(window.location.search);
+
+    /* Se admite q y tambien objetivo, por comodidad. */
+    const v = p.get("q") || p.get("objetivo") || "";
+
+    return v.replace(/\+/g, " ").trim();
+  } catch {
+    return "";
+  }
+}
+
 function Reservado({ titulo, descripcion, definidoEn, requiere }) {
   return (
     <section
@@ -118,7 +147,7 @@ function Reservado({ titulo, descripcion, definidoEn, requiere }) {
 export default function App() {
   const [modulo, setModulo] = useState("investigaciones");
 
-  const [consulta, setConsulta] = useState("");
+  const [consulta, setConsulta] = useState(consultaDeLaUrl);
 
   /*
     Handle de la investigacion. El buscador del Header lo invoca;
@@ -172,6 +201,44 @@ export default function App() {
       vigente = false;
       clearInterval(id);
     };
+  }, []);
+
+  /*
+    Disparo automatico del deep link. Se hace en un efecto porque
+    depende de que OSINT ya este montado para exponer su handle, y
+    se marca con un ref para que no se repita en cada render.
+  */
+  const deepLinkLanzado = useRef(false);
+
+  useEffect(() => {
+    if (deepLinkLanzado.current) return;
+
+    const inicial = consultaDeLaUrl();
+
+    if (!inicial) return;
+
+    deepLinkLanzado.current = true;
+
+    /*
+      No hace falta cambiar de modulo: "investigaciones" ya es el
+      inicial. Llamar a setModulo aqui provocaria un render en
+      cascada sin ganar nada.
+    */
+
+    /*
+      SIN setTimeout, y por un motivo concreto.
+
+      La primera version programaba el disparo con setTimeout y lo
+      cancelaba en la limpieza del efecto. En StrictMode React
+      ejecuta cada efecto DOS veces: la primera pasada programaba
+      el disparo, la limpieza lo cancelaba, y la segunda salia
+      antes por el flag. Resultado medido: el buscador se rellenaba
+      con el nombre y la investigacion nunca arrancaba.
+
+      No hace falta esperar: cuando este efecto corre, los hijos ya
+      estan montados y el handle de OSINT existe.
+    */
+    if (osintRef.current) osintRef.current.buscar();
   }, []);
 
   const lanzar = useCallback(() => {
