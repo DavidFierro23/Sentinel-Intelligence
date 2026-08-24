@@ -1078,7 +1078,7 @@ esa plataforma llego a ATRIBUIRSE, que es lo que el
 `estadoPresencia` por si solo no distingue.
 -----------------------------------------------------------
 */
-function coberturaNormalizada(resultado, consultas) {
+function coberturaNormalizada(resultado, consultas, descartadas) {
   const cobertura = resultado?.social?.cobertura || [];
 
   const atribuidas = resultado?.perfilEjecutivo?.tarjetas || [];
@@ -1092,40 +1092,103 @@ function coberturaNormalizada(resultado, consultas) {
 
     const conExito = lanzadas.filter((q) => q.estado === "OK");
 
+    /*
+      RESULTADOS DEVUELTOS por el buscador para esta plataforma.
+      Es el dato que faltaba: sin el no se distingue "la consulta
+      volvio vacia" de "volvio con diez enlaces y ninguno era un
+      perfil".
+    */
+    const resultados = conExito.reduce(
+      (n, q) => n + (Number.isFinite(q.resultados) ? q.resultados : 0),
+      0
+    );
+
+    const descartesDeLaPlataforma = (descartadas || []).filter(
+      (d) =>
+        d.plataformaId === c.plataformaId ||
+        (d.plataforma &&
+          normalizarTexto(d.plataforma) === normalizarTexto(c.plataforma))
+    );
+
     const nAtribuidas = atribuidas.filter(
       (t) => (t.plataformaId || t.platform) === c.plataformaId
     ).length;
 
     let estado;
 
+    let explicacion;
+
     if (nAtribuidas > 0) {
       estado = ESTADOS_PLATAFORMA.ATRIBUIDA;
+      explicacion = `${nAtribuidas} cuenta(s) atribuida(s) al objetivo.`;
     } else if ((c.candidatos || 0) > 0) {
       /*
-        Se encontro algo y no paso el clasificador. Es el caso
-        que interesa mirar: aqui vive la perdida, si la hay.
+        Se encontraron cuentas y ninguna paso el clasificador.
+        Aqui vive la perdida del matcher, si la hay.
       */
       estado = ESTADOS_PLATAFORMA.ENCONTRADA_NO_ATRIBUIDA;
+      explicacion = `${c.candidatos} candidato(s) encontrado(s), ninguno atribuido.`;
+    } else if (resultados > 0 || descartesDeLaPlataforma.length > 0) {
+      /*
+        ---------------------------------------------------------
+        BUG-15 — EL BUSCADOR SI DEVOLVIO ALGO
+        ---------------------------------------------------------
+
+        Antes esto caia en BUSCADA_SIN_RESULTADO, que afirma algo
+        distinto y mas fuerte: que no habia nada. En la reprueba
+        real Instagram devolvio DIEZ enlaces —todos publicaciones
+        y reels— y quedo etiquetada como si la busqueda hubiera
+        vuelto vacia.
+
+        Son dos hechos distintos:
+
+            no habia nada                    ausencia
+            habia contenido, no perfiles     no atribuible
+
+        Colapsarlos es exactamente lo que el contrato de cinco
+        estados existe para evitar. El descarte y su motivo van
+        adjuntos para que se pueda leer por que.
+        ---------------------------------------------------------
+      */
+      estado = ESTADOS_PLATAFORMA.ENCONTRADA_NO_ATRIBUIDA;
+      explicacion = `El buscador devolvió ${resultados} resultado(s) y ${descartesDeLaPlataforma.length} URL(s) se descartaron por no identificar una cuenta. No se encontró ningún perfil atribuible; no es una ausencia.`;
     } else if (conExito.length > 0) {
       estado = ESTADOS_PLATAFORMA.BUSCADA_SIN_RESULTADO;
+      explicacion = "Se consultó correctamente y el buscador no devolvió resultados.";
     } else if (lanzadas.length > 0) {
       estado = ESTADOS_PLATAFORMA.ERROR_PROVIDER;
+      explicacion = `Se intentó consultar y el proveedor no respondió (${[
+        ...new Set(lanzadas.map((q) => q.estado).filter(Boolean))
+      ].join(", ")}). No se puede afirmar ausencia.`;
     } else {
       estado = ESTADOS_PLATAFORMA.NO_EJECUTADA;
+      explicacion = "No se lanzó ninguna consulta para esta plataforma.";
     }
 
     return {
       plataformaId: c.plataformaId,
       plataforma: c.plataforma,
       estado,
+      explicacion,
+
       atribuidas: nAtribuidas,
       candidatos: c.candidatos || 0,
+
+      /* El dato que faltaba, expuesto. */
+      resultadosDelBuscador: resultados,
+
+      urlsDescartadas: descartesDeLaPlataforma.length,
+      motivosDeDescarte: [
+        ...new Set(descartesDeLaPlataforma.map((d) => d.motivo).filter(Boolean))
+      ].slice(0, 5),
+
       consultasPlanificadas: deLaPlataforma.length,
       consultasLanzadas: lanzadas.length,
       consultasConExito: conExito.length,
       estadosDeProveedor: [
         ...new Set(lanzadas.map((q) => q.estado).filter(Boolean))
       ],
+
       /* El motivo que ya redactaba el Discovery, sin reescribirlo. */
       motivo: c.motivoCobertura || null,
       estadoPresencia: c.estadoPresencia || null,
@@ -1147,75 +1210,164 @@ aporto.
 -----------------------------------------------------------
 */
 function candidatosSociales(resultado) {
-  const pe = resultado?.perfilEjecutivo || null;
+  /*
+    -----------------------------------------------------------
+    LA FUENTE REAL — BUG-15
+    -----------------------------------------------------------
 
-  const descubiertos = resultado?.social?.candidatos || [];
+    La primera version leia `resultado.social.candidatos`, que NO
+    EXISTE: `socialIntelligenceLayer` devuelve `fichas`, no
+    `candidatos`. La lista salia vacia siempre, y en la reprueba
+    real de Lloret se perdieron los motivos de 24 rechazos de 26
+    candidatos. Un campo mal elegido convirtio la traza en un
+    formulario en blanco.
 
-  /* Veredicto por clave, desde las listas ya normalizadas. */
-  const veredicto = new Map();
+    La fuente correcta es `clasificacionCuentas`, y es la mejor
+    porque trae las dos mitades en el mismo objeto:
 
-  const registrar = (lista, aceptado, clase) => {
+        el VEREDICTO      clasificacion.clase y sus razones
+        la PROCEDENCIA    origenes, vias, proveedores
+
+    Sus cuatro grupos son el grupo completo de candidatos ya
+    clasificados. `social.fichas` queda como respaldo para el
+    caso en que la clasificacion no llegue a construirse.
+
+    Aqui NO se clasifica nada: solo se preserva lo que el motor
+    ya decidio.
+    -----------------------------------------------------------
+  */
+  const cl = resultado?.clasificacionCuentas || null;
+
+  const grupos = cl
+    ? [
+        { lista: cl.cuentasObjetivo, aceptado: true, clase: "cuenta_personal" },
+        { lista: cl.medios, aceptado: false, clase: "medio" },
+        { lista: cl.instituciones, aceptado: false, clase: "institucion" },
+        { lista: cl.indeterminadas, aceptado: false, clase: "no_determinado" }
+      ]
+    : [
+        /*
+          Respaldo: sin clasificacion no hay veredicto, y se dice
+          en el motivo en lugar de dejarlo en blanco.
+          `social.candidatos` se conserva por si una version
+          futura del layer lo expone.
+        */
+        {
+          lista: resultado?.social?.fichas || resultado?.social?.candidatos || [],
+          aceptado: null,
+          clase: null
+        }
+      ];
+
+  const url = (c) => c?.url?.canonica || c?.url?.original || c?.url || null;
+
+  const score = (c) =>
+    c?.correspondencia?.puntuacion ?? (
+      typeof c?.correspondencia === "number" ? c.correspondencia : null
+    );
+
+  const filas = [];
+
+  grupos.forEach(({ lista, aceptado, clase }) => {
     (lista || []).forEach((c) => {
-      veredicto.set(claveCuenta(c), {
-        aceptado,
-        clase,
-        motivo: c.motivo || c.motivoClase || null,
-        score: c.correspondencia ?? null,
-        nivel: c.nivel || null
+      const origenes = c.origenes || [];
+
+      const razones = c.clasificacion?.razones || [];
+
+      filas.push({
+        plataforma: c.plataforma || null,
+        plataformaId: c.plataformaId || c.platform || null,
+        url: url(c),
+        handle: c.handle || null,
+        displayName: c.nombreVisible || c.nombreObservado || null,
+
+        /* ---- veredicto, tal como lo dejo el motor ---- */
+        aceptado: aceptado === null ? null : aceptado,
+        clase: c.clasificacion?.clase || clase,
+        score: score(c),
+        nivelCorrespondencia: c.correspondencia?.nivel || null,
+
+        motivo:
+          razones[0] ||
+          c.clasificacion?.motivoSeparacion ||
+          c.correspondencia?.explicacion?.resumen ||
+          (aceptado === null
+            ? "La clasificación no llegó a construirse en esta ejecución."
+            : null),
+
+        razones,
+
+        /* ---- procedencia ---- */
+        origenes,
+        vias: c.vias || c.corroboracion?.vias || [],
+
+        /*
+          El consolidador no propaga `viasDeclaradas`, pero SI
+          propaga los origenes con su marca, asi que se deriva de
+          ahi. Es la misma razon por la que la procedencia del
+          analista se calcula y no se lee: el dato existe, solo
+          hay que mirarlo donde esta.
+        */
+        viasDeclaradas:
+          c.viasDeclaradas && c.viasDeclaradas.length
+            ? c.viasDeclaradas
+            : [
+                ...new Set(
+                  origenes
+                    .filter((o) => o.noCuentaComoCorroboracion === true)
+                    .map((o) => o.via)
+                    .filter(Boolean)
+                )
+              ],
+        proveedores: c.proveedores || c.corroboracion?.proveedores || [],
+
+        corroboracion: c.corroboracion
+          ? {
+              proveedores: c.corroboracion.proveedores || [],
+              totalProveedores: c.corroboracion.totalProveedores ?? null,
+              multiProveedor: c.corroboracion.multiProveedor ?? null,
+              vias: c.corroboracion.vias || [],
+              multiVia: c.corroboracion.multiVia ?? null
+            }
+          : null,
+
+        consultas: [
+          ...new Set(origenes.map((o) => o.consulta).filter(Boolean))
+        ],
+
+        /*
+          Procedencia del analista. Se deriva de los origenes y no
+          de una bandera que el consolidador podria no propagar:
+          las fichas no llevan `aportadaPorAnalista`, pero si
+          llevan los origenes con su marca.
+        */
+        origen: origenes.some((o) => o.origen === "analista")
+          ? "analista"
+          : "sentinel",
+        aportadaPorAnalista: origenes.some((o) => o.origen === "analista"),
+        noCuentaComoCorroboracion: origenes.some(
+          (o) => o.noCuentaComoCorroboracion === true
+        )
       });
     });
-  };
-
-  registrar(pe?.tarjetas, true, "cuenta_personal");
-  registrar(pe?.medios, false, "medio");
-  registrar(pe?.instituciones, false, "institucion");
-  registrar(pe?.indeterminadas, false, "no_determinado");
-
-  const filas = descubiertos.map((c) => {
-    const v = veredicto.get(claveCuenta(c)) || null;
-
-    return {
-      plataforma: c.plataforma || null,
-      plataformaId: c.plataformaId || null,
-      url: c.url || null,
-      handle: c.handle || null,
-      displayName: c.nombreVisible || null,
-
-      /* De donde salio. */
-      vias: c.vias || [],
-      viasDeclaradas: c.viasDeclaradas || [],
-      origen: c.aportadaPorAnalista ? "analista" : "sentinel",
-      aportadaPorAnalista: c.aportadaPorAnalista === true,
-      proveedores: c.proveedores || [],
-      consultas: [
-        ...new Set(
-          (c.origenes || []).map((o) => o.consulta).filter(Boolean)
-        )
-      ],
-
-      /* Veredicto. */
-      aceptado: v ? v.aceptado : false,
-      clase: v ? v.clase : null,
-      score: v ? v.score : null,
-      nivelCorrespondencia: v ? v.nivel : null,
-      motivo: v
-        ? v.motivo
-        : "No apareció en ninguna lista clasificada del perfil ejecutivo."
-    };
   });
 
   /*
     URLs de plataforma que SD-1A descarto antes de llegar a ser
-    candidatas: un post, un vídeo, una ruta sin propietario. Se
-    guardan aparte porque su motivo es de otra naturaleza.
+    candidatas: un post, un reel, una ruta sin propietario. Se
+    guardan aparte porque su motivo es de otra naturaleza —la URL
+    no identifica una cuenta— y porque son la explicacion de que
+    una plataforma devuelva resultados y ningun perfil.
   */
-  const descartadasPorUrl = (resultado?.social?.descubrimiento?.descartados || [])
-    .map((d) => ({
-      url: d.url || d.enlace || null,
-      plataforma: d.plataforma?.nombre || d.plataforma || null,
-      motivo: d.motivo || d.motivoDescarte || null,
-      tipoUrl: d.tipo || null
-    }));
+  const descartadasPorUrl = (
+    resultado?.social?.descubrimiento?.descartados || []
+  ).map((d) => ({
+    url: d.url || d.enlace || null,
+    plataforma: d.plataforma?.nombre || d.plataforma || null,
+    plataformaId: d.plataformaId || d.plataforma?.id || null,
+    motivo: d.motivo || d.motivoDescarte || null,
+    tipoUrl: d.tipo || d.tipoUrl || null
+  }));
 
   return { filas, descartadasPorUrl };
 }
@@ -1283,9 +1435,14 @@ function resumirExpediente(resultado) {
   */
   const consultas = consultasDeLaInvestigacion(resultado);
 
-  const cobertura = coberturaNormalizada(resultado, consultas);
-
   const { filas: sociales, descartadasPorUrl } = candidatosSociales(resultado);
+
+  /*
+    La cobertura necesita los descartes: son la unica forma de
+    explicar que una plataforma devuelva resultados y ningun
+    perfil.
+  */
+  const cobertura = coberturaNormalizada(resultado, consultas, descartadasPorUrl);
 
   return {
     /*

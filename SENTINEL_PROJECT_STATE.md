@@ -1572,6 +1572,126 @@ historico.
 
 ---
 
+## 18-decies. Hotfix BUG-15 — traza fiel (2026-08-24)
+
+Commit `fix(projects): preserve social candidate rejection trace`.
+Objetivo: hacer fiel la traza existente. Nada mas. No se toco el Matcher, ni
+los umbrales, ni el presupuesto, ni los proveedores, ni la clasificacion.
+
+### 1 · La fuente real de los candidatos
+
+`candidatosSociales()` leia `resultado.social.candidatos`, campo que
+`socialIntelligenceLayer` **no expone** —devuelve `fichas`—. La lista salia
+vacia siempre: en la reprueba real se perdieron los motivos de **24 rechazos
+de 26 candidatos**. Un campo mal elegido convirtio la traza en un formulario
+en blanco.
+
+Ahora se lee **`resultado.clasificacionCuentas`**, que es la mejor fuente
+porque trae las dos mitades en el mismo objeto:
+
+| | |
+|---|---|
+| el **veredicto** | `clasificacion.clase` y sus razones |
+| la **procedencia** | `origenes`, `vias`, `proveedores`, `corroboracion` |
+
+Sus cuatro grupos —`cuentasObjetivo`, `medios`, `instituciones`,
+`indeterminadas`— son el grupo completo ya clasificado. `social.fichas` queda
+como respaldo si la clasificacion no llega a construirse, y en ese caso el
+motivo lo dice en lugar de quedarse en blanco.
+
+Se persiste por candidato: plataforma, URL, handle, displayName, provider,
+query de origen, score, aceptado/rechazado, motivo, `origenes`, `vias`,
+`corroboracion` y procedencia del analista.
+
+**Dos campos que el consolidador no propaga se DERIVAN de los origenes**, en
+lugar de darlos por perdidos: `aportadaPorAnalista`
+(`origenes.some(o => o.origen === "analista")`) y `viasDeclaradas` (los
+origenes marcados `noCuentaComoCorroboracion`). El dato existe; solo habia que
+mirarlo donde esta.
+
+**No se cambio como se clasifica.** Solo se preserva lo que el motor ya
+decidio.
+
+### 2 · Estados de cobertura corregidos
+
+`coberturaNormalizada()` decidia `BUSCADA_SIN_RESULTADO` mirando solo si hubo
+consulta con exito y cero candidatos, **sin mirar los resultados**. Instagram
+devolvio DIEZ enlaces —todos publicaciones y reels— y quedo etiquetada como si
+la busqueda hubiera vuelto vacia.
+
+Son dos hechos que no se pueden colapsar:
+
+    no habia nada                  ausencia
+    habia contenido, no perfiles   no atribuible
+
+Ahora la normalizacion cuenta `resultadosDelBuscador` y los descartes de nivel
+URL:
+
+| Caso | Estado |
+|---|---|
+| hay cuenta atribuida | `ATRIBUIDA` |
+| hay candidatos, ninguno atribuido | `ENCONTRADA_NO_ATRIBUIDA` |
+| **hubo resultados o descartes, ningun perfil** | `ENCONTRADA_NO_ATRIBUIDA` |
+| consulta OK y **cero** resultados | `BUSCADA_SIN_RESULTADO` |
+| consulta lanzada y proveedor no respondio | `ERROR_PROVIDER` |
+| ninguna consulta lanzada | `NO_EJECUTADA` |
+
+Cada fila lleva ahora `resultadosDelBuscador`, `urlsDescartadas`,
+`motivosDeDescarte` y una `explicacion` en palabras. Para Instagram:
+*«El buscador devolvió 10 resultado(s) y 3 URL(s) se descartaron por no
+identificar una cuenta. No se encontró ningún perfil atribuible; no es una
+ausencia.»*
+
+Instagram y TikTok pasan a `ENCONTRADA_NO_ATRIBUIDA` con sus descartes y
+motivos visibles. **Nunca se afirma que la plataforma «no exista» para el
+objetivo.**
+
+### 3 · Los fixtures anteriores probaban una suposicion
+
+Al aplicar el patch, tres pruebas de `traza.test.mjs` fallaron. No era una
+regresion: aquellos fixtures se habian escrito contra `perfilEjecutivo`, que
+es una **proyeccion para la interfaz**, en lugar de contra
+`clasificacionCuentas`, que es la estructura del motor.
+
+Es la misma raiz del bug. El test confirmaba mi suposicion y pasaba en verde
+mientras la traza real salia vacia. Se reescribieron los fixtures con la forma
+real —cada cuenta con `origenes`, `vias`, `proveedores`, `corroboracion`,
+`correspondencia` y `clasificacion`— y las aserciones se **reforzaron**, no se
+debilitaron. Un fixture que no se parece a la realidad no prueba nada.
+
+### 4 · Pruebas
+
+`tests/cobertura.test.mjs` — **25 comprobaciones**. Ejercitan los cinco
+estados, uno por uno, con el caso que a cada uno le corresponde:
+
+- **LinkedIn obligatorio**: los 2 candidatos sobreviven con score 18 y 6,
+  motivo exacto de rechazo, provider, query, `origenes`, `vias`,
+  `corroboracion` y `displayName`.
+- Instagram con 10 resultados y 0 perfiles → `ENCONTRADA_NO_ATRIBUIDA`, con
+  aserción explicita de que **no** es `BUSCADA_SIN_RESULTADO`.
+- TikTok con 1 resultado de otra persona → idem.
+- **YouTube con consulta OK y cero resultados → `BUSCADA_SIN_RESULTADO`**: la
+  contraparte. Si esta fallara, el patch habria eliminado el estado en lugar
+  de arreglarlo.
+- Proveedor bloqueado → `ERROR_PROVIDER`. Consulta no lanzada →
+  `NO_EJECUTADA`.
+- La referencia del analista: origen analista, cero proveedores, cero vias
+  corroborantes, `noCuentaComoCorroboracion`, y su via declarada visible
+  aparte. Y una cuenta hallada por proveedor **si** conserva su corroboracion.
+
+Suite completa: **292 comprobaciones, 0 fallos** (antes 267). Sin red. Lake
+real intacto en 83 entradas. Lint del frontend sin cambios: los 6
+preexistentes de BUG-01 y BUG-02.
+
+### Estado
+
+| | |
+|---|---|
+| **BUG-15** | **CERRADO POR CODIGO/TEST**, pendiente confirmacion real |
+| **P-CAND-01** | **EN ULTIMA REPRUEBA REAL** |
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -1649,7 +1769,7 @@ es del analista.
 | BUG-05 | Media | `KnowledgeGraph.jsx` | Grafo radial: no hay relaciones entre nodos | Abierto | No | Aristas cuenta↔medio y cuenta↔cuenta |
 | BUG-06 | Baja | `PlausibleIdentitiesPanel.jsx` | «Investigar esta identidad» presente sin acción conectada | Abierto | No | Conectar reinvestigación con la evidencia del grupo |
 | BUG-07 | Media | `projects/projectContext.js:134` | `nivelPorDefecto` compara contra `prefectura` / `presidencia` (el cargo), pero el analista escribe `Prefecto` / `Presidente` / `Asambleísta` (la persona). **Todas** las dignidades en forma personal caen a `cantonal`, y en un proyecto provincial o nacional sin `nivel` declarado la provincia o el país se quedan en fuerza 6 —por debajo del umbral de evidencia— y **no llegan a ser ancla**. Detectado en LÍNEA A (§18-bis) | Abierto, **no corregido: fuera de la autorización L-1/L-2/L-3** | No | Aceptar la forma personal de cada dignidad, o exigir `nivel` explícito en el formulario |
-| BUG-15 | **Alta** | `services/projects/projectStore.js` `candidatosSociales` / `coberturaNormalizada` | Dos defectos de fidelidad de la traza. **(1)** `candidatosSociales()` lee `resultado.social.candidatos`, campo que `socialIntelligenceLayer` no expone —devuelve `fichas`—, asi que la lista de candidatos y sus motivos de rechazo sale SIEMPRE vacia: en la reprueba real, 24 de 26 candidatos rechazados sin motivo registrado. **(2)** `coberturaNormalizada()` decide `BUSCADA_SIN_RESULTADO` mirando solo si hubo consulta con exito y cero candidatos, sin mirar los RESULTADOS: Instagram devolvio 10 resultados —todos publicaciones, no perfiles— y quedo etiquetada como si la busqueda hubiera vuelto vacia. Colapsa «no habia nada» con «habia contenido, no perfiles», que es lo que el contrato de cinco estados existe para evitar. Detectado en §18-nonies | Abierto, **es el patch siguiente** | **Si: sin esto no se puede decidir si el matcher pierde cuentas** | Leer `social.fichas` y derivar la procedencia de `origenes`; contar resultados en la normalizacion |
+| BUG-15 | **Alta** | `services/projects/projectStore.js` `candidatosSociales` / `coberturaNormalizada` | **CERRADO POR CODIGO/TEST** (§18-decies), pendiente confirmacion real. Descripcion original: | Dos defectos de fidelidad de la traza. **(1)** `candidatosSociales()` lee `resultado.social.candidatos`, campo que `socialIntelligenceLayer` no expone —devuelve `fichas`—, asi que la lista de candidatos y sus motivos de rechazo sale SIEMPRE vacia: en la reprueba real, 24 de 26 candidatos rechazados sin motivo registrado. **(2)** `coberturaNormalizada()` decide `BUSCADA_SIN_RESULTADO` mirando solo si hubo consulta con exito y cero candidatos, sin mirar los RESULTADOS: Instagram devolvio 10 resultados —todos publicaciones, no perfiles— y quedo etiquetada como si la busqueda hubiera vuelto vacia. Colapsa «no habia nada» con «habia contenido, no perfiles», que es lo que el contrato de cinco estados existe para evitar. Detectado en §18-nonies | Abierto, **es el patch siguiente** | **Si: sin esto no se puede decidir si el matcher pierde cuentas** | Leer `social.fichas` y derivar la procedencia de `origenes`; contar resultados en la normalizacion |
 | BUG-14 | Media | `services/projects/projectStore.js` `resumirExpediente` / diferencial | `clavesCuenta` —la clave con la que el diferencial deduplica hallazgos— se deriva de `clasificacionCuentas.cuentasObjetivo`, mientras `cuentas` viene de `perfilEjecutivo.tarjetas`. Dos fuentes para la misma cosa: si divergen, el delta de cuentas sale mal. Detectado al implementar BUG-13 (§18-octies) | Abierto, **preexistente, declarado y no corregido**: tocarlo era cambiar la deduplicacion, excluida de la autorizacion | No | Derivar ambas de la misma fuente |
 | BUG-13 | **Alta** | `services/projects/projectStore.js` `registrarInvestigacion` | **CERRADO POR CODIGO/TEST** (§18-octies), pendiente confirmacion real. Descripcion original: | La guarda `sinCambios` omite `escribirEnLake` cuando coinciden tres campos del resumen (claves de cuenta, numero de medios, evidencias web). Tras el patch de BUG-12 eso **descarta la traza de auditoria completa** en cualquier reejecucion que no cambie el resumen, que es exactamente cuando la traza se necesita. Demostrado en la reprueba real de Lloret (§18-septies): la investigacion corrio, gasto cuota y no escribio nada. Ademas la guarda es redundante —el Lake ya detecta la escritura redundante por hash del contenido completo— y al mirar solo tres campos puede omitir cambios reales en `huellaDigital`, `instituciones` o `evidenciasSociales` | Abierto, **es el patch siguiente** | **Si: impide diagnosticar cualquier reprueba** | Dejar que el Lake decida la redundancia por hash y reservar `sinCambios` solo para el mensaje al analista |
 | BUG-11 | **Alta** | `apps/web/src/components/ProjectsModule.jsx` `investigar()` | **CERRADO POR CODIGO/TEST** (§18-sexies), pendiente confirmacion visual real. Descripcion original: | Al terminar una investigacion se parchea el candidato en memoria con `resultado`, `cobertura`, `cuentas` y `expediente`, pero **no con `estadoInvestigacion`**, que es el campo del que dependen el boton y la insignia «Investigacion completada». El porcentaje tiene respaldo (`c.resumen?.huellaDigital ?? c.cobertura`); el estado no. Resultado: los numeros se actualizan y el boton sigue diciendo «Investigar candidato». **Provoca gasto de cuota duplicado**: en el piloto el analista volvio a pulsar y Lloret se investigo dos veces (§18-quinquies) | Abierto, **causa raiz demostrada, no corregido** | No, pero **gasta cuota** | Escribir `estadoInvestigacion: "completada"` y `resumen` en el parche, o recargar el contenido del proyecto tras investigar |
@@ -1679,10 +1799,10 @@ resueltos y verificados.
 | Persistir la traza de auditoria del expediente | 🟢 **BUG-12 CONFIRMADO EN PRUEBA REAL** como mecanismo (§18-nonies), con dos defectos de fidelidad en BUG-15 |
 | Estado de investigacion en la interfaz | 🟢 **BUG-11 CERRADO**, confirmado en prueba real |
 | La guarda `sinCambios` descartaba la traza en reejecuciones | 🟢 **BUG-13 CONFIRMADO EN PRUEBA REAL** (§18-nonies) |
-| La traza lee un campo inexistente y etiqueta mal una plataforma | 🔴 **BUG-15**, unico patch siguiente |
+| La traza lee un campo inexistente y etiqueta mal una plataforma | 🟡 **BUG-15 cerrado por codigo y test** (§18-decies). Pendiente confirmacion real |
 | Cobertura dependiente de un solo proveedor | 🔴 DuckDuckGo bloqueo 2/2 y Brave sigue sin credencial: el presupuesto de SerpAPI se agota en la primera pasada |
 | `clavesCuenta` y `cuentas` derivan de fuentes distintas | 🔴 **BUG-14**, preexistente, declarado y no corregido |
-| **P-CAND-01** — por que Lloret termina con 2 cuentas | 🔴 **REQUIERE PATCH** (BUG-15). Descubrimiento encontro 26 candidatos y solo 2 se atribuyeron; los 24 motivos no se registraron |
+| **P-CAND-01** — por que Lloret termina con 2 cuentas | 🔴 **EN ULTIMA REPRUEBA REAL**. La traza ya conserva los motivos de rechazo; falta una ejecucion que los produzca |
 | Verificar en piloto real que Pedro Palacios recibe candidatos al Discovery | 🔴 su grupo guardado no contenía ninguna URL con `palacio`; L-1 no podía cambiarlo |
 | Verificar Paúl Carrasco Carpio con búsqueda real | 🔴 no existe grupo guardado; el mecanismo está probado en unitario |
 | Expediente visual completo del candidato dentro del proyecto | 🔴 hoy solo hay resumen |
@@ -1924,6 +2044,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-24 | hotfix BUG-15 | Traza fiel. Los candidatos se leen de `clasificacionCuentas`, que trae veredicto y procedencia juntos; `aportadaPorAnalista` y `viasDeclaradas` se derivan de los origenes. La cobertura cuenta los resultados del buscador: Instagram con 10 enlaces y ningun perfil ya no se etiqueta como ausencia. Los fixtures anteriores probaban una proyeccion en lugar de la estructura del motor —la misma raiz del bug— y se reescribieron con la forma real, reforzando las aserciones. 292 pruebas, 0 fallos. Nueva §18-decies. |
 | 2026-08-24 | P-CAND-01 reprueba | Primera traza real de las seis plataformas. BUG-11, BUG-12 y BUG-13 confirmados en prueba real. Instagram devolvio 10 resultados, todos publicaciones: SD-1A hizo bien su trabajo. YouTube bloqueado por proveedor. Pero `candidatosSociales` sale vacio porque lee un campo inexistente, asi que 24 de 26 rechazos no tienen motivo registrado y LinkedIn (2 candidatos, 0 atribuidos) no es verificable. BUG-15 registrado como unico patch siguiente. Nueva §18-nonies. |
 | 2026-08-24 | hotfix BUG-13 | Separados hallazgo y ejecucion. El expediente sigue deduplicando; la ejecucion se guarda siempre, en entidad propia identificada por su instante autoritativo, sin aleatoriedad y sin duplicar hallazgos. Delta cero convive con ejecucion registrada y traza persistida. BUG-14 declarado sin corregir. 267 pruebas, 0 fallos. Nueva §18-octies. BUG-11 cerrado, BUG-12 y P-CAND-01 en reprueba real. |
 | 2026-08-24 | P-CAND-01 lectura | Reprueba real leida. La traza NO se persistio: la guarda `sinCambios` de `registrarInvestigacion`, anterior a BUG-12, omitio la escritura porque el resumen no cambio. La investigacion corrio y gasto cuota. BUG-13 registrado como unico patch siguiente. BUG-11 y BUG-12 vuelven a NO CONFIRMADO en prueba real. La pregunta de las 2 cuentas sigue sin respuesta. Nueva §18-septies. |

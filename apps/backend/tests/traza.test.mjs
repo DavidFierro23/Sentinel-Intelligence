@@ -225,6 +225,184 @@ const RESULTADO = {
     }
   },
 
+  /*
+    -----------------------------------------------------------
+    FORMA REAL, NO LA QUE UNO SUPONE
+    -----------------------------------------------------------
+
+    `clasificacionCuentas` es lo que produce `clasificarYSeparar`
+    sobre las fichas consolidadas: cada entrada conserva TODOS los
+    campos de la ficha —`origenes`, `vias`, `proveedores`,
+    `corroboracion`, `correspondencia`— y se le añade
+    `clasificacion` con la clase y sus razones.
+
+    Es la fuente de la traza, y por eso el fixture la reproduce
+    con fidelidad. La version anterior de estas pruebas usaba solo
+    `perfilEjecutivo`, que es una PROYECCION para la interfaz: al
+    escribir el test contra la proyeccion, el test confirmaba mi
+    suposicion en lugar de la estructura del motor. Paso en verde
+    mientras la traza real salia vacia. Un fixture que no se
+    parece a la realidad no prueba nada.
+    -----------------------------------------------------------
+  */
+  clasificacionCuentas: {
+    version: "1.0",
+
+    cuentasObjetivo: [
+      {
+        plataforma: "X",
+        plataformaId: "x",
+        handle: "jotalloretv",
+        url: { canonica: "https://x.com/jotalloretv" },
+        correspondencia: { puntuacion: 31, nivel: "posible" },
+        origenes: [
+        { via: "consulta_dirigida", proveedor: "SerpAPI (Google)", consulta: 'site:x.com "Juan Cristóbal Lloret Valdivieso" Cuenca alcaldia' }
+        ],
+        vias: ["consulta_dirigida"],
+        proveedores: ["SerpAPI (Google)"],
+        corroboracion: {
+          proveedores: ["SerpAPI (Google)"],
+          totalProveedores: 1,
+          multiProveedor: false,
+          vias: ["consulta_dirigida"],
+          multiVia: false
+        },
+        clasificacion: {
+          clase: "cuenta_personal",
+          razones: ["el handle jotalloretv contiene lloret del nombre del objetivo"]
+        }
+      },
+      {
+        plataforma: "Facebook",
+        plataformaId: "facebook",
+        handle: "juancristobal.lloretvaldivieso",
+        url: { canonica: "https://facebook.com/juancristobal.lloretvaldivieso" },
+        correspondencia: { puntuacion: 25, nivel: "posible" },
+        origenes: [
+        { via: "cuenta_referencia", proveedor: null, origen: "analista", noCuentaComoCorroboracion: true }
+        ],
+        vias: [],
+        proveedores: [],
+        corroboracion: {
+          proveedores: [],
+          totalProveedores: 0,
+          multiProveedor: false,
+          vias: [],
+          multiVia: false
+        },
+        clasificacion: {
+          clase: "cuenta_personal",
+          razones: ["el handle contiene lloret, valdivieso del nombre del objetivo"]
+        }
+      }
+    ],
+
+    medios: [
+      {
+        plataforma: "Instagram",
+        plataformaId: "instagram",
+        handle: "unsiontv",
+        url: { canonica: "https://instagram.com/unsiontv" },
+        correspondencia: { puntuacion: 12, nivel: "posible" },
+        origenes: [
+        { via: "consulta_dirigida", proveedor: "DuckDuckGo Web", consulta: 'site:instagram.com "Juan Cristóbal Lloret Valdivieso"' }
+        ],
+        vias: ["consulta_dirigida"],
+        proveedores: ["DuckDuckGo Web"],
+        corroboracion: {
+          proveedores: ["DuckDuckGo Web"],
+          totalProveedores: 1,
+          multiProveedor: false,
+          vias: ["consulta_dirigida"],
+          multiVia: false
+        },
+        clasificacion: {
+          clase: "medio",
+          razones: ["el handle contiene «tv», propio de un medio"]
+        }
+      }
+    ],
+
+    instituciones: [],
+
+    /*
+      Los rechazados. Sin ellos no se puede saber si el matcher
+      pierde cuentas que el Discovery si encontro, que es la
+      pregunta de P-CAND-01.
+    */
+    indeterminadas: [
+      {
+        plataforma: "Instagram",
+        plataformaId: "instagram",
+        handle: "juancristobalmora",
+        url: { canonica: "https://instagram.com/juancristobalmora" },
+        correspondencia: { puntuacion: 8, nivel: "posible" },
+        origenes: [
+        { via: "consulta_dirigida", proveedor: "DuckDuckGo Web", consulta: 'site:instagram.com "Juan Cristóbal Lloret Valdivieso"' }
+        ],
+        vias: ["consulta_dirigida"],
+        proveedores: ["DuckDuckGo Web"],
+        corroboracion: {
+          proveedores: ["DuckDuckGo Web"],
+          totalProveedores: 1,
+          multiProveedor: false,
+          vias: ["consulta_dirigida"],
+          multiVia: false
+        },
+        clasificacion: {
+          clase: "no_determinado",
+          razones: ["coincide en juan, cristobal, que son nombres de pila, pero en ningún apellido (lloret / valdivieso)"]
+        }
+      },
+      {
+        plataforma: "LinkedIn",
+        plataformaId: "linkedin",
+        handle: "jlloretv",
+        url: { canonica: "https://linkedin.com/in/jlloretv" },
+        correspondencia: { puntuacion: 18, nivel: "posible" },
+        origenes: [
+        { via: "consulta_dirigida", proveedor: "SerpAPI (Google)", consulta: 'site:linkedin.com "Juan Cristóbal Lloret Valdivieso" Cuenca alcaldia' }
+        ],
+        vias: ["consulta_dirigida"],
+        proveedores: ["SerpAPI (Google)"],
+        corroboracion: {
+          proveedores: ["SerpAPI (Google)"],
+          totalProveedores: 1,
+          multiProveedor: false,
+          vias: ["consulta_dirigida"],
+          multiVia: false
+        },
+        clasificacion: {
+          clase: "no_determinado",
+          razones: ["coincide en lloret pero la correspondencia no alcanza el umbral"]
+        }
+      },
+      {
+        plataforma: "LinkedIn",
+        plataformaId: "linkedin",
+        handle: "cristobal-mora-l",
+        url: { canonica: "https://linkedin.com/in/cristobal-mora-l" },
+        correspondencia: { puntuacion: 6, nivel: "posible" },
+        origenes: [
+        { via: "consulta_dirigida", proveedor: "SerpAPI (Google)", consulta: 'site:linkedin.com "Juan Cristóbal Lloret Valdivieso" Cuenca alcaldia' }
+        ],
+        vias: ["consulta_dirigida"],
+        proveedores: ["SerpAPI (Google)"],
+        corroboracion: {
+          proveedores: ["SerpAPI (Google)"],
+          totalProveedores: 1,
+          multiProveedor: false,
+          vias: ["consulta_dirigida"],
+          multiVia: false
+        },
+        clasificacion: {
+          clase: "no_determinado",
+          razones: ["coincide en cristobal, que es nombre de pila, pero en ningún apellido (lloret / valdivieso)"]
+        }
+      }
+    ]
+  },
+
   fichaObjetivo: { evidencias: { web: new Array(28).fill({}) } }
 };
 
@@ -417,8 +595,12 @@ bloque("BUG-12.c  los rechazados sobreviven, con motivo y proveedor");
 const social = (h) =>
   (traza.candidatosSociales || []).find((c) => c.handle === h);
 
-await t("los cuatro candidatos sociales sobreviven", () => {
-  return traza.totalCandidatosSociales === 4;
+await t("los SEIS candidatos clasificados sobreviven", () => {
+  /*
+    2 atribuidas + 1 medio + 3 rechazadas. Ninguno se pierde en el
+    viaje a la persistencia: era el defecto de BUG-15.
+  */
+  return traza.totalCandidatosSociales === 6;
 });
 
 await t("una cuenta rechazada por apellido conserva su motivo", () => {
