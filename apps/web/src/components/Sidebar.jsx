@@ -63,10 +63,16 @@ const MODULOS = [
   },
   {
     id: "mapa",
-    texto: "Mapa Territorial",
+    texto: "Territorio",
     icono: Map,
-    estado: "reservado",
-    nota: "Mapa de Cuenca definido en UX-WR-001. Sin implementar."
+    estado: "operativo",
+    /*
+      Se llama "Territorio" y no "Mapa Territorial" porque no hay
+      mapa: falta el GeoJSON oficial. Prometer un mapa en el menú
+      y entregar una tabla es la misma clase de engaño que el
+      propio módulo tiene prohibido.
+    */
+    nota: "Inteligencia territorial y conversación pública. El mapa requiere el GeoJSON oficial."
   },
   {
     id: "configuracion",

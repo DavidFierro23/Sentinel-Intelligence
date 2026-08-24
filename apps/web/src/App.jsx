@@ -9,6 +9,7 @@ import OSINT from "./components/OSINT";
 import AIRouter from "./components/AIRouter";
 import Dashboard from "./components/Dashboard";
 import ProjectsModule from "./components/ProjectsModule";
+import TerritorialModule from "./territorio/TerritorialModule";
 
 /*
 ===========================================================
@@ -355,14 +356,16 @@ export default function App() {
             />
           )}
 
-          {modulo === "mapa" && (
-            <Reservado
-              titulo="Mapa Territorial"
-              descripcion="Mapa real de Cuenca con pines por tipo, mapa de calor por parroquia y filtros territoriales. Ninguna evidencia del Core lleva todavía coordenadas, así que no hay nada que situar sin inventarlo."
-              definidoEn="UX-WR-001 v2.0"
-              requiere="geocodificación de evidencias"
-            />
-          )}
+          {/*
+            ARQ-GEO-001. Deja de ser un módulo reservado: el motor
+            territorial existe y está probado.
+
+            Lo que sigue sin existir es el MAPA, porque falta el
+            GeoJSON oficial de las parroquias (riesgo WR-3). El
+            módulo lo declara en su propia interfaz en lugar de
+            dibujar una geometría inventada.
+          */}
+          {modulo === "mapa" && <TerritorialModule />}
 
           {modulo === "configuracion" && (
             <div
