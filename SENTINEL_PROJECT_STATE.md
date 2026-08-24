@@ -1380,6 +1380,99 @@ retroactiva. El pendiente de alias en la interfaz sigue abierto.
 
 ---
 
+## 18-octies. Hotfix BUG-13 — hallazgo vs ejecucion (2026-08-24)
+
+Commit `fix(projects): persist zero-delta investigation runs`.
+
+### Causa
+
+`registrarInvestigacion` omitia `escribirEnLake` cuando el resumen no
+cambiaba. Correcto para los hallazgos —reinvestigar no debe duplicar cuentas—
+y catastrofico para la traza: **una reejecucion sin delta es exactamente el
+caso en que se necesita mirar la traza, y era el unico en que se tiraba.**
+
+### La separacion
+
+Un solo registro representaba dos cosas distintas. Ahora son dos.
+
+| | Que es | Se deduplica |
+|---|---|---|
+| **Expediente** | el conjunto ACUMULADO de hallazgos: cuentas, medios, instituciones | **si**, sin tocar |
+| **Ejecucion** | el EVENTO de haber investigado: cuando, con que consultas, con que respuestas | **no**: siempre se guarda |
+
+Un hecho no deja de haber ocurrido porque su resultado coincida con el de
+ayer.
+
+**No se duplica ningun hallazgo para forzar que un hash cambie.** Lo que se
+persiste aparte es el evento, que es genuinamente nuevo. La deduplicacion
+global de evidencias y el append-only quedan intactos.
+
+### Identidad de ejecucion
+
+Entidad propia por ejecucion:
+`ejecucion-<tipo>-<candidatoId>-<instante ISO>`, con
+`investigacionId` derivado del mismo instante.
+
+**Sin aleatoriedad.** Dos investigaciones distintas son dos hechos distintos y
+ya se distinguen por cuando ocurrieron. El instante es el mismo valor
+autoritativo que ya se escribia en `actualizadoEn`.
+
+`contenidoDeProyecto` expone por candidato `ejecuciones`,
+`totalEjecuciones` y `ultimaEjecucion` — esta ultima es la que lleva la traza
+de la ultima vez que se busco de verdad, haya cambiado algo o no.
+
+### Delta cero es un resultado valido
+
+`delta: {cuentas: 0, medios: 0, evidenciasWeb: 0}` coexiste con
+`ejecucionRegistrada: true` y `trazaPersistida: true`. El retorno declara los
+dos hechos por separado:
+
+    ejecucionRegistrada      la investigacion consta
+    expedienteActualizado    aporto hallazgos nuevos
+
+Que el segundo sea `false` no vuelve `false` al primero.
+
+### Dos defectos de construccion encontrados al implementar
+
+**Clave del Lake en minusculas.** `claveLake` normaliza la entidad a
+minusculas y el instante ISO lleva `T` y `Z` mayusculas, asi que una clave
+reconstruida a mano no encontraba nada. Se usa la `claveEntidad` autoritativa
+que el indice ya devuelve, en lugar de rearmarla. Elimina toda una clase de
+fallo.
+
+**`clavesCuenta` y `cuentas` tienen fuentes distintas.** El diferencial
+deduplica con `clavesCuenta`, que se deriva de
+`clasificacionCuentas.cuentasObjetivo`, mientras `cuentas` viene de
+`perfilEjecutivo.tarjetas`. Si las dos divergen, el delta sale mal. Es
+**preexistente** y queda **declarado, no corregido**: tocarlo era cambiar la
+deduplicacion, que esta autorizacion excluye. Anotado en el test para que no
+haya que volver a diagnosticarlo desde cero.
+
+### Pruebas
+
+`tests/ejecucion.test.mjs` — 28 comprobaciones. Reproducen el caso exacto:
+investigacion N con 2 cuentas / 7 medios / 28 evidencias, y N+1 con las
+mismas, mas una tercera identica. Demuestran que N+1 se registra, que los
+hallazgos no se duplican, que N y N+1 son recuperables y que la traza de N+1
+conserva queries, providers, `coberturaPlataformas`, rechazados con motivo,
+errores de proveedor, truncamientos y `costeMonetario: null`.
+
+Suite completa: **267 comprobaciones, 0 fallos** (antes 239). Sin red.
+
+Retrocompatible: los candidatos del piloto anterior devuelven
+`totalEjecuciones: 0` y `ultimaEjecucion: null` sin error.
+
+### Estado
+
+| | |
+|---|---|
+| **BUG-11** | **CERRADO**, confirmado en prueba real por observacion del analista |
+| **BUG-12** | **EN REPRUEBA REAL** — codigo y test existentes, desbloqueado por este hotfix |
+| **BUG-13** | **CERRADO POR CODIGO/TEST**, pendiente confirmacion real |
+| **P-CAND-01** | **EN REPRUEBA REAL** |
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -1457,7 +1550,8 @@ es del analista.
 | BUG-05 | Media | `KnowledgeGraph.jsx` | Grafo radial: no hay relaciones entre nodos | Abierto | No | Aristas cuenta↔medio y cuenta↔cuenta |
 | BUG-06 | Baja | `PlausibleIdentitiesPanel.jsx` | «Investigar esta identidad» presente sin acción conectada | Abierto | No | Conectar reinvestigación con la evidencia del grupo |
 | BUG-07 | Media | `projects/projectContext.js:134` | `nivelPorDefecto` compara contra `prefectura` / `presidencia` (el cargo), pero el analista escribe `Prefecto` / `Presidente` / `Asambleísta` (la persona). **Todas** las dignidades en forma personal caen a `cantonal`, y en un proyecto provincial o nacional sin `nivel` declarado la provincia o el país se quedan en fuerza 6 —por debajo del umbral de evidencia— y **no llegan a ser ancla**. Detectado en LÍNEA A (§18-bis) | Abierto, **no corregido: fuera de la autorización L-1/L-2/L-3** | No | Aceptar la forma personal de cada dignidad, o exigir `nivel` explícito en el formulario |
-| BUG-13 | **Alta** | `services/projects/projectStore.js` `registrarInvestigacion` | La guarda `sinCambios` omite `escribirEnLake` cuando coinciden tres campos del resumen (claves de cuenta, numero de medios, evidencias web). Tras el patch de BUG-12 eso **descarta la traza de auditoria completa** en cualquier reejecucion que no cambie el resumen, que es exactamente cuando la traza se necesita. Demostrado en la reprueba real de Lloret (§18-septies): la investigacion corrio, gasto cuota y no escribio nada. Ademas la guarda es redundante —el Lake ya detecta la escritura redundante por hash del contenido completo— y al mirar solo tres campos puede omitir cambios reales en `huellaDigital`, `instituciones` o `evidenciasSociales` | Abierto, **es el patch siguiente** | **Si: impide diagnosticar cualquier reprueba** | Dejar que el Lake decida la redundancia por hash y reservar `sinCambios` solo para el mensaje al analista |
+| BUG-14 | Media | `services/projects/projectStore.js` `resumirExpediente` / diferencial | `clavesCuenta` —la clave con la que el diferencial deduplica hallazgos— se deriva de `clasificacionCuentas.cuentasObjetivo`, mientras `cuentas` viene de `perfilEjecutivo.tarjetas`. Dos fuentes para la misma cosa: si divergen, el delta de cuentas sale mal. Detectado al implementar BUG-13 (§18-octies) | Abierto, **preexistente, declarado y no corregido**: tocarlo era cambiar la deduplicacion, excluida de la autorizacion | No | Derivar ambas de la misma fuente |
+| BUG-13 | **Alta** | `services/projects/projectStore.js` `registrarInvestigacion` | **CERRADO POR CODIGO/TEST** (§18-octies), pendiente confirmacion real. Descripcion original: | La guarda `sinCambios` omite `escribirEnLake` cuando coinciden tres campos del resumen (claves de cuenta, numero de medios, evidencias web). Tras el patch de BUG-12 eso **descarta la traza de auditoria completa** en cualquier reejecucion que no cambie el resumen, que es exactamente cuando la traza se necesita. Demostrado en la reprueba real de Lloret (§18-septies): la investigacion corrio, gasto cuota y no escribio nada. Ademas la guarda es redundante —el Lake ya detecta la escritura redundante por hash del contenido completo— y al mirar solo tres campos puede omitir cambios reales en `huellaDigital`, `instituciones` o `evidenciasSociales` | Abierto, **es el patch siguiente** | **Si: impide diagnosticar cualquier reprueba** | Dejar que el Lake decida la redundancia por hash y reservar `sinCambios` solo para el mensaje al analista |
 | BUG-11 | **Alta** | `apps/web/src/components/ProjectsModule.jsx` `investigar()` | **CERRADO POR CODIGO/TEST** (§18-sexies), pendiente confirmacion visual real. Descripcion original: | Al terminar una investigacion se parchea el candidato en memoria con `resultado`, `cobertura`, `cuentas` y `expediente`, pero **no con `estadoInvestigacion`**, que es el campo del que dependen el boton y la insignia «Investigacion completada». El porcentaje tiene respaldo (`c.resumen?.huellaDigital ?? c.cobertura`); el estado no. Resultado: los numeros se actualizan y el boton sigue diciendo «Investigar candidato». **Provoca gasto de cuota duplicado**: en el piloto el analista volvio a pulsar y Lloret se investigo dos veces (§18-quinquies) | Abierto, **causa raiz demostrada, no corregido** | No, pero **gasta cuota** | Escribir `estadoInvestigacion: "completada"` y `resumen` en el parche, o recargar el contenido del proyecto tras investigar |
 | BUG-12 | **Alta** | `services/projects/projectStore.js` `resumirExpediente` | **CERRADO POR CODIGO/TEST** (§18-sexies), pendiente confirmacion en ejecucion real. Descripcion original: | El expediente **descarta la traza de auditoria que el motor ya calculo**: no persiste consultas ejecutadas, cobertura por plataforma, trazas del Discovery ni candidatos rechazados (`perfilEjecutivo.indeterminadas` y `coberturaPlataformas` se producen y se tiran). Sin logs en disco, una investigacion no se puede diagnosticar despues: no hay forma de saber si una plataforma se busco y no habia nada, o no se busco. Bloqueo el diagnostico de la regresion de Lloret (§18-quinquies) | Abierto, **no corregido** | **Si, para diagnosticar pilotos** | Persistir consultas, cobertura por plataforma y rechazados con su motivo. Es la doctrina de `ausencia` != `no_comprobada` aplicada al expediente |
 | BUG-10 | Media | `apps/web/src/services/aliasMemory.js` `esAliasValido` | Exige que el alias contenga el **ultimo** token del nombre (`partes[partes.length-1]`) —el defecto exacto que L-1 corrigio en el backend— y su comentario afirma «misma regla que el clasificador», que ya es **falso**. Para `Juan Cristobal Lloret Valdivieso` exigiria `valdivieso` y rechazaria `Jota Lloret`, el propio ejemplo del encabezado del modulo. Detectado al cerrar el gate de alias (§18-quater) | Abierto, **no corregido: frontend, fuera del patch alias -> planner** | No | Reutilizar la zona de apellidos de L-1, o subir la validacion al backend |
@@ -1482,10 +1576,11 @@ resueltos y verificados.
 |---|---|
 | Prueba real de candidato en proyecto con semilla del analista | 🔴 planificada, ver §24. **Tubería corregida y probada sin cuota (§18-bis); los pilotos de Paúl, Lloret, Pedro y Yaku NO se han ejecutado** |
 | Regresion de cobertura social de Lloret: 49 -> 22 respecto al historico | 🔴 **NO EXPLICADA**. La cuenta de Facebook perdio sus dos proveedores. Filtro de L-2 exonerado por prueba. Falta traza de auditoria (BUG-12) |
-| Persistir la traza de auditoria del expediente | 🔴 **NO CONFIRMADO EN PRUEBA REAL** (§18-septies). La guarda `sinCambios` la descarto: ver BUG-13 |
-| Estado de investigacion no se refleja en la interfaz | 🔴 **BUG-11 no confirmado en prueba real**: el escenario no lo ejercito. Codigo y test en su sitio |
-| La guarda `sinCambios` descarta la traza en reejecuciones | 🔴 **BUG-13**, unico patch siguiente |
-| **P-CAND-01** — por que Lloret termina con 2 cuentas | 🔴 **REQUIERE PATCH**. Sin respuesta: la traza no llego al Lake |
+| Persistir la traza de auditoria del expediente | 🟡 **BUG-12 EN REPRUEBA REAL**. Desbloqueado por el hotfix de BUG-13 (§18-octies) |
+| Estado de investigacion en la interfaz | 🟢 **BUG-11 CERRADO**, confirmado en prueba real |
+| La guarda `sinCambios` descartaba la traza en reejecuciones | 🟡 **BUG-13 cerrado por codigo y test** (§18-octies). Pendiente confirmacion real |
+| `clavesCuenta` y `cuentas` derivan de fuentes distintas | 🔴 **BUG-14**, preexistente, declarado y no corregido |
+| **P-CAND-01** — por que Lloret termina con 2 cuentas | 🔴 **EN REPRUEBA REAL**. Sigue sin respuesta hasta la siguiente ejecucion |
 | Verificar en piloto real que Pedro Palacios recibe candidatos al Discovery | 🔴 su grupo guardado no contenía ninguna URL con `palacio`; L-1 no podía cambiarlo |
 | Verificar Paúl Carrasco Carpio con búsqueda real | 🔴 no existe grupo guardado; el mecanismo está probado en unitario |
 | Expediente visual completo del candidato dentro del proyecto | 🔴 hoy solo hay resumen |
@@ -1727,6 +1822,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-24 | hotfix BUG-13 | Separados hallazgo y ejecucion. El expediente sigue deduplicando; la ejecucion se guarda siempre, en entidad propia identificada por su instante autoritativo, sin aleatoriedad y sin duplicar hallazgos. Delta cero convive con ejecucion registrada y traza persistida. BUG-14 declarado sin corregir. 267 pruebas, 0 fallos. Nueva §18-octies. BUG-11 cerrado, BUG-12 y P-CAND-01 en reprueba real. |
 | 2026-08-24 | P-CAND-01 lectura | Reprueba real leida. La traza NO se persistio: la guarda `sinCambios` de `registrarInvestigacion`, anterior a BUG-12, omitio la escritura porque el resumen no cambio. La investigacion corrio y gasto cuota. BUG-13 registrado como unico patch siguiente. BUG-11 y BUG-12 vuelven a NO CONFIRMADO en prueba real. La pregunta de las 2 cuentas sigue sin respuesta. Nueva §18-septies. |
 | 2026-08-24 | GATE P-CAND-01 | BUG-12 y BUG-11 cerrados por codigo y test. El expediente persiste consultas, cobertura por plataforma en contrato de cinco estados, candidatos rechazados con motivo y consumo por proveedor. La interfaz recarga el estado autoritativo tras investigar. 239 pruebas, 0 fallos. Nueva §18-sexies. Pendiente reprueba real de Lloret. |
 | 2026-08-24 | piloto Paul + Lloret | Diagnostico sin cuota. Las dos investigaciones terminaron; Lloret se ejecuto DOS veces por BUG-11, cuya causa raiz queda demostrada. Cobertura 14 vs 22 reproducida exactamente: el indice mide dimensiones, no volumen. L-1 y L-2 verificados en produccion. Regresion de Lloret 49 -> 22 NO explicada; filtro de L-2 exonerado por prueba. BUG-11 y BUG-12 registrados. Nueva §18-quinquies. |

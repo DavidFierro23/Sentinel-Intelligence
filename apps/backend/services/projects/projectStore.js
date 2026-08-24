@@ -64,6 +64,50 @@ const TIPO_PROYECTO = "documento";
 const TIPO_EXPEDIENTE = "persona";
 
 /*
+===========================================================
+HALLAZGO vs EJECUCION — BUG-13
+===========================================================
+
+Son dos cosas distintas y hasta ahora compartian un solo
+registro, que es lo que produjo el fallo.
+
+  EXPEDIENTE  el conjunto ACUMULADO de hallazgos: cuentas,
+              medios, instituciones. Se deduplica a proposito:
+              reinvestigar a alguien no debe crear un segundo
+              candidato ni duplicar sus cuentas.
+
+  EJECUCION   el EVENTO de haber investigado. Ocurrio a una hora,
+              lanzo unas consultas, obtuvo unas respuestas. Es un
+              hecho, y un hecho no deja de haber ocurrido porque
+              su resultado coincida con el de ayer.
+
+EL FALLO
+
+`registrarInvestigacion` omitia la escritura cuando el resumen
+no cambiaba —`sinCambios`—, correcto para los hallazgos y
+catastrofico para la traza: una reejecucion sin delta es
+exactamente el caso en que se necesita mirar la traza, y era el
+unico caso en que se tiraba. Comprobado en la reprueba real de
+Lloret: la investigacion corrio, gasto cuota y no dejo rastro.
+
+LA SEPARACION
+
+El expediente sigue deduplicando hallazgos, sin tocar. La
+ejecucion se guarda SIEMPRE, en su propia entidad. No se
+duplica ninguna cuenta ni ninguna evidencia para forzar que un
+hash cambie: lo que se persiste aparte es el evento, que es
+genuinamente nuevo.
+
+La identidad de cada ejecucion es su instante autoritativo, el
+mismo que ya se escribia en `actualizadoEn`. No se añade
+aleatoriedad para evadir la deduplicacion: dos investigaciones
+distintas son dos hechos distintos y ya se distinguen por
+cuando ocurrieron.
+===========================================================
+*/
+const PREFIJO_EJECUCION = "ejecucion-";
+
+/*
   Los proyectos viven en un espacio propio para que el catálogo de
   proyectos no quede dentro de ningún proyecto.
 */
@@ -397,6 +441,49 @@ export async function cambiarEstadoProyecto(proyectoId, estado) {
   muestre "investigación completada" tras una recarga en lugar de
   volver a lanzar la investigación. Recargar no debe gastar cuota.
 */
+/*
+-----------------------------------------------------------
+EJECUCIONES DE UN CANDIDATO
+
+Una entidad por ejecucion, nunca versiones de la misma: cada
+investigacion es un hecho aparte. Se devuelven de la mas
+reciente a la mas antigua.
+-----------------------------------------------------------
+*/
+async function ejecucionesDe(proyectoId, entidades, tipo, id) {
+  const prefijo = `${PREFIJO_EJECUCION}${tipo}-${id}-`;
+
+  /*
+    Se usa la `claveEntidad` que el propio Lake devuelve, en vez
+    de reconstruirla: `claveLake` normaliza a minusculas y el
+    instante ISO del nombre lleva mayusculas (`T`, `Z`), asi que
+    una clave reconstruida a mano no encontraria nada. La
+    autoritativa es la que ya viene en el indice.
+  */
+  const encontradas = (entidades || []).filter(
+    (e) => typeof e.entidad === "string" && e.entidad.startsWith(prefijo)
+  );
+
+  const ejecuciones = [];
+
+  for (const { claveEntidad } of encontradas) {
+    try {
+      const v = await obtenerVersionEntidad(claveEntidad, {});
+
+      const datos = v?.registro?.datos;
+
+      if (datos) ejecuciones.push(datos);
+    } catch {
+      /* Una ejecucion ilegible no invalida las demas. */
+    }
+  }
+
+  return ejecuciones.sort((a, b) =>
+    String(b.ejecutadaEn || "").localeCompare(String(a.ejecutadaEn || ""))
+  );
+}
+
+
 export async function contenidoDeProyecto(proyectoId) {
   const proyecto = await obtenerProyecto(proyectoId);
 
@@ -412,6 +499,9 @@ export async function contenidoDeProyecto(proyectoId) {
     const nombre = e.entidad;
 
     if (nombre.startsWith("expediente-")) continue;
+
+    /* Las ejecuciones se leen aparte, por candidato. */
+    if (nombre.startsWith(PREFIJO_EJECUCION)) continue;
 
     const esActor = nombre.startsWith(PREFIJO_ACTOR);
 
@@ -454,6 +544,18 @@ export async function contenidoDeProyecto(proyectoId) {
       }
     }
 
+    /*
+      EJECUCIONES de este candidato, la mas reciente primero. El
+      expediente dice QUE se sabe; la ejecucion, COMO se supo y
+      cuando. Para diagnosticar hace falta la segunda.
+    */
+    const ejecuciones = await ejecucionesDe(
+      proyectoId,
+      entidades,
+      esActor ? "actor" : "candidato",
+      id
+    );
+
     const registro = {
       ...datos,
 
@@ -463,6 +565,15 @@ export async function contenidoDeProyecto(proyectoId) {
         acordarse de escribir.
       */
       estadoInvestigacion: expediente ? "completada" : "sin_investigar",
+
+      /*
+        Historial de ejecuciones. `ultimaEjecucion` es la que
+        lleva la traza de la ultima vez que se busco de verdad,
+        haya cambiado algo o no.
+      */
+      ejecuciones,
+      totalEjecuciones: ejecuciones.length,
+      ultimaEjecucion: ejecuciones[0] || null,
 
       expediente,
 
@@ -1317,6 +1428,89 @@ export async function registrarInvestigacion(
 
   let escritura = null;
 
+  /*
+    ---------------------------------------------------------
+    LA EJECUCION SE GUARDA SIEMPRE — BUG-13
+    ---------------------------------------------------------
+
+    Antes de cualquier decision sobre los hallazgos. `sinCambios`
+    gobierna el expediente y no debe gobernar esto: una
+    investigacion que corrio, gasto cuota y no encontro nada
+    nuevo sigue siendo una investigacion que corrio, y su traza
+    es la unica forma de saber despues por que no encontro nada.
+
+    Entidad propia por ejecucion, identificada por su instante
+    autoritativo. No hay aleatoriedad y no se duplica ningun
+    hallazgo: lo nuevo es el evento.
+    ---------------------------------------------------------
+  */
+  const ejecutadaEn = new Date().toISOString();
+
+  const investigacionId = `inv-${tipo}-${candidatoId}-${ejecutadaEn}`;
+
+  const delta = {
+    cuentas: cuentasNuevas.length,
+    medios: mediosNuevos.length,
+    evidenciasWeb:
+      anterior === null
+        ? actual.evidenciasWeb ?? 0
+        : Math.max(0, (actual.evidenciasWeb ?? 0) - (anterior.evidenciasWeb ?? 0))
+  };
+
+  let escrituraEjecucion = null;
+
+  try {
+    escrituraEjecucion = await escribirEnLake(
+      {
+        entidad: `${PREFIJO_EJECUCION}${tipo}-${candidatoId}-${ejecutadaEn}`,
+        tipoEntidad: TIPO_EXPEDIENTE,
+        tenantId: TENANT,
+        proyectoId,
+        fuente: SUBMOTOR,
+        motorOrigen: resultado?.origenDescubrimiento || null,
+        linaje: linaje("ejecutar_investigacion"),
+        datos: {
+          investigacionId,
+          candidatoId,
+          tipo,
+          ejecutadaEn,
+
+          /*
+            Que la investigacion OCURRIO es independiente de que
+            haya cambiado algo.
+          */
+          estado: "completada",
+          ejecutada: true,
+
+          /* Un delta de cero es un resultado valido, no un fallo. */
+          delta,
+          sinCambiosEnHallazgos: sinCambios,
+
+          /*
+            LA TRAZA. Es la razon de ser de este registro.
+          */
+          traza: actual.traza || null,
+
+          /* Fotografia del resumen en el momento de esta ejecucion. */
+          resumen: {
+            cuentas: (actual.cuentas || []).length,
+            medios: (actual.medios || []).length,
+            instituciones: (actual.instituciones || []).length,
+            evidenciasWeb: actual.evidenciasWeb ?? null,
+            evidenciasSociales: actual.evidenciasSociales ?? null,
+            huellaDigital: actual.huellaDigital ?? null
+          }
+        }
+      },
+      {}
+    );
+  } catch (e) {
+    escrituraEjecucion = {
+      escrito: false,
+      motivo: e?.message || "fallo al registrar la ejecución"
+    };
+  }
+
   if (!sinCambios) {
     try {
       escritura = await escribirEnLake(
@@ -1351,6 +1545,28 @@ export async function registrarInvestigacion(
       Regla del sprint: una segunda investigacion no crea un
       segundo candidato. Actualiza el mismo expediente.
     */
+    /*
+      DOS HECHOS DISTINTOS, DECLARADOS APARTE.
+
+      `ejecucionRegistrada` dice que la investigacion consta.
+      `expedienteActualizado` dice si aporto hallazgos nuevos.
+      Que el segundo sea false no vuelve false al primero.
+    */
+    investigacionId,
+    ejecutadaEn,
+
+    /*
+      El delta de esta ejecucion. Un cero es un resultado valido:
+      significa que se busco y no habia nada nuevo, no que no se
+      buscara.
+    */
+    delta,
+
+    ejecucionRegistrada: escrituraEjecucion?.escrito === true,
+    motivoEjecucion: escrituraEjecucion?.motivo || null,
+    trazaPersistida:
+      escrituraEjecucion?.escrito === true && !!actual.traza,
+
     expedienteActualizado: sinCambios ? false : escritura?.escrito === true,
 
     sinCambios,
