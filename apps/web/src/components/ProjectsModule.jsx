@@ -1177,17 +1177,6 @@ export default function ProjectsModule() {
 
         {/* MODAL DE ELIMINACION */}
 
-        {/* EDITAR IDENTIDAD */}
-
-        {editando && ficha && (
-          <CandidateIdentityForm
-            ficha={ficha}
-            ocupado={ocupado === `editar:${fichaAbierta}`}
-            onCancelar={() => setEditando(false)}
-            onGuardar={guardarIdentidad}
-          />
-        )}
-
         {porEliminar && (
           <ModalEliminar
             proyecto={porEliminar}
@@ -2090,6 +2079,25 @@ export default function ProjectsModule() {
           </div>
         </div>
       )}
+      {/*
+        EDITAR IDENTIDAD — en la rama del DETALLE del proyecto.
+
+        Estaba montado en la rama de la LISTA de proyectos, que
+        retorna antes. Al pulsar el boton desde el detalle,
+        `editando` pasaba a true y este JSX no llegaba a
+        renderizarse nunca: el formulario existia y era
+        inalcanzable. Es la causa raiz de P-CAND-UX-02.
+      */}
+      {editando && ficha && (
+        <CandidateIdentityForm
+          ficha={ficha}
+          proyecto={proyecto}
+          ocupado={ocupado === `editar:${fichaAbierta}`}
+          onCancelar={() => setEditando(false)}
+          onGuardar={guardarIdentidad}
+        />
+      )}
+
     </section>
   );
 }

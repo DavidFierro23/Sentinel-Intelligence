@@ -2081,16 +2081,62 @@ export async function editarCandidato(proyectoId, candidatoId, cambios = {}) {
     )
   );
 
+  const ahora = new Date().toISOString();
+
   const acumuladas = [...(previo.cuentasReferencia || []), ...nuevasEntradas]
     .filter(
       (r, i, todas) => todas.findIndex((x) => (x.id || x.url) === (r.id || r.url)) === i
     )
-    .filter((r) => !aQuitar.has(String(r.id)))
-    .map((r) =>
-      nuevasEntradas.some((n) => n.id === r.id)
-        ? { ...r, actualizadaEn: new Date().toISOString() }
-        : r
-    );
+    .map((r) => {
+      /*
+        ---------------------------------------------------------
+        RETIRAR ES MARCAR, NO BORRAR
+        ---------------------------------------------------------
+
+        La primera version filtraba la entrada fuera del array, y
+        con ella desaparecia por que se habia declarado, cuando y
+        quien lo hizo. Retirar una cuenta es una decision del
+        analista, y una decision es un dato: hay que poder leer
+        despues que se tomo.
+
+        REVOCADA es lo contrario de NO_REENCONTRADA. Una la decide
+        una persona; la otra, el silencio de un buscador. Por eso
+        la revocada consta con su fecha y la no reencontrada no
+        cambia de estado de identidad.
+        ---------------------------------------------------------
+      */
+      if (aQuitar.has(String(r.id))) {
+        return {
+          ...r,
+          estado: ESTADOS_IDENTIDAD.REVOCADA,
+          revocadaEn: ahora,
+          revocadaPor: "analista",
+          /* Se conserva el estado que tenia antes de retirarla. */
+          estadoAnterior: r.estado || null,
+          actualizadaEn: ahora
+        };
+      }
+
+      /*
+        Reintroducir una cuenta revocada la reactiva: el analista
+        cambio de opinion y eso tambien es una decision.
+      */
+      if (
+        r.estado === ESTADOS_IDENTIDAD.REVOCADA &&
+        nuevasEntradas.some((n) => n.id === r.id)
+      ) {
+        return {
+          ...r,
+          estado: ESTADOS_IDENTIDAD.DECLARADA_POR_ANALISTA,
+          reactivadaEn: ahora,
+          actualizadaEn: ahora
+        };
+      }
+
+      return nuevasEntradas.some((n) => n.id === r.id)
+        ? { ...r, actualizadaEn: ahora }
+        : r;
+    });
 
   /* Alias: se acumulan y se deduplican, como en agregarCandidato. */
   const aliasEntrantes = (
@@ -2202,6 +2248,12 @@ export async function fichaIdentidad(proyectoId, candidatoId, tipo = "candidato"
   /* 1 · lo consolidado por Sentinel. */
   consolidadas.forEach((c) => {
     porClave.set(claveDe(c), {
+      /*
+        Identidad de la entrada. La interfaz la necesita para
+        pedir una retirada por id exacto: comparar por handle
+        suelto fallaria con acentos o mayusculas.
+      */
+      id: claveDe(c),
       plataformaId: c.plataformaId,
       plataforma: c.plataforma,
       url: c.url,
@@ -2229,8 +2281,18 @@ export async function fichaIdentidad(proyectoId, candidatoId, tipo = "candidato"
     });
   });
 
-  /* 2 · lo declarado que aun no se ha consolidado. */
-  declaradas.forEach((d) => {
+  /*
+    2 · lo declarado que aun no se ha consolidado.
+
+    Las REVOCADAS no entran en la ficha activa: el analista las
+    retiro. Pero no se pierden —se devuelven aparte en
+    `revocadas`— porque una decision tambien es un dato.
+  */
+  const declaradasActivas = declaradas.filter(
+    (d) => d.estado !== ESTADOS_IDENTIDAD.REVOCADA
+  );
+
+  declaradasActivas.forEach((d) => {
     const clave = claveDe(d);
 
     const ya = porClave.get(clave);
@@ -2246,12 +2308,14 @@ export async function fichaIdentidad(proyectoId, candidatoId, tipo = "candidato"
     }
 
     porClave.set(clave, {
+      id: d.id || clave,
       plataformaId: d.plataformaId,
       plataforma: d.plataforma,
       url: d.url,
       handle: d.handle,
 
-      estado: ESTADOS_IDENTIDAD.DECLARADA_POR_ANALISTA,
+      estado: d.estado || ESTADOS_IDENTIDAD.DECLARADA_POR_ANALISTA,
+      revocadaEn: d.revocadaEn || null,
 
       declaradaPorAnalista: true,
       descubiertaPorSentinel: false,
@@ -2310,6 +2374,24 @@ export async function fichaIdentidad(proyectoId, candidatoId, tipo = "candidato"
     otras: cuentas.filter(
       (c) => !PLATAFORMAS_FICHA.some((pf) => pf.id === c.plataformaId)
     ),
+
+    /*
+      Historia de las retiradas. No se muestran como identidad
+      activa y no se borran: el analista debe poder ver que las
+      retiro y cuando, y volver a activarlas si se equivoco.
+    */
+    revocadas: declaradas
+      .filter((d) => d.estado === ESTADOS_IDENTIDAD.REVOCADA)
+      .map((d) => ({
+        id: d.id,
+        plataformaId: d.plataformaId,
+        plataforma: d.plataforma,
+        url: d.url,
+        handle: d.handle,
+        revocadaEn: d.revocadaEn || null,
+        revocadaPor: d.revocadaPor || null,
+        estadoAnterior: d.estadoAnterior || null
+      })),
 
     metricas: {
       cuentas: cuentas.length,

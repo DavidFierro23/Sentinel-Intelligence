@@ -2916,6 +2916,151 @@ corrobore.
 
 ---
 
+## 18-septendecies. P-CAND-UX-02 Edicion de identidad (2026-08-25)
+
+Commit `fix(projects): enable assisted candidate identity editing`.
+**495 comprobaciones, 0 fallos.** Sin red, sin cuota.
+
+### Causa raiz — el formulario existia y era inalcanzable
+
+`ProjectsModule.jsx` tiene cuatro ramas de render con retorno propio:
+
+    993   if (cargando)
+    1014  if (!proyecto && lista.length > 0 && !verFormProyecto)   ← LISTA
+    1192  if (!proyecto)
+    1340  return (…)                                              ← DETALLE
+
+`CandidateIdentityForm` quedo montado en la rama **1014, la lista de
+proyectos**. La ficha y el boton «Editar identidad» viven en la rama **1340,
+el detalle**.
+
+Al pulsar el boton desde el detalle, `editando` pasaba a `true` y ese JSX
+estaba en una rama que ya habia retornado: **no se renderizaba nunca**. No era
+un problema de estado, de CSS ni de viewport. Era el arbol equivocado.
+
+El defecto lo introduje yo en el gate anterior: anclé la insercion en el primer
+`{porEliminar && (` sin comprobar a que rama pertenecia. Ahora esta al cierre
+del `return` final, con el comentario que explica por que.
+
+### Dos defectos mas, encontrados en la auditoria
+
+**Retirar una cuenta la BORRABA** en lugar de marcarla. `editarCandidato`
+filtraba la entrada fuera del array, y con ella desaparecia por que se habia
+declarado, cuando y quien lo hizo. §18 del gate pedia lo contrario.
+
+Ahora se marca `REVOCADA` con `revocadaEn`, `revocadaPor` y `estadoAnterior`.
+Y reintroducirla la **reactiva**: el analista cambio de opinion, y eso tambien
+es una decision.
+
+> `REVOCADA` es lo contrario de `NO_REENCONTRADA`. Una la decide una persona;
+> la otra, el silencio de un buscador.
+
+**La ficha no exponia el `id`** de cada cuenta, asi que la interfaz no podia
+pedir una retirada por identidad exacta —comparar por handle suelto falla con
+acentos y mayusculas—. Ahora lo expone.
+
+### Antes / despues
+
+| | Antes | Ahora |
+|---|---|---|
+| Editar identidad | el boton no hacia nada visible | abre un espacio de trabajo modal |
+| Escribir una URL | imposible desde la interfaz | campo por plataforma, con `Agregar` |
+| Varias cuentas por plataforma | soportado en el modelo, sin interfaz | «+ agregar» en cada plataforma |
+| Retirar | borraba la entrada | marca `REVOCADA` y conserva historia |
+| Foto | campo suelto | campo con vista previa y procedencia |
+| Plataforma vacia | invisible en la edicion | tarjeta con su campo y su aclaracion |
+| URL en la casilla equivocada | silencio | aviso: manda el dominio |
+
+### La interfaz
+
+Modal con **cabecera y pie fijos y cuerpo con scroll propio**: con siete
+plataformas el contenido excede la pantalla, y un formulario cuyo boton de
+guardar queda fuera del viewport es un formulario que no se puede usar.
+
+Cabecera: «Editar identidad digital», nombre, proyecto · dignidad · territorio,
+y la advertencia de procedencia. Pie: `Cancelar` · `Guardar cambios`, con el
+recordatorio de que guardar es una declaracion y comprobar es una observacion.
+
+`Guardar` esta deshabilitado si no hay cambios: no se envia un PATCH inutil.
+`Cancelar` cierra y descarta el estado local **sin enviar nada**.
+
+### Modelo final de `cuentasReferencia`
+
+Coleccion, no campo por plataforma. Cada entrada:
+
+    id                          plataformaId:handle normalizado
+    plataformaId, plataforma    leidos del DOMINIO por SD-1A
+    url, urlOriginal, handle
+    origen                      "analista"
+    pertenenciaDeclarada        true
+    verificadaPorSentinel       false
+    noCuentaComoCorroboracion   true
+    estado                      DECLARADA_POR_ANALISTA | REVOCADA
+    creadaEn, actualizadaEn
+    revocadaEn, revocadaPor, estadoAnterior, reactivadaEn
+
+**Varias cuentas por plataforma: soportado y probado.** Un candidato tiene
+legitimamente Instagram personal y de campana.
+
+### Procedencia: se acumula, no se sustituye
+
+Lo que escribe el analista entra **declarado y sin verificar**. Si despues un
+proveedor encuentra la misma cuenta por su cuenta, la ficha muestra **las dos**:
+«declarada por el analista · corroborada por Sentinel». Probado.
+
+La deteccion de plataforma la hace **SD-1A** en el backend. La interfaz solo
+**avisa** si la URL parece de otra plataforma: no decide, y no hay clasificador
+paralelo.
+
+### Lo que guardar NO hace
+
+Probado que un PATCH parcial —o vacio— **no borra nada** de lo que no menciona:
+ni cuentas, ni alias, ni foto, ni expediente, ni ejecuciones, ni inventario
+descubierto. Y el `candidateId` no cambia al corregir nombre o alias: es la
+clave con la que el Lake guarda el expediente, y cambiarla desconectaria al
+candidato de toda su historia. El nombre anterior se conserva.
+
+### Preparado para Account Intelligence
+
+Cada cuenta consolidada tiene clave estable, estado, procedencia,
+`firstSeenAt`, `lastSeenAt`, `lastCheckedAt`, proveedores historicos y de
+ultima observacion, y corroboracion. Es lo que un modulo de monitoreo
+necesitara. **No se implementa nada de Account Intelligence en este gate** y el
+modelo no queda acoplado a la interfaz.
+
+### Pruebas
+
+`tests/edicionIdentidad.test.mjs` — **40 comprobaciones**, T1 a T25.
+
+Dos correcciones en mis propias pruebas antes de darlas por buenas: T5 quedo
+escrita como una tautologia que no podia fallar —se elimino, T5b es la
+comprobacion real— y la de higiene se detectaba a si misma, porque el patron
+prohibido estaba escrito de una pieza en el fichero que inspecciona.
+
+Esa prueba de higiene comprueba que **ninguna cuenta de ningun candidato real
+aparece en el codigo**. El benchmark se carga desde la interfaz.
+
+| Suite | Total |
+|---|---|
+| las doce anteriores | 455 |
+| **edicionIdentidad** | **40** |
+| **Total** | **495, 0 fallos** |
+
+Build de la interfaz correcta. Lint: los 6 preexistentes de BUG-01 y BUG-02.
+
+### Dato encontrado, no producido por este gate
+
+El Lake tiene una ejecucion nueva a las **18:53:13** que **no** genero este
+trabajo: no se ejecuto ninguna investigacion. Viene de fuera de la sesion.
+
+Merece leerse porque confirma en produccion lo del gate anterior:
+`inventario: {total: 3, observadas: 3, noReencontradas: 0, porEstado:
+{REVALIDADA: 3}}` y `handlesPropagados: ["jotalloretv",
+"juancristobal.lloretvaldivieso"]`. Huella de vuelta a 53 con 3 cuentas.
+**BUG-17 y BUG-19 funcionando con datos reales.**
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -3034,6 +3179,7 @@ resueltos y verificados.
 | TikTok recibe una sola consulta, sin pasada de reserva | 🔴 la propagada existio pero con el handle equivocado y dio Error. Ver BUG-17 y BUG-18 |
 | Profile-first: propietario legible en ruta de contenido | 🟢 **CONFIRMADO EN PRODUCCION** (§18-terdecies): `@segundo.cabrera82` entro como candidato y el clasificador lo rechazo |
 | `site:youtube.com` devuelve videos, no canales | 🟡 **Handle Propagation** pregunta por handle, que apunta a canal. Pendiente prueba real |
+| **P-CAND-UX-02 Edicion de identidad** | 🟢 **IMPLEMENTADO** (§18-septendecies). Pendiente prueba visual y carga real |
 | **P-CAND-UX-01 Identidad Asistida por Analista** | 🟢 **IMPLEMENTADO** (§18-sexdecies). Pendiente cargar identidad real desde la interfaz. Nota original: **La prueba del 25-ago lo confirma como necesario**: el analista vio «42 %, 2 cuentas» sin poder ver que Instagram se hallo ayer y hoy no, que 8 de 14 consultas no respondieron, ni por que se rechazo el candidato de TikTok. Todo eso ya esta en la traza |
 | Zona horaria America/Guayaquil en la interfaz | 🔴 en cola |
 | Brave / fallback de proveedores | 🔴 sin credencial: 0 intentos en las dos ultimas ejecuciones |
@@ -3295,6 +3441,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-25 | P-CAND-UX-02 | Causa raiz: el formulario estaba montado en la rama de render de la LISTA de proyectos, que retorna antes que la del detalle, asi que al pulsar el boton su JSX no se renderizaba nunca. Defecto introducido por mi en el gate anterior al anclar la insercion sin comprobar la rama. Corregido y convertido en espacio de trabajo por plataforma, con varias cuentas, vista previa de foto y aviso de dominio. Dos defectos mas de la auditoria: retirar BORRABA la cuenta en vez de marcarla REVOCADA con su historia, y la ficha no exponia el id para retirar por identidad exacta. Probado que un PATCH parcial no borra nada y que el candidateId no cambia. 495 pruebas, 0 fallos. Nueva §18-septendecies. |
 | 2026-08-25 | P-CAND-UX-01 | Ficha de identidad implementada. `cuentasReferencia` pasa de campo a coleccion y admite varias cuentas por plataforma; la plataforma se lee del dominio con SD-1A y no de la casilla. Las siete plataformas se muestran siempre, tambien las vacias, con `PENDIENTE` que no afirma ausencia. Declarada por el analista y corroborada por Sentinel se muestran a la vez. Editar identidad sin borrar y recrear, con el id intacto; retirar una cuenta es explicito por id. La metrica pasa a «Solidez del expediente» con aclaracion y escala neutra: BUG-16 mitigado en interfaz, formula sin tocar. Hora local `America/Guayaquil`, persistencia en UTC. BUG-20 mitigado en interfaz y abierto en el modelo. 453 pruebas, 0 fallos. Nueva §18-sexdecies. |
 | 2026-08-25 | validacion real 17:23 | **P-CAND-01 VALIDADO EN REAL.** Ninguna cuenta consolidada desaparecio: inventario de 3, todas observadas. BUG-17 validado —`jotalloretv` propagado desde las consolidadas de X e Instagram, y ninguna consulta gastada en plataforma ya resuelta—. BUG-18 validado: TikTok por handle pasa de la posicion 13 a la 8 y una propagada se ejecuto por fin (`site:youtube.com "jotalloretv"`, 6 resultados). BUG-19 no contradicho pero NO ejercitado: todo se reencontro. El bloqueo restante es de CAPACIDAD de proveedores: 8 intentos no alcanzan para 6 plataformas mas propagacion, y Brave sigue sin credencial. BUG-20 y BUG-21 declarados sin corregir. Nueva §18-quindecies. |
 | 2026-08-25 | Identity Stability Gate | Implementado el inventario consolidado: una cuenta atribuida ya no desaparece porque un buscador no la devuelva. `estado` habla de identidad; `seenInCurrentRun`, `lastSeenAt` y `lastCheckedAt`, de observacion. NO_REENCONTRADA no es REVOCADA. BUG-17 cerrado leyendo el inventario autoritativo en lugar de un campo inexistente; BUG-18 reordenando el MISMO planificador por valor esperado, con la consulta de TikTok de la posicion 13 a la 8 y sin subir topes. Clasificador y umbrales sin tocar. 411 pruebas, 0 fallos. Nueva §18-quaterdecies. |
