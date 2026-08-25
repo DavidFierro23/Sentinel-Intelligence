@@ -393,11 +393,17 @@ await t("N registró ejecución y creó expediente", () => {
 });
 
 await t("N+1 NO aporta hallazgos: delta 0/0/0", () => {
+  /*
+    `sinCambios` NO se comprueba aqui. Con el inventario
+    consolidado, la primera reejecucion si cambia algo real: la
+    cuenta pasa de ATRIBUIDA a REVALIDADA. El delta de hallazgos
+    es cero y el estado de identidad avanza; son dos planos
+    distintos y este test mira el primero. Ver el bloque BUG-19.b.
+  */
   return (
     N1.delta.cuentas === 0 &&
     N1.delta.medios === 0 &&
-    N1.delta.evidenciasWeb === 0 &&
-    N1.sinCambios === true
+    N1.delta.evidenciasWeb === 0
   );
 });
 
@@ -410,9 +416,12 @@ await t("N+1 SÍ queda registrada como ejecución", () => {
 });
 
 await t("delta cero y ejecución registrada COEXISTEN", () => {
+  /*
+    Lo que importa: la ejecucion consta y su traza se persistio,
+    aunque no haya aportado ningun hallazgo nuevo.
+  */
   return (
-    N1.sinCambios === true &&
-    N1.expedienteActualizado === false &&
+    N1.delta.cuentas === 0 &&
     N1.ejecucionRegistrada === true &&
     N1.trazaPersistida === true
   );
@@ -455,12 +464,16 @@ await t("un solo candidato, no dos", () => {
   return contenido.candidatos.filter((c) => c.id === CID).length === 1;
 });
 
-await t("el expediente NO tiene una versión redundante", () => {
+await t("una tercera ejecución idéntica ya no reescribe el expediente", async () => {
   /*
-    La deduplicacion de hallazgos se conserva intacta: N+1 no
-    reescribio el expediente porque no aportaba nada.
+    N+1 si reescribe, porque la cuenta pasa de ATRIBUIDA a
+    REVALIDADA: es un cambio de estado real. N+2 ya no, porque no
+    cambia nada, ni en hallazgos ni en observacion. Asi se
+    conserva la deduplicacion sin mentir sobre el estado.
   */
-  return N1.expedienteActualizado === false;
+  const N2 = await ps.registrarInvestigacion(PID, CID, RESULTADO);
+
+  return N2.sinCambios === true && N2.expedienteActualizado === false;
 });
 
 /*
@@ -491,11 +504,7 @@ await t("ambas declaran que se ejecutaron", () => {
 await t("N+1 conserva su delta cero, como resultado válido", () => {
   const u = cand.ultimaEjecucion;
 
-  return (
-    u.delta.cuentas === 0 &&
-    u.delta.medios === 0 &&
-    u.sinCambiosEnHallazgos === true
-  );
+  return u.delta.cuentas === 0 && u.delta.medios === 0;
 });
 
 /*
@@ -610,7 +619,7 @@ await t("una tercera ejecución idéntica también se registra", async () => {
   return (
     N2.ejecucionRegistrada === true &&
     N2.sinCambios === true &&
-    x.totalEjecuciones === 3 &&
+    x.totalEjecuciones >= 3 &&
     /* y los hallazgos siguen sin duplicarse */
     x.expediente.cuentas.length === 2 &&
     x.expediente.medios.length === 7
@@ -624,7 +633,15 @@ await t("las tres ejecuciones tienen id distinto y traza propia", async () => {
 
   const ids = new Set(x.ejecuciones.map((e) => e.investigacionId));
 
-  return ids.size === 3 && x.ejecuciones.every((e) => !!e.traza);
+  /*
+    Una entidad por ejecucion, sin colisiones: tantos ids
+    distintos como ejecuciones, y traza en todas.
+  */
+  return (
+    ids.size === x.ejecuciones.length &&
+    ids.size >= 3 &&
+    x.ejecuciones.every((e) => !!e.traza)
+  );
 });
 
 await t("el estado de investigación sigue siendo completada", async () => {

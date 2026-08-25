@@ -107,6 +107,347 @@ cuando ocurrieron.
 */
 const PREFIJO_EJECUCION = "ejecucion-";
 
+
+/*
+===========================================================
+IDENTIDAD CONSOLIDADA — BUG-19
+===========================================================
+
+EL DEFECTO
+
+El expediente reconstruia sus cuentas desde el `perfilEjecutivo`
+de la ultima ejecucion. No acumulaba: REEMPLAZABA. Una cuenta
+correctamente atribuida desaparecia si el buscador no la devolvia
+otra vez.
+
+Medido en produccion: `instagram.com/jotalloretv` se atribuyo el
+24 de agosto a las 22:14 y desaparecio a las 15:58 del dia
+siguiente, cuando la consulta de Instagram devolvio 1 resultado
+en lugar de 9. La misma mecanica explica la regresion 49 → 22 que
+quedo dos dias sin explicacion.
+
+LA REGLA
+
+    LA AUSENCIA DE OBSERVACION NO REVOCA UNA IDENTIDAD.
+
+Que Google no devuelva hoy una cuenta no dice nada sobre si esa
+cuenta es del candidato. Dice algo sobre Google. Confundir las
+dos cosas es la misma familia de error que confundir «ausencia»
+con «no comprobada», y ya se corrigio una vez en la cobertura por
+plataforma; faltaba aqui.
+
+DOS PLANOS SEPARADOS
+
+    IDENTIDAD        de quien es la cuenta. Cambia poco y no la
+                     decide un proveedor.
+
+    OBSERVACION      si hoy se pudo ver. Cambia en cada corrida y
+                     depende por completo del proveedor.
+
+`estado` habla del primero. `seenInCurrentRun`, `lastSeenAt` y
+`lastCheckedAt` hablan del segundo. Una cuenta puede estar
+CONSOLIDADA y no reencontrada, y eso no es una contradiccion: es
+la descripcion honesta de lo que sabemos.
+
+SALIDAS DEL INVENTARIO
+
+Una cuenta solo deja de pertenecer al candidato por revocacion
+explicita, correccion del analista, evidencia de identidad
+incorrecta o eliminacion autorizada. Nunca por silencio de un
+buscador.
+===========================================================
+*/
+
+export const ESTADOS_IDENTIDAD = Object.freeze({
+  /* Hallada, sin veredicto de identidad todavia. */
+  DESCUBIERTA: "DESCUBIERTA",
+
+  /* El clasificador la atribuyo al objetivo en esta ejecucion. */
+  ATRIBUIDA: "ATRIBUIDA",
+
+  /* Atribuida y sostenida en el inventario del proyecto. */
+  CONSOLIDADA: "CONSOLIDADA",
+
+  /* La escribio el analista. Procedencia distinta, no evidencia. */
+  DECLARADA_POR_ANALISTA: "DECLARADA_POR_ANALISTA",
+
+  /* Consolidada y vuelta a observar en esta ejecucion. */
+  REVALIDADA: "REVALIDADA",
+
+  /*
+    No se pudo observar esta vez. NO es lo mismo que revocada, y
+    la diferencia es el punto entero de este contrato.
+  */
+  NO_REENCONTRADA: "NO_REENCONTRADA_EN_ULTIMA_VERIFICACION",
+
+  /* Retirada por decision, nunca por ausencia. */
+  REVOCADA: "REVOCADA"
+});
+
+
+/*
+  Clave canonica de una cuenta dentro de un candidato:
+  plataforma + handle normalizado. La URL puede variar en
+  esquema, «www» o barra final; el par plataforma+handle no.
+*/
+function claveIdentidad(cuenta) {
+  const plataforma = normalizarTexto(
+    String(cuenta?.plataformaId || cuenta?.platform || cuenta?.plataforma || "")
+  );
+
+  const handle = normalizarTexto(String(cuenta?.handle || ""));
+
+  if (!plataforma || !handle) return null;
+
+  return `${plataforma}:${handle}`;
+}
+
+
+function urlDe(c) {
+  return c?.url?.canonica || c?.url?.original || c?.url || null;
+}
+
+
+function puntuacionDe(c) {
+  return (
+    c?.correspondencia?.puntuacion ??
+    (typeof c?.correspondencia === "number" ? c.correspondencia : null)
+  );
+}
+
+
+/*
+-----------------------------------------------------------
+CUENTAS ATRIBUIDAS EN ESTA EJECUCION
+
+Se leen de `clasificacionCuentas`, que trae el veredicto y la
+procedencia en el mismo objeto, con respaldo en las tarjetas del
+perfil ejecutivo.
+-----------------------------------------------------------
+*/
+function atribuidasDeLaEjecucion(resultado) {
+  const cl = resultado?.clasificacionCuentas;
+
+  const lista = cl?.cuentasObjetivo?.length
+    ? cl.cuentasObjetivo
+    : resultado?.perfilEjecutivo?.tarjetas || [];
+
+  return lista
+    .map((c) => {
+      const origenes = c.origenes || [];
+
+      const analista = origenes.some((o) => o.origen === "analista");
+
+      return {
+        clave: claveIdentidad(c),
+        plataforma: c.plataforma || null,
+        plataformaId: c.plataformaId || c.platform || null,
+        handle: c.handle || null,
+        url: urlDe(c),
+        displayName: c.nombreVisible || null,
+
+        correspondencia: puntuacionDe(c),
+        nivelCorrespondencia: c.correspondencia?.nivel || c.nivel || null,
+
+        vias: c.vias || c.corroboracion?.vias || [],
+        proveedores: c.proveedores || c.corroboracion?.proveedores || [],
+
+        corroboracion: c.corroboracion
+          ? {
+              totalProveedores: c.corroboracion.totalProveedores ?? null,
+              multiProveedor: c.corroboracion.multiProveedor ?? null,
+              multiVia: c.corroboracion.multiVia ?? null
+            }
+          : null,
+
+        referenciaAnalista: analista,
+        noCuentaComoCorroboracion: origenes.some(
+          (o) => o.noCuentaComoCorroboracion === true
+        ),
+
+        evidenciaAtribucion:
+          (c.clasificacion?.razones || [])[0] || c.motivoClase || null
+      };
+    })
+    .filter((c) => c.clave);
+}
+
+
+/*
+-----------------------------------------------------------
+CONSOLIDAR
+
+Se funde el inventario que ya existia con lo observado ahora.
+Nada se borra por no haber sido visto.
+
+LIMITE DECLARADO: los expedientes escritos antes de este
+contrato no tienen `firstSeenAt`. No se inventa una fecha
+plausible —seria un dato falso con apariencia de dato—: queda
+`null` y `historiaIncompleta: true` lo dice.
+-----------------------------------------------------------
+*/
+function consolidarIdentidades(anterior, resultado, contexto) {
+  const { ejecutadaEn, investigacionId } = contexto;
+
+  const previas = Array.isArray(anterior?.cuentas) ? anterior.cuentas : [];
+
+  const inventario = new Map();
+
+  /* 1 · lo que ya se sabia. */
+  previas.forEach((c) => {
+    const clave = claveIdentidad(c) || claveIdentidad({ ...c, plataformaId: c.plataformaId });
+
+    if (!clave) return;
+
+    inventario.set(clave, {
+      ...c,
+
+      /*
+        Un expediente anterior a este contrato no traia estos
+        campos. Se completan sin fabricar historia.
+      */
+      firstSeenAt: c.firstSeenAt ?? null,
+      lastSeenAt: c.lastSeenAt ?? null,
+      lastCheckedAt: c.lastCheckedAt ?? null,
+      historiaIncompleta: c.firstSeenAt == null,
+
+      estado: c.estado || ESTADOS_IDENTIDAD.CONSOLIDADA,
+
+      /* Se recalcula abajo con lo de esta corrida. */
+      seenInCurrentRun: false
+    });
+  });
+
+  /* 2 · lo observado ahora. */
+  atribuidasDeLaEjecucion(resultado).forEach((obs) => {
+    const previa = inventario.get(obs.clave);
+
+    if (!previa) {
+      inventario.set(obs.clave, {
+        ...obs,
+
+        firstSeenAt: ejecutadaEn,
+        lastSeenAt: ejecutadaEn,
+        lastCheckedAt: ejecutadaEn,
+        historiaIncompleta: false,
+
+        seenInCurrentRun: true,
+        ultimaEjecucionObservada: investigacionId,
+
+        estado: obs.referenciaAnalista
+          ? ESTADOS_IDENTIDAD.DECLARADA_POR_ANALISTA
+          : ESTADOS_IDENTIDAD.ATRIBUIDA,
+
+        proveedoresHistoricos: [...(obs.proveedores || [])],
+        proveedoresUltimaObservacion: [...(obs.proveedores || [])]
+      });
+
+      return;
+    }
+
+    /*
+      Ya estaba: se REVALIDA. La identidad no se reconstruye, se
+      confirma, y los proveedores historicos se acumulan porque
+      son memoria de quien la ha visto alguna vez.
+    */
+    inventario.set(obs.clave, {
+      ...previa,
+      ...obs,
+
+      firstSeenAt: previa.firstSeenAt ?? ejecutadaEn,
+      lastSeenAt: ejecutadaEn,
+      lastCheckedAt: ejecutadaEn,
+      historiaIncompleta: previa.firstSeenAt == null,
+
+      seenInCurrentRun: true,
+      ultimaEjecucionObservada: investigacionId,
+
+      estado:
+        previa.estado === ESTADOS_IDENTIDAD.REVOCADA
+          ? ESTADOS_IDENTIDAD.REVOCADA
+          : ESTADOS_IDENTIDAD.REVALIDADA,
+
+      proveedoresHistoricos: [
+        ...new Set([
+          ...(previa.proveedoresHistoricos || previa.proveedores || []),
+          ...(obs.proveedores || [])
+        ])
+      ],
+      proveedoresUltimaObservacion: [...(obs.proveedores || [])]
+    });
+  });
+
+  /* 3 · lo que existia y esta vez no se vio. */
+  return [...inventario.values()].map((c) => {
+    if (c.seenInCurrentRun) return c;
+
+    /*
+      AQUI ESTA LA REGLA. No se borra, no se revoca: se declara
+      que no se pudo observar. `lastCheckedAt` avanza porque SI se
+      mira; `lastSeenAt` no, porque no se vio.
+    */
+    return {
+      ...c,
+      lastCheckedAt: ejecutadaEn,
+      estado:
+        c.estado === ESTADOS_IDENTIDAD.REVOCADA
+          ? ESTADOS_IDENTIDAD.REVOCADA
+          : ESTADOS_IDENTIDAD.NO_REENCONTRADA,
+      proveedoresUltimaObservacion: []
+    };
+  });
+}
+
+
+/*
+-----------------------------------------------------------
+INVENTARIO CONSOLIDADO DE UN CANDIDATO
+
+Lectura autoritativa, la misma que usa `contenidoDeProyecto`.
+Existe como funcion propia porque `obtenerCandidato` devuelve el
+registro crudo y NO trae expediente: leerlo de ahi fue el
+defecto BUG-17.
+-----------------------------------------------------------
+*/
+export async function expedienteDe(proyectoId, tipo, id) {
+  const nombres = [`expediente-${tipo}-${id}`, `expediente-${id}`];
+
+  for (const nombre of nombres) {
+    try {
+      const v = await obtenerVersionEntidad(
+        claveLake(proyectoId, TIPO_EXPEDIENTE, nombre),
+        {}
+      );
+
+      if (v?.registro?.datos) return v.registro.datos;
+    } catch {
+      /* Se prueba el siguiente nombre. */
+    }
+  }
+
+  return null;
+}
+
+
+export async function inventarioConsolidado(proyectoId, tipo, id) {
+  const expediente = await expedienteDe(proyectoId, tipo, id);
+
+  const cuentas = (expediente?.cuentas || []).filter(
+    (c) => c.estado !== ESTADOS_IDENTIDAD.REVOCADA
+  );
+
+  return cuentas.map((c) => ({
+    plataforma: c.plataforma || null,
+    plataformaId: c.plataformaId || null,
+    handle: c.handle || null,
+    url: c.url || null,
+    estado: c.estado || ESTADOS_IDENTIDAD.CONSOLIDADA,
+    seenInCurrentRun: c.seenInCurrentRun === true,
+    referenciaAnalista: c.referenciaAnalista === true,
+    noCuentaComoCorroboracion: c.noCuentaComoCorroboracion === true
+  }));
+}
+
 /*
   Los proyectos viven en un espacio propio para que el catálogo de
   proyectos no quede dentro de ningún proyecto.
@@ -517,32 +858,17 @@ export async function contenidoDeProyecto(proyectoId) {
 
     if (!datos) continue;
 
-    /* Expediente, si existe. Sin investigar nada. */
-    let expediente = null;
-
     /*
-      Nombre actual primero, nombre heredado despues. Ver la nota
-      del renombrado: en disco existen los dos.
+      Expediente, si existe. Sin investigar nada. Se lee con
+      `expedienteDe`, la misma via que usa la propagacion de
+      handles: una sola lectura autoritativa evita que dos sitios
+      discrepen sobre cual es el expediente vigente.
     */
-    const nombresExpediente = [
-      `expediente-${esActor ? "actor" : "candidato"}-${id}`,
-      `expediente-${id}`
-    ];
-
-    for (const nombreExp of nombresExpediente) {
-      if (expediente) break;
-
-      try {
-        const v = await obtenerVersionEntidad(
-          claveLake(proyectoId, TIPO_EXPEDIENTE, nombreExp),
-          {}
-        );
-
-        expediente = v?.registro?.datos || null;
-      } catch {
-        /* Se prueba el siguiente nombre. */
-      }
-    }
+    const expediente = await expedienteDe(
+      proyectoId,
+      esActor ? "actor" : "candidato",
+      id
+    );
 
     /*
       EJECUCIONES de este candidato, la mas reciente primero. El
@@ -1405,7 +1731,7 @@ function consumoDeProveedores(resultado) {
 }
 
 
-function resumirExpediente(resultado) {
+function resumirExpediente(resultado, anterior = null, contexto = {}) {
   const pe = resultado?.perfilEjecutivo || null;
 
   const f = resultado?.fichaObjetivo || null;
@@ -1494,14 +1820,26 @@ function resumirExpediente(resultado) {
         "Cada plataforma declara uno de cinco estados. ATRIBUIDA, ENCONTRADA_NO_ATRIBUIDA, BUSCADA_SIN_RESULTADO, NO_EJECUTADA o ERROR_PROVIDER. Ninguno de ellos afirma que la persona no tenga cuenta."
     },
 
-    cuentas: (pe?.tarjetas || []).map((t) => ({
-      plataforma: t.plataforma,
-      plataformaId: t.plataformaId,
-      handle: t.handle,
-      url: t.url,
-      correspondencia: t.correspondencia,
-      proveedores: t.proveedores || []
-    })),
+    /*
+      ---------------------------------------------------------
+      INVENTARIO CONSOLIDADO — BUG-19
+      ---------------------------------------------------------
+
+      Antes: `(pe?.tarjetas || []).map(...)`. El expediente se
+      reescribia con lo de la ultima corrida, asi que una cuenta
+      atribuida desaparecia si el buscador no la devolvia otra
+      vez.
+
+      Ahora se funde con lo que ya habia. La ausencia de
+      observacion no revoca una identidad: la marca como no
+      reencontrada y sigue en el inventario. Ver
+      `consolidarIdentidades`.
+      ---------------------------------------------------------
+    */
+    cuentas: consolidarIdentidades(anterior, resultado, {
+      ejecutadaEn: contexto.ejecutadaEn || null,
+      investigacionId: contexto.investigacionId || null
+    }),
 
     medios: (pe?.medios || []).map((m) => ({
       plataforma: m.plataforma,
@@ -1571,7 +1909,20 @@ export async function registrarInvestigacion(
     anterior = null;
   }
 
-  const actual = resumirExpediente(resultado);
+  /*
+    El instante de la ejecucion se fija ANTES de consolidar: es el
+    mismo que sella los `lastSeenAt` y `lastCheckedAt` del
+    inventario y el que identifica la ejecucion. Dos relojes
+    distintos para el mismo hecho serian dos verdades.
+  */
+  const ejecutadaEn = new Date().toISOString();
+
+  const investigacionId = `inv-${tipo}-${candidatoId}-${ejecutadaEn}`;
+
+  const actual = resumirExpediente(resultado, anterior, {
+    ejecutadaEn,
+    investigacionId
+  });
 
   /*
     ---------------------------------------------------------
@@ -1592,11 +1943,28 @@ export async function registrarInvestigacion(
     (m) => !mediosPrevios.has(String(m.url || m.handle).toLowerCase())
   );
 
+  /*
+    Huella del plano de OBSERVACION: que cuentas se vieron esta
+    vez y en que estado quedo cada una.
+
+    Hace falta porque con el inventario consolidado las claves ya
+    no cambian cuando una cuenta deja de reencontrarse —siguen
+    todas—, y sin esto el expediente no se reescribiria y
+    `seenInCurrentRun` se quedaria mintiendo con el valor de ayer.
+  */
+  const huellaObservacion = (e) =>
+    JSON.stringify(
+      (e?.cuentas || [])
+        .map((c) => `${c.plataformaId}:${c.handle}:${c.estado}:${c.seenInCurrentRun}`)
+        .sort()
+    );
+
   const sinCambios =
     anterior !== null &&
     JSON.stringify(anterior.clavesCuenta) === JSON.stringify(actual.clavesCuenta) &&
     (anterior.medios || []).length === actual.medios.length &&
-    anterior.evidenciasWeb === actual.evidenciasWeb;
+    anterior.evidenciasWeb === actual.evidenciasWeb &&
+    huellaObservacion(anterior) === huellaObservacion(actual);
 
   let escritura = null;
 
@@ -1616,10 +1984,6 @@ export async function registrarInvestigacion(
     hallazgo: lo nuevo es el evento.
     ---------------------------------------------------------
   */
-  const ejecutadaEn = new Date().toISOString();
-
-  const investigacionId = `inv-${tipo}-${candidatoId}-${ejecutadaEn}`;
-
   const delta = {
     cuentas: cuentasNuevas.length,
     medios: mediosNuevos.length,
@@ -1657,6 +2021,25 @@ export async function registrarInvestigacion(
           /* Un delta de cero es un resultado valido, no un fallo. */
           delta,
           sinCambiosEnHallazgos: sinCambios,
+
+          /*
+            Identidad frente a observacion, separadas. Una cuenta
+            consolidada que no se vio hoy no es una cuenta perdida.
+          */
+          inventario: {
+            total: (actual.cuentas || []).length,
+            observadasEnEstaEjecucion: (actual.cuentas || []).filter(
+              (c) => c.seenInCurrentRun
+            ).length,
+            noReencontradas: (actual.cuentas || []).filter(
+              (c) => !c.seenInCurrentRun
+            ).length,
+            porEstado: (actual.cuentas || []).reduce((acc, c) => {
+              acc[c.estado] = (acc[c.estado] || 0) + 1;
+
+              return acc;
+            }, {})
+          },
 
           /*
             LA TRAZA. Es la razon de ser de este registro.
