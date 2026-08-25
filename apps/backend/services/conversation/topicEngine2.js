@@ -8,6 +8,7 @@ import { agruparCasiDuplicados } from "./nearDuplicate.js";
 import { clasificarEncuadre } from "./framingClassifier.js";
 import { identificarFuente } from "./mediaRegistry.js";
 import { UMBRALES } from "./conversationContracts.js";
+import { esPolisemico } from "./openTopicDiscovery.js";
 
 /*
 ===========================================================
@@ -163,6 +164,9 @@ export function extraerEntidades(titulo, stop) {
     actual = [];
   };
 
+  const esMay = (w) =>
+    /^[A-ZÁÉÍÓÚÑÜ]/.test(String(w || "").replace(/[.,;:!?"»«()]+$/g, ""));
+
   palabras.forEach((p, i) => {
     const limpio = p.replace(/[.,;:!?"»«()]+$/g, "");
 
@@ -171,7 +175,23 @@ export function extraerEntidades(titulo, stop) {
     const esConector = CONECTORES.has(normalizarTexto(limpio));
 
     if (i === 0) {
-      /* Primera palabra: no inicia entidad, pero puede continuarla. */
+      /*
+        La mayuscula de la primera palabra es ortografica, asi
+        que por si sola no significa nada. Pero descartarla
+        siempre perdia las entidades que ABREN el titular, que
+        en prensa son muchas.
+
+        Medido: «Deportivo Cuenca gano el partido» no producia
+        ninguna entidad, y el tema descubierto acababa
+        etiquetado con el nombre del estadio en vez de con el
+        del equipo.
+
+        Regla: la primera palabra inicia entidad solo si la
+        SEGUNDA tambien va en mayuscula. «Deportivo Cuenca» si;
+        «Congestion vehicular» no.
+      */
+      if (esMayuscula && esMay(palabras[1])) actual.push(limpio);
+
       return;
     }
 
@@ -326,6 +346,8 @@ export function extraerTemas2(evidencias = [], opciones = {}) {
   */
   const porCategoria = new Map();
 
+  const descartesPolisemia = [];
+
   universo.forEach((i) => {
     const tokens = tokensPorIndice.get(i) || [];
 
@@ -333,6 +355,43 @@ export function extraerTemas2(evidencias = [], opciones = {}) {
       const golpes = tokens.filter((t) => cat.terminos.includes(t));
 
       if (golpes.length === 0) return;
+
+      /*
+        -------------------------------------------------------
+        GUARDA DE POLISEMIA — defecto MEDIDO
+        -------------------------------------------------------
+
+        Auditado sobre el catalogo actual:
+
+          «Deportivo Cuenca gano el PARTIDO en el estadio»
+              -> Proceso electoral      (partido politico)
+
+          «CORTE de energia electrica afecta sectores»
+              -> Agua y saneamiento     (corte de agua)
+
+        Un partido de futbol etiquetado como politica electoral,
+        en un producto de inteligencia electoral, no es un
+        matiz: es una cifra falsa en el panel.
+
+        El termino NO se elimina del lexico —«partido» es
+        legitimo en lo electoral y «corte» en lo hidrico—. Lo
+        que se exige es que no sostenga la categoria EL SOLO.
+        Con un segundo termino de la misma categoria, la
+        asignacion vuelve a ser buena.
+      */
+      const soloPolisemicos = golpes.every((g) => esPolisemico(g));
+
+      if (soloPolisemicos && golpes.length < 2) {
+        descartesPolisemia.push({
+          indice: i,
+          categoria: cat.nombre,
+          termino: golpes[0],
+          titulo: lista[i]?.titulo || null,
+          motivo: `El unico termino que sostenia "${cat.nombre}" era «${golpes[0]}», que es polisemico. Sin un segundo termino de la categoria, la asignacion no se hace.`
+        });
+
+        return;
+      }
 
       if (!porCategoria.has(catId)) {
         porCategoria.set(catId, { catId, nombre: cat.nombre, indices: [], golpes: new Set() });
@@ -514,6 +573,14 @@ export function extraerTemas2(evidencias = [], opciones = {}) {
 
     contenidoExcluido: {
       porTipo: tipos.excluidas,
+
+      /*
+        Asignaciones de categoria que NO se hicieron porque el
+        unico termino que las sostenia era polisemico. Se
+        declaran: un descarte silencioso es indistinguible de
+        no haber mirado.
+      */
+      polisemia: descartesPolisemia,
       conteo: tipos.conteo,
       declaracion: tipos.declaracion,
       casiDuplicados: dup.detalle,

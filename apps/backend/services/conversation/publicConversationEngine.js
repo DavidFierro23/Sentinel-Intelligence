@@ -2,6 +2,7 @@
 
 import { recolectar } from "./conversationHarvester.js";
 import { extraerTemas2 } from "./topicEngine2.js";
+import { descubrirTemas } from "./openTopicDiscovery.js";
 import { resumirEncuadre } from "./framingClassifier.js";
 import { resumirMedios } from "./mediaRegistry.js";
 import { contarMenciones, mediosPorActor } from "./actorMentions.js";
@@ -105,6 +106,39 @@ export async function analizarConversacionPublica(opciones = {}) {
 
   /*
     ---------------------------------------------------------
+    2-BIS. OPEN TOPIC DISCOVERY (Gate C2)
+    ---------------------------------------------------------
+
+    Corre APARTE del Topic Engine 2 y con el mismo corpus. Son
+    dos preguntas distintas:
+
+        descubrimiento   ¿que parece estar apareciendo?
+        clasificacion    ¿como lo organizamos y explicamos?
+
+    El primero no consulta ninguna taxonomia. Auditado sobre el
+    catalogo actual, tres temas reales —lluvias e inundaciones,
+    festival cultural, sismo— no tienen categoria declarada: un
+    motor que solo mirase por ahi responderia «en Cuenca se
+    habla de gestion publica» el dia de una inundacion.
+
+    No sustituye al Topic Engine 2: lo complementa. Las
+    categorias siguen sirviendo para ORGANIZAR lo descubierto,
+    pero ya no deciden por si solas que existe.
+  */
+  let descubrimiento = null;
+
+  try {
+    descubrimiento = descubrirTemas(evidencias, {
+      ...opciones,
+      ambito: opciones.ambito || null,
+      consultas: recoleccion.consultasPlanificadas || []
+    });
+  } catch (error) {
+    console.error("[conversacion] descubrimiento abierto fallo:", error);
+  }
+
+  /*
+    ---------------------------------------------------------
     3. ENCUADRE
     ---------------------------------------------------------
   */
@@ -196,6 +230,7 @@ export async function analizarConversacionPublica(opciones = {}) {
     evidencias,
 
     temas,
+    descubrimiento,
     encuadre,
     menciones,
     coberturaPorActor,
@@ -259,6 +294,7 @@ function reunirLoQueNoSabemos(partes) {
     ),
 
     ...(partes.temas?.loQueNoSabemos || []),
+    ...(partes.descubrimiento?.loQueNoSabemos || []),
     ...(partes.encuadre?.loQueNoSabemos || []),
     ...(partes.menciones?.loQueNoSabemos || []),
     ...(partes.medios?.loQueNoSabemos || []),

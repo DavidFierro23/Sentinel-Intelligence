@@ -24,6 +24,8 @@ import {
 
 import { recargarRegistro } from "../services/geo/territoryRegistry.js";
 
+import { cruzarTemaTerritorio } from "../services/geo/topicTerritoryCrosstab.js";
+
 /*
 ===========================================================
 RUTAS DE INTELIGENCIA TERRITORIAL Y CONVERSACION PUBLICA
@@ -288,14 +290,23 @@ router.post("/analisis", async (req, res) => {
     */
     let mencionesPorTerritorio = null;
 
-    if (actores.length > 0 && conversacion.evidencias.length > 0) {
-      const ubicaciones = [];
+    /*
+      Ubicacion por indice, reutilizada por menciones y por el
+      cruce tema x territorio.
+    */
+    const ubicaciones = [];
 
-      territorio.agregado.unidades.forEach((u) => {
-        u.evidencias.forEach((ev) => {
-          ubicaciones[ev.indice] = { unidadId: u.unidadId };
-        });
+    territorio.agregado.unidades.forEach((u) => {
+      u.evidencias.forEach((ev) => {
+        ubicaciones[ev.indice] = {
+          unidadId: u.unidadId,
+          unidad: u.nombre,
+          nivel: u.resolucion
+        };
       });
+    });
+
+    if (actores.length > 0 && conversacion.evidencias.length > 0) {
 
       const { contarMenciones } = await import(
         "../services/conversation/actorMentions.js"
@@ -331,6 +342,26 @@ router.post("/analisis", async (req, res) => {
       conversacion
     });
 
+    /*
+      -------------------------------------------------------
+      6. TEMA x TERRITORIO — Gate C2
+
+      Solo con evidencias GEOLOCALIZABLES. Un tema con diez
+      evidencias de las que dos se pudieron ubicar aparece con
+      dos, no con diez repartidas.
+
+      No se reparte un tema territorialmente por poblacion y no
+      se asume que una noticia sobre Cuenca aplique a todas sus
+      parroquias: eso seria desagregar, y GEO-1 lo prohibe.
+      -------------------------------------------------------
+    */
+    const temaPorTerritorio = cruzarTemaTerritorio({
+      temas: conversacion?.temas?.temas || [],
+      descubiertos: conversacion?.descubrimiento?.temasDescubiertos || [],
+      ubicaciones,
+      totalEvidencias: conversacion.evidencias.length
+    });
+
     res.json({
       modulo: "inteligencia_territorial",
       version: "1.0",
@@ -338,6 +369,8 @@ router.post("/analisis", async (req, res) => {
       ambito,
 
       evidenciasEnriquecidas,
+
+      temaPorTerritorio,
 
       proyecto: contextoProyecto?.proyecto || null,
       contextoProyecto: contextoProyecto

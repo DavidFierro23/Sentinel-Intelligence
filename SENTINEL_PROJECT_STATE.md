@@ -672,6 +672,99 @@ Tendencias comparando ventanas: **no implementado**. Exige recolectar la ventana
 
 ---
 
+## 13-quinquies. Open Topic Discovery + Geo Foundation — GATE C2 (2026-08-25)
+
+✅ **Descubrimiento abierto**, sin taxonomía previa.
+
+### La decisión arquitectónica
+
+```
+ANTES                          AHORA
+categorías predefinidas   →    corpus observado
+   ↓                              ↓
+búsquedas temáticas            OPEN TOPIC DISCOVERY
+   ↓                              ↓
+"estos son los temas"          clusters descubiertos
+                                  ↓
+                               TOPIC ENGINE 2 (organiza)
+```
+
+Las categorías **ayudan a organizar** lo descubierto. Ya no deciden por sí solas qué existe.
+
+### Por qué hacía falta — auditado
+
+| Titular | Categoría en las 12 declaradas |
+|---|---|
+| «Lluvias e inundaciones anegan calles» | **ninguna** |
+| «Festival de artes escénicas» | **ninguna** |
+| «Sismo se sintió en la madrugada» | **ninguna** |
+
+Un motor que solo mirase la taxonomía respondería «en Cuenca se habla de gestión pública» **el día de una inundación**.
+
+### Dos falsos positivos por polisemia, corregidos
+
+| Titular | Antes | Ahora |
+|---|---|---|
+| «Deportivo Cuenca ganó el **partido**» | Proceso electoral | sin categoría → descubierto como *Deportivo Cuenca* |
+| «**Corte** de energía eléctrica» | Agua y saneamiento | sin categoría |
+
+El término no se elimina del léxico: se exige que **no sostenga la categoría él solo**. Con un segundo término de la misma categoría, la asignación vuelve.
+
+### Señales de descubrimiento
+
+Entidades nombradas · bigramas frecuentes · coocurrencia. **Sin dependencias nuevas.**
+
+Se evaluó incorporar *embeddings* y se descartó por dos motivos: un cluster semántico no puede explicar **por qué** agrupó (IA1), y un modelo que se actualiza rompe la reproducibilidad que exige Replay.
+
+### Ejemplo verificado
+
+```
+Deportivo Cuenca      3 docs · 3 fuentes · entidad nombrada
+lluvias·inundaciones  3 docs · 3 fuentes · coocurrencia
+festival artes        2 docs · 2 fuentes · bigrama
+sismo                 1 doc  → NO forma tema
+```
+
+### Geo Intelligence Foundation
+
+| Pieza | Fichero |
+|---|---|
+| Geolocalización formal de evidencia | `geo/evidenceGeolocation.js` |
+| Zonas analíticas | `geo/analyticalZones.js` |
+| Tema × territorio | `geo/topicTerritoryCrosstab.js` |
+| Contratos de capas futuras | `contracts/futureLayers.js` |
+
+**Seis métodos de geolocalización** declarados por evidencia. **Multi-territorio**: `territorioDetectado` + `mencionesTerritoriales[]` — «El Vado y Las Herrerías, en Cuenca» conserva las tres.
+
+**Zonas analíticas: registro VACÍO.** No existe división oficial Norte/Sur de Cuenca. Se entrega la capacidad de definirlas, con criterio, autor y fecha obligatorios. `unidadOficial: false` siempre. Geometría solo derivada si **todas** las hijas tienen polígono — media zona pintada sugiere que el resto no tiene actividad.
+
+### Contratos declarados, cero implementación
+
+`DIGITAL_BEHAVIOR` (agregado, nunca individual) · `VENTANAS_COMPARABLES` · `CANDIDATE_OVERLAY` (solo lectura) · `CAMPAIGN_DECISION` · **`DATA-PROVIDER-EVAL-01`**
+
+### Sesgo de recolección — declarado, no resuelto
+
+De las 4 consultas por defecto, **2 llevan vocabulario de gestión pública**. El corpus llega inclinado. C2 no lo corrige; lo que hace es no añadir un **segundo** sesgo al interpretar.
+
+---
+
+## 13-sexies. Roadmap territorial
+
+```
+✅ A   Datos oficiales
+✅ B   Gazetteer
+✅ C   Topic Engine 2
+✅ C2  Open Topic Discovery + Geo Foundation
+→  D   Agenda / Radar UI                    ← siguiente
+   F   Geo Intelligence Map + zonas analíticas
+   E   Trend / Pulse con ventanas comparables
+   G   Digital Behavior agregado
+   H   Candidate / Territory Intelligence
+   —   Campaign Decision Layer
+```
+
+---
+
 ## 14. Pendientes críticos territoriales
 
 🔴 **CRÍTICO** — sin esto el módulo es funcional pero incompleto:
@@ -689,6 +782,9 @@ Tendencias comparando ventanas: **no implementado**. Exige recolectar la ventana
 | 9 | Ingesta continua | separar actividad de observación | riesgo WR-7 |
 | 10 | **Nomenclatura oficial de barrios y sectores** del GAD, con su relación a parroquia | resolución infra-parroquial | 🔴 no localizada; 9 topónimos son candidatos sin certificar |
 | 11 | **Ventana temporal anterior** en el recolector | tendencias, emergentes, «en crecimiento» | 🔴 Google News no da archivo histórico |
+| 12 | **Sesgo de consulta del recolector** | descubrimiento verdaderamente abierto | 🟡 2 de 4 consultas llevan vocabulario de gestión |
+| 13 | **`DATA-PROVIDER-EVAL-01`** | integrar cualquier proveedor comercial | 🔴 evaluación no iniciada |
+| 14 | Ampliar taxonomía: clima/desastres, cultura, deportes, energía | categorías para lo ya descubierto | 🟡 el descubrimiento abierto lo suple mientras tanto |
 
 `POST /api/territorio/recargar` integra 1–4 **sin reiniciar el backend y sin
 cambiar arquitectura**.
