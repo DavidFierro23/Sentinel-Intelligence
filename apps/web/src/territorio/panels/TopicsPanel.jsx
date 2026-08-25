@@ -99,7 +99,17 @@ function Tema({ tema }) {
             flexShrink: 0
           }}
         >
-          {tema.origen === "lexico" ? "léxico declarado" : "emergente"}
+          {/*
+            El motor llama «emergente» a este origen, y ahi
+            significa «hallado sin lexico previo»: es una
+            PROCEDENCIA. En pantalla la misma palabra se lee como
+            «esta creciendo», que es una afirmacion de tendencia
+            —y sin ventana anterior no hay tendencia que afirmar.
+
+            Se renombra solo la etiqueta visible. El contrato del
+            motor no cambia.
+          */}
+          {tema.origen === "lexico" ? "léxico declarado" : "descubierto en el corpus"}
         </span>
 
         <span

@@ -308,6 +308,99 @@ export function cargarTerritorios({ forzar = false } = {}) {
   }
 
   /*
+    ---------------------------------------------------------
+    GEOMETRIA DERIVADA DEL CANTON
+
+    CONALI publica parroquias y cabeceras, no el contorno del
+    canton. Sin esto, el mapa se quedaba VACIO en la practica:
+    GEO-1 mantiene casi toda la evidencia a nivel canton, y el
+    canton no tenia poligono que pintar.
+
+    Se compone como la union de sus hijas. Es legitimo y por la
+    MISMA regla que rige las zonas analiticas: solo se deriva si
+    TODAS las hijas tienen poligono. Las 21 parroquias rurales
+    mas la cabecera cantonal teselan el canton exactamente, sin
+    huecos ni solapes.
+
+    Se marca `geometriaDerivada: true` y se conserva de que
+    unidades salio. No es un poligono oficial del canton: es la
+    suma declarada de poligonos oficiales, y la diferencia
+    tiene que viajar con el dato.
+    ---------------------------------------------------------
+  */
+  const derivadas = [];
+
+  unidades.forEach((u) => {
+    if (u.geometriaDisponible) return;
+
+    if (!["canton", "provincia", "pais"].includes(u.resolucion)) return;
+
+    const hijas = unidades.filter(
+      (h) =>
+        h.geometriaDisponible &&
+        (h.padre === u.id || (h.jerarquia === "sectorial" && h.padre === u.id))
+    );
+
+    if (hijas.length === 0) return;
+
+    /* Todas las hijas administrativas deben tener poligono. */
+    const hijasAdministrativas = unidades.filter(
+      (h) => h.padre === u.id && h.jerarquia === "administrativa"
+    );
+
+    const faltan = hijasAdministrativas.filter((h) => !h.geometriaDisponible);
+
+    /*
+      Las 15 urbanas no tienen poligono INDIVIDUAL, pero su area
+      esta cubierta por la cabecera cantonal. Se comprueba que
+      exista esa cobertura antes de derivar.
+    */
+    const cubiertasPorCabecera = faltan.every((h) =>
+      unidades.some(
+        (s) =>
+          s.geometriaDisponible &&
+          (s.solapa || []).some((x) => x.unidadId === h.id)
+      )
+    );
+
+    if (!cubiertasPorCabecera) return;
+
+    u.geometria = {
+      type: "MultiPolygon",
+      coordinates: hijas.map((h) =>
+        h.geometria.type === "Polygon"
+          ? h.geometria.coordinates
+          : h.geometria.coordinates.flat()
+      )
+    };
+
+    u.geometriaDisponible = true;
+
+    u.geometriaDerivada = true;
+
+    u.poligonosOrigen = hijas.map((h) => ({
+      unidadId: h.id,
+      nombre: h.nombre,
+      codigoOficial: h.codigoOficial || null
+    }));
+
+    u.superficieKm2 = Number(
+      hijas.reduce((s, h) => s + (h.superficieKm2 || 0), 0).toFixed(3)
+    );
+
+    delete u.motivoSinGeometria;
+
+    sinGeometria -= 1;
+
+    derivadas.push({
+      unidadId: u.id,
+      nombre: u.nombre,
+      desde: hijas.length,
+      nota: "Union declarada de poligonos oficiales, no un poligono oficial propio."
+    });
+  });
+
+  /*
     -------------------------------------------------------
     DENOMINADORES
 
@@ -506,7 +599,9 @@ export function cargarTerritorios({ forzar = false } = {}) {
 
     geometria: {
       disponible: geometrias.size > 0,
-      unidadesConGeometria: geometrias.size,
+      unidadesConGeometria: geometrias.size + derivadas.length,
+      unidadesConPoligonoPropio: geometrias.size,
+      derivadas,
       metadata: metadataGeo
     },
 
@@ -518,6 +613,7 @@ export function cargarTerritorios({ forzar = false } = {}) {
       }, {}),
       conGeometria,
       sinGeometria,
+      geometriasDerivadas: derivadas.length,
       sinVerificar,
       denominadoresConValor: conteoDenominadores,
       nivelesDenominador: Object.fromEntries(

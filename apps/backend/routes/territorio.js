@@ -26,6 +26,11 @@ import { recargarRegistro } from "../services/geo/territoryRegistry.js";
 
 import { cruzarTemaTerritorio } from "../services/geo/topicTerritoryCrosstab.js";
 
+import {
+  construirAgenda,
+  construirMapa
+} from "../services/geo/territorialAgenda.js";
+
 /*
 ===========================================================
 RUTAS DE INTELIGENCIA TERRITORIAL Y CONVERSACION PUBLICA
@@ -362,6 +367,43 @@ router.post("/analisis", async (req, res) => {
       totalEvidencias: conversacion.evidencias.length
     });
 
+    /*
+      -------------------------------------------------------
+      7. AGENDA Y MAPA — Gate D + F1
+
+      La agenda FUSIONA descubiertos y clasificados: son dos
+      caminos al mismo asunto, no dos asuntos. Un tema que la
+      taxonomia no cubre no se esconde, se marca.
+      -------------------------------------------------------
+    */
+    const agendaCompuesta = construirAgenda({
+      temasClasificados: conversacion?.temas?.temas || [],
+      temasDescubiertos: conversacion?.descubrimiento?.temasDescubiertos || [],
+      ubicaciones,
+      referencia: cuerpo.hasta || new Date().toISOString()
+    });
+
+    const mapa = construirMapa({
+      agregado: territorio.agregado,
+      ubicaciones,
+      agenda: agendaCompuesta.agenda
+    });
+
+    /*
+      -------------------------------------------------------
+      8. LIMITACIONES DE COBERTURA — visibles, no escondidas
+
+      El corpus llega con sesgo de recoleccion demostrado. La
+      interfaz tiene que poder decirlo sin que el analista
+      tenga que leer el codigo.
+      -------------------------------------------------------
+    */
+    const coverageLimitations = construirLimitacionesDeCobertura({
+      conversacion,
+      territorio,
+      mapa
+    });
+
     res.json({
       modulo: "inteligencia_territorial",
       version: "1.0",
@@ -371,6 +413,14 @@ router.post("/analisis", async (req, res) => {
       evidenciasEnriquecidas,
 
       temaPorTerritorio,
+
+      /* Gate D */
+      agenda: agendaCompuesta,
+
+      /* Gate F1 */
+      mapa,
+
+      coverageLimitations,
 
       proyecto: contextoProyecto?.proyecto || null,
       contextoProyecto: contextoProyecto
@@ -408,6 +458,117 @@ router.post("/analisis", async (req, res) => {
     res.status(500).json({ error: e?.message || "fallo el analisis" });
   }
 });
+
+
+/*
+===========================================================
+LIMITACIONES DE COBERTURA — Gate D
+===========================================================
+
+Lo que la pantalla tiene que poder decir para que nadie lea la
+agenda como si fuera la conversacion completa de Cuenca.
+
+La primera entrada es la mas importante y va siempre: el
+corpus llega con sesgo de recoleccion demostrado, y esconderlo
+convertiria una lectura parcial en una conclusion.
+===========================================================
+*/
+
+function construirLimitacionesDeCobertura({ conversacion, territorio, mapa }) {
+  const lims = [];
+
+  const consultas = conversacion?.recoleccion?.consultasPlanificadas || [];
+
+  const conSesgo = consultas.filter((c) =>
+    /gestion|gobernanza/.test(String(c.etiqueta || ""))
+  ).length;
+
+  lims.push({
+    id: "corpus_parcial",
+    severidad: "alta",
+    titulo: "Lectura basada en las fuentes y consultas observadas",
+    detalle:
+      "No representa la totalidad de la conversación de Cuenca. Es lo que estas fuentes devolvieron con estas consultas.",
+    visibleSiempre: true
+  });
+
+  if (conSesgo > 0 && consultas.length > 0) {
+    lims.push({
+      id: "sesgo_de_consulta",
+      severidad: "media",
+      titulo: "Sesgo de consulta",
+      detalle: `${conSesgo} de ${consultas.length} consultas llevan vocabulario de gestión pública. El corpus llega inclinado hacia esos temas.`,
+
+      /*
+        Siempre visible. Esta limitacion no matiza un dato
+        suelto: inclina la AGENDA entera. Si el corpus se pidio
+        con vocabulario de gestion, que la gestion encabece no
+        es un hallazgo, es un eco de la consulta. Plegarla
+        mientras se muestran limitaciones menores seria esconder
+        justo la que cambia como se lee la pantalla.
+      */
+      visibleSiempre: true
+    });
+  }
+
+  const sinCobertura =
+    conversacion?.recoleccion?.cobertura?.motoresSinCobertura || [];
+
+  if (sinCobertura.length) {
+    lims.push({
+      id: "motores_sin_cobertura",
+      severidad: "media",
+      titulo: `${sinCobertura.length} motores sin consultar`,
+      detalle: `Sobre ${sinCobertura
+        .map((m) => m.motor)
+        .join(", ")} no se puede afirmar ausencia: no se les preguntó o no pudieron responder.`,
+      visibleSiempre: false
+    });
+  }
+
+  if (mapa?.metricas?.unidadesSinGeometria > 0) {
+    lims.push({
+      id: "geometria_parcial",
+      severidad: "media",
+      titulo: "Cobertura geométrica parcial",
+      detalle: `${mapa.metricas.unidadesSinGeometria} unidad(es) con actividad no se dibujan por falta de polígono oficial. Su actividad se muestra fuera del mapa.`,
+      visibleSiempre: true
+    });
+  }
+
+  const sinUbicar = territorio?.ubicacion?.metricas?.sinUbicar || 0;
+
+  if (sinUbicar > 0) {
+    lims.push({
+      id: "sin_ubicar",
+      severidad: "media",
+      titulo: `${sinUbicar} evidencias sin ubicar`,
+      detalle:
+        "No entran en ningún conteo territorial. La ausencia de ubicación no es ausencia de hecho.",
+      visibleSiempre: true
+    });
+  }
+
+  lims.push({
+    id: "sin_ventana_anterior",
+    severidad: "alta",
+    titulo: "Sin ventana comparable",
+    detalle:
+      "No se puede afirmar crecimiento, tendencia ni viralidad: haría falta observar el periodo anterior equivalente y el recolector todavía no lo trae.",
+    visibleSiempre: true
+  });
+
+  lims.push({
+    id: "publicaciones_no_personas",
+    severidad: "alta",
+    titulo: "Publicaciones, no personas",
+    detalle:
+      "Cada evidencia es un documento publicado. No son ciudadanos ni opiniones: N evidencias no son N personas hablando.",
+    visibleSiempre: true
+  });
+
+  return lims;
+}
 
 
 /*

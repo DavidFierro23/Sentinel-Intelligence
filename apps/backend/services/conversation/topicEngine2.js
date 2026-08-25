@@ -676,10 +676,22 @@ function construirTema({
   indices.forEach((i) => {
     const f = identificarFuente(lista[i]);
 
-    const clave = f.nombre || f.dominio || "desconocido";
+    /*
+      Clave por DOMINIO cuando existe. Con el nombre como clave,
+      la agenda fusionaba mal: el descubrimiento indexa por
+      dominio y este motor por nombre, asi que el mismo medio
+      entraba dos veces y un tema de 3 evidencias declaraba 6
+      fuentes independientes. Imposible, y visible.
+    */
+    const clave = f.dominio || f.nombre || "desconocido";
 
     if (!porFuente.has(clave)) {
-      porFuente.set(clave, { nombre: clave, tipo: f.tipo, evidencias: 0 });
+      porFuente.set(clave, {
+        nombre: f.nombre || clave,
+        dominio: f.dominio || null,
+        tipo: f.tipo,
+        evidencias: 0
+      });
     }
 
     porFuente.get(clave).evidencias += 1;

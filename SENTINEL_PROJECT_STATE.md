@@ -748,16 +748,131 @@ De las 4 consultas por defecto, **2 llevan vocabulario de gestión pública**. E
 
 ---
 
-## 13-sexies. Roadmap territorial
+## 13-sexies. Agenda / Radar + Mapa verificado — GATE D + F1 (2026-08-25)
+
+✅ La pantalla responde **«¿qué está pasando en Cuenca?»**, no «¿qué categorías existen en la base?».
+
+### La agenda fusiona dos orígenes
+
+Un mismo asunto puede llegar **descubierto** por el corpus, **clasificado** por la taxonomía, o las dos cosas. `geo/territorialAgenda.js` los une **cuando comparten ≥ 60 % de sus evidencias** —por índices, que es un hecho, no por parecido de etiqueta, que sería una interpretación— y conserva de dónde vino cada uno.
+
+Un tema descubierto **sin categoría no se esconde**. Es justo el hallazgo que C2 existe para no perder.
+
+### Actividad observada — fórmula abierta, sin score opaco
+
+```
+actividad = 0.50 · evidencias_norm
+          + 0.35 · fuentes_norm
+          + 0.15 · recencia
+```
+
+| Peso | Por qué |
+|---|---|
+| evidencias 0.50 | señal más directa de que algo se publica |
+| fuentes 0.35 | veinte notas de un medio no son veinte de ocho; sin este peso, un medio insistiendo encabezaría la agenda |
+| recencia 0.15 | sin ventana comparable, la recencia dice **cuándo** se publicó, no si crece |
+
+Normaliza contra el **máximo del propio lote**: interesa el orden dentro de esta observación, no una escala absoluta que no existe. **No se muestra como puntuación**: ordena, y las tres dimensiones se enseñan por separado.
+
+**Umbral absoluto antes que el relativo** (≥ 2 evidencias **y** ≥ 2 fuentes). En un lote donde todo es débil, el mejor de los débiles no es «alta actividad»: es señal insuficiente.
+
+### Estados permitidos
+
+`alta actividad observada` · `actividad media` · `actividad baja` · `señal insuficiente`
+
+**«Emergente», «creciendo» y «viral» quedan prohibidos** hasta que exista ventana anterior. La comprobación de interfaz los rechaza salvo cuando aparecen **negados**.
+
+> Un uso real detectado y corregido: `TopicsPanel` etiquetaba como «emergente» el
+> origen `origen !== "lexico"`. En el motor esa palabra significa **procedencia**
+> —«hallado sin léxico previo»—; en pantalla se lee como **tendencia**. Se
+> renombró la etiqueta visible a **«descubierto en el corpus»**. El contrato del
+> motor no cambió.
+
+### El mapa: cómo un mapa correcto salió vacío
+
+Primera captura real: `unidadesPintables: 0`, `evidenciasFueraDelMapa: 30`.
+
+No era un fallo de dibujo. GEO-1 retiene a nivel **cantón** casi toda la evidencia de prensa —una nota provincial no autoriza a bajar a parroquia— y **el cantón no tiene polígono**: CONALI publica parroquias y cabeceras, no contornos cantonales.
+
+Resuelto con la regla ya escrita para zonas analíticas: **geometría derivada solo si todas las hijas tienen polígono**. El cantón se compone como `MultiPolygon` de sus 22 parroquias y **viaja marcado**:
+
+```
+geometriaDerivada: true    poligonosOrigen: [22 ids]
+```
+
+| Registro | Antes | Ahora |
+|---|---|---|
+| unidades con polígono **propio** | 22 | 22 |
+| unidades **dibujables** | 22 | **23** |
+| de ellas derivadas | 0 | **1** |
+
+En la interfaz un límite derivado se dibuja con **contorno discontinuo** y el pie declara: *«unión declarada, no un polígono publicado por la institución»*.
+
+Con evidencia real: **27 de 30 evidencias dentro del mapa**; fuera quedan Azuay (provincia, sin polígono) y Machángara (parroquia urbana, sin polígono). Ambas aparecen en **«lugares mencionados sin geometría disponible»**: un mapa que omite en silencio media ciudad sugiere que allí no pasa nada.
+
+### Tres estados de relleno, no intercambiables
+
+| Estado | Tratamiento |
+|---|---|
+| muestra suficiente | color de la rampa |
+| **muestra insuficiente** | hachurado, **nunca rampa** |
+| sin evidencia | hachurado «sin dato» |
+
+La rampa se calcula **solo** con las unidades que superan el umbral: si entrasen las de muestra insuficiente, dos evidencias sueltas moverían los cuantiles y recolorearían a las que sí tienen respaldo. Es el mismo error que produjo la penetración del 238 % que originó GEO-1.
+
+> Defecto encontrado al alinear mapa y ranking: el mapa coloreaba por
+> `evidencias > 0` e **ignoraba `sePinta`**, así que pintaba con color pleno lo
+> que el ranking marcaba en gris.
+
+### Sesgo de consulta: promovido a siempre visible
+
+Estaba plegado tras «ver más». Esta limitación no matiza un dato suelto: **inclina la agenda entera**. Si el corpus se pidió con vocabulario de gestión, que la gestión encabece no es un hallazgo, es un eco de la consulta.
+
+Las limitaciones que siguen plegadas **se anuncian con su número**. Una limitación que el usuario no sabe que existe es una limitación no declarada.
+
+### Conducta digital — bloque desactivado
+
+Enumera las dimensiones que tendría (móvil/desktop, Android/iOS, franja horaria) **sin un solo valor**, y declara que *el dispositivo no se infiere*: que una nota salga en una app no dice desde qué teléfono la leyó nadie.
+
+### Sin MapLibre, por ahora
+
+UX-WR-001 especifica MapLibre para el War Room completo. Para F1 hay 22 polígonos de un cantón en EPSG:4326: SVG con proyección equirectangular corregida por latitud da el mismo resultado a esta escala y evita megabytes de dependencia. **El agregado que alimenta el mapa no cambia** cuando entre MapLibre.
+
+### Ficheros
+
+| Pieza | Fichero |
+|---|---|
+| Agenda + radar + mapa (motor) | `geo/territorialAgenda.js` |
+| Cabecera ejecutiva · aviso · conducta | `territorio/panels/{ExecutiveHeader,CoverageWarning,DigitalBehaviorPanel}.jsx` |
+| Agenda · radar · detalle de tema | `territorio/agenda/{AgendaPanel,RadarPanel,TopicDrawer}.jsx` |
+| Mapa · sin geometría · panel de unidad | `territorio/map/{TerritorialMap,PlacesWithoutGeometry,TerritoryPanel}.jsx` |
+
+### Pruebas
+
+| Suite | Resultado |
+|---|---|
+| `territorial.test.mjs` | **160** ✅ |
+| `territorial-c2.test.mjs` | **53** ✅ |
+| `territorial-d.test.mjs` | **39** ✅ |
+| `web/tests/ssr-render.check.jsx` | **82** ✅ |
+
+La comprobación de interfaz **no es una captura**: renderiza React en servidor con la respuesta **real** de la API (`web/tests/payload-real.json`, 30 evidencias, coste 0) y verifica lo que un ojo no verifica automáticamente —que no aparezca «0 habitantes», que ningún porcentaje se presente como penetración, que las limitaciones estén visibles—. **No** verifica color, espaciado ni jerarquía visual: eso sigue requiriendo validación humana.
+
+Ninguna prueba consulta la red ni consume cuota.
+
+---
+
+## 13-septies. Roadmap territorial
 
 ```
 ✅ A   Datos oficiales
 ✅ B   Gazetteer
 ✅ C   Topic Engine 2
 ✅ C2  Open Topic Discovery + Geo Foundation
-→  D   Agenda / Radar UI                    ← siguiente
-   F   Geo Intelligence Map + zonas analíticas
-   E   Trend / Pulse con ventanas comparables
+✅ D   Agenda / Radar UI
+🟡 F1  Mapa verificado — sin zonas analíticas ni MapLibre
+→  E1  Ventanas comparables + Pulse          ← siguiente propuesto
+   F2  Zonas analíticas en interfaz + MapLibre
    G   Digital Behavior agregado
    H   Candidate / Territory Intelligence
    —   Campaign Decision Layer
@@ -782,9 +897,13 @@ De las 4 consultas por defecto, **2 llevan vocabulario de gestión pública**. E
 | 9 | Ingesta continua | separar actividad de observación | riesgo WR-7 |
 | 10 | **Nomenclatura oficial de barrios y sectores** del GAD, con su relación a parroquia | resolución infra-parroquial | 🔴 no localizada; 9 topónimos son candidatos sin certificar |
 | 11 | **Ventana temporal anterior** en el recolector | tendencias, emergentes, «en crecimiento» | 🔴 Google News no da archivo histórico |
-| 12 | **Sesgo de consulta del recolector** | descubrimiento verdaderamente abierto | 🟡 2 de 4 consultas llevan vocabulario de gestión |
+| 12 | **Sesgo de consulta del recolector** | descubrimiento verdaderamente abierto | 🟡 2 de 4 consultas llevan vocabulario de gestión — ya **declarado siempre visible** en la interfaz, no corregido en el recolector |
 | 13 | **`DATA-PROVIDER-EVAL-01`** | integrar cualquier proveedor comercial | 🔴 evaluación no iniciada |
 | 14 | Ampliar taxonomía: clima/desastres, cultura, deportes, energía | categorías para lo ya descubierto | 🟡 el descubrimiento abierto lo suple mientras tanto |
+| 15 | **Polígono cantonal oficial de Cuenca** | dibujar el cantón sin derivar | 🟡 el mapa usa una **unión declarada** de las 22 parroquias, marcada como derivada |
+| 16 | **Zonas analíticas en la interfaz** | lectura por zonas | 🟡 motor listo (`analyticalZones.js`), registro **vacío**, sin interfaz — F2 |
+| 17 | **MapLibre, basemap y zoom** | War Room completo (UX-WR-001) | 🟡 F1 usa SVG; el agregado no cambia al migrar |
+| 18 | **`territorial-c2` y `territorial-d` fuera de `npm test`** | ejecución automática de la suite territorial | 🟡 `apps/backend/package.json` lo mantiene **Línea A**; no se modifica desde esta línea |
 
 `POST /api/territorio/recargar` integra 1–4 **sin reiniciar el backend y sin
 cambiar arquitectura**.
@@ -797,7 +916,9 @@ usa uno como el otro.
 - geometría = `null`;
 - población = `null` si no existe fuente oficial;
 - padrón = `null` si no existe fuente oficial;
-- `verificado: false` en las 40 unidades;
+- `verificado: false` en las unidades sin respaldo oficial — **10 de 50** hoy
+  (9 topónimos candidatos + Centro Histórico); las 40 restantes están
+  verificadas contra CONALI o DPA;
 - etiqueta **«Dato oficial pendiente de integración»** hasta la interfaz;
 - **no inventar porcentajes poblacionales**;
 - **no inventar métricas per cápita** — implementado como *ausencia de código*

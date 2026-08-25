@@ -140,8 +140,23 @@ t("sin verificar: Centro Historico + los 9 toponimos", () => {
   return registro.metricas.sinVerificar === 10;
 });
 
-t("22 unidades con geometria oficial", () => {
-  return registro.metricas.conGeometria === 22;
+t("22 unidades con poligono OFICIAL propio", () => {
+  return registro.geometria.unidadesConPoligonoPropio === 22;
+});
+
+t("23 dibujables: las 22 propias mas el canton DERIVADO", () => {
+  return registro.metricas.conGeometria === 23 &&
+    registro.metricas.geometriasDerivadas === 1;
+});
+
+t("el canton declara que su geometria es derivada, no propia", () => {
+  const c = unidadPorId("ec-azuay-cuenca");
+
+  return (
+    c.geometriaDerivada === true &&
+    c.poligonosOrigen.length === 22 &&
+    c.geometria.type === "MultiPolygon"
+  );
 });
 
 t("las 15 urbanas siguen SIN geometria", () => {

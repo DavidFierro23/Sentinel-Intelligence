@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, Play, Coins, AlertCircle, Globe2 } from "lucide-react";
 
 import { TerritorialProvider } from "./TerritorialContext";
@@ -16,6 +16,19 @@ import TopicsPanel from "./panels/TopicsPanel";
 import MediaCoveragePanel from "./panels/MediaCoveragePanel";
 import EnginesTracePanel from "./panels/EnginesTracePanel";
 import UnknownsBlock from "./panels/UnknownsBlock";
+
+/* Gate D */
+import ExecutiveHeader from "./panels/ExecutiveHeader";
+import CoverageWarning from "./panels/CoverageWarning";
+import AgendaPanel from "./agenda/AgendaPanel";
+import RadarPanel from "./agenda/RadarPanel";
+import TopicDrawer from "./agenda/TopicDrawer";
+import DigitalBehaviorPanel from "./panels/DigitalBehaviorPanel";
+
+/* Gate F1 */
+import TerritorialMap from "./map/TerritorialMap";
+import PlacesWithoutGeometry from "./map/PlacesWithoutGeometry";
+import TerritoryPanel from "./map/TerritoryPanel";
 
 /*
 ===========================================================
@@ -213,6 +226,10 @@ function Barra() {
 function Contenido() {
   const { datos, error, cargando, cargarCatalogo } = useTerritorial();
 
+  const [temaAbierto, setTemaAbierto] = useState(null);
+
+  const [unidadAbierta, setUnidadAbierta] = useState(null);
+
   useEffect(() => {
     cargarCatalogo();
   }, [cargarCatalogo]);
@@ -222,36 +239,43 @@ function Contenido() {
       className="sentinel-fade"
       style={{ display: "flex", flexDirection: "column", gap: "18px" }}
     >
-      <header>
-        <h1
-          style={{
-            margin: 0,
-            color: "#FFFFFF",
-            fontSize: "21px",
-            fontWeight: 650,
-            display: "flex",
-            alignItems: "center",
-            gap: "10px"
-          }}
-        >
-          <Globe2 size={20} color="var(--sentinel-cyan)" />
-          Inteligencia Territorial y Conversación Pública
-        </h1>
+      {/*
+        La cabecera ejecutiva sustituye al titulo simple: ahora
+        lleva las cinco cifras del motor. Se muestra solo con
+        datos, asi que aqui queda el titulo minimo mientras no
+        los hay.
+      */}
+      {!datos && (
+        <header>
+          <h1
+            style={{
+              margin: 0,
+              color: "#FFFFFF",
+              fontSize: "21px",
+              fontWeight: 650,
+              display: "flex",
+              alignItems: "center",
+              gap: "10px"
+            }}
+          >
+            <Globe2 size={20} color="var(--sentinel-cyan)" />
+            Inteligencia Territorial
+          </h1>
 
-        <p
-          style={{
-            color: "var(--sentinel-texto-suave)",
-            fontSize: "12.5px",
-            lineHeight: 1.7,
-            marginTop: "8px",
-            maxWidth: "760px"
-          }}
-        >
-          Dónde ocurre y qué se publica, con la resolución que el dato sostiene
-          de verdad. Sin geometría oficial no hay mapa todavía: este módulo es
-          su precursor tabular y usa el mismo motor que lo alimentará.
-        </p>
-      </header>
+          <p
+            style={{
+              color: "var(--sentinel-texto-suave)",
+              fontSize: "12.5px",
+              lineHeight: 1.7,
+              marginTop: "8px",
+              maxWidth: "760px"
+            }}
+          >
+            ¿Qué está pasando en el territorio? Agenda observada, radar de
+            temas y mapa con las geometrías oficiales disponibles.
+          </p>
+        </header>
+      )}
 
       <Barra />
 
@@ -323,6 +347,42 @@ function Contenido() {
 
       {datos && (
         <>
+          {/*
+            ORDEN EJECUTIVO. Responde en este orden:
+            que pasa -> donde -> de que -> como cambia ->
+            como aparece -> quien publica -> por que lo decimos
+            -> que no sabemos.
+          */}
+          <ExecutiveHeader datos={datos} />
+
+          <CoverageWarning limitaciones={datos.coverageLimitations} />
+
+          <AgendaPanel
+            agenda={datos.agenda}
+            onAbrirTema={setTemaAbierto}
+            temaAbierto={temaAbierto}
+          />
+
+          <RadarPanel agenda={datos.agenda} onAbrirTema={setTemaAbierto} />
+
+          <TerritorialMap
+            mapa={datos.mapa}
+            onSeleccionar={setUnidadAbierta}
+            seleccionada={unidadAbierta}
+          />
+
+          {unidadAbierta && (
+            <TerritoryPanel
+              unidad={unidadAbierta}
+              onCerrar={() => setUnidadAbierta(null)}
+            />
+          )}
+
+          <PlacesWithoutGeometry
+            mapa={datos.mapa}
+            onSeleccionar={setUnidadAbierta}
+          />
+
           <CoverageDeclaration datos={datos} />
 
           <ResolutionNotice
@@ -344,9 +404,17 @@ function Contenido() {
 
           <MediaCoveragePanel conversacion={datos.conversacion} />
 
+          <DigitalBehaviorPanel />
+
           <EnginesTracePanel recoleccion={datos.conversacion?.recoleccion} />
 
           <UnknownsBlock items={datos.loQueNoSabemos} />
+
+          <TopicDrawer
+            tema={temaAbierto}
+            evidencias={datos.evidenciasEnriquecidas || []}
+            onCerrar={() => setTemaAbierto(null)}
+          />
         </>
       )}
     </div>
