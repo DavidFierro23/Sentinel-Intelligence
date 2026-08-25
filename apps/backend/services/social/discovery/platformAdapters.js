@@ -536,7 +536,130 @@ export function planificarConsultasDerivadas(perfil, opciones = {}) {
   }
 
   /*
-    PASADA 2 — reserva por nombre, para plataformas donde un
+    ---------------------------------------------------------
+    PASADA 2 — HANDLES PROPAGADOS
+    ---------------------------------------------------------
+
+    QUE RESUELVE
+
+    Medido en la ejecucion real de las 22:14: Sentinel atribuyo
+    `jotalloretv` en X y en Instagram, y TikTok se quedo sin
+    cuenta. Su unica consulta —el nombre completo mas el
+    contexto— devolvio un solo resultado, de otra persona. El
+    perfil de TikTok con ese mismo handle nunca se busco.
+
+    Un handle ya confirmado en dos plataformas es la mejor pista
+    disponible para las que faltan, y no cuesta casi nada
+    preguntarlo.
+
+    ---------------------------------------------------------
+    MISMO HANDLE != MISMA PERSONA
+    ---------------------------------------------------------
+
+    Esta pasada solo GENERA CANDIDATOS. Nada de lo que encuentre
+    queda atribuido por coincidir el nombre de usuario: pasa por
+    el mismo clasificador de cuentas que cualquier otro hallazgo,
+    y si el nombre no corresponde, se rechaza.
+
+    El caso que hay que sostener: si `tiktok.com/@jotalloretv`
+    fuera de otra persona, el Discovery debe encontrarlo y el
+    clasificador debe rechazarlo. Atribuir por igualdad de
+    username seria autoverificacion, y ademas una forma
+    especialmente mala: la de suponer que un nombre es una
+    identidad.
+
+    ---------------------------------------------------------
+    DONDE VA Y POR QUE AQUI — BUG-18
+    ---------------------------------------------------------
+
+    Inmediatamente despues de la pasada anclada por plataforma, y
+    ANTES de la reserva por nombre.
+
+    La primera version la puso al final, para no degradar ninguna
+    consulta existente. El efecto medido en produccion fue que no
+    se ejecutaba nunca: SerpAPI agotaba sus seis intentos en la
+    pasada anclada y las cuatro propagadas devolvian Error sin
+    proveedor.
+
+    Y las tres consultas de reserva que iban delante tampoco
+    aportaron nada: fallaron las tres. Estaban ocupando el turno
+    sin producir.
+
+    Asi que el orden nuevo es por VALOR ESPERADO, no por
+    antiguedad: un handle ya confirmado en dos plataformas es una
+    pista mucho mas fuerte que repetir el nombre completo sin
+    contexto. La cobertura de las seis plataformas sigue primero,
+    que es lo que no se puede perder. No se subio ningun tope.
+
+    Y no se gasta en plataformas que YA tienen cuenta atribuida:
+    preguntar por un handle donde ya hay respuesta es tirar
+    presupuesto.
+    ---------------------------------------------------------
+  */
+  const semillas = semillasDeHandle(perfil);
+
+  /* Plataformas que ya tienen cuenta atribuida: no se tocan. */
+  const yaResueltas = new Set(
+    semillas
+      .filter((x) => x.atribuida)
+      .flatMap((x) => x.plataformasOrigen || [])
+      .filter(Boolean)
+  );
+
+  const propagadas = [];
+
+  const omitidasPorResueltas = [];
+
+  semillas.forEach((semilla) => {
+    adaptadores.forEach((adaptador) => {
+      if (yaResueltas.has(adaptador.plataformaId)) {
+        omitidasPorResueltas.push(
+          `${adaptador.plataformaId}:${semilla.handle}`
+        );
+
+        return;
+      }
+
+      propagadas.push({ semilla, adaptador });
+    });
+  });
+
+  /*
+    Tope propio, para no inflar el plan por la puerta de atras.
+    Lo que quede fuera se DECLARA: un recorte silencioso se leeria
+    como "no habia mas que preguntar".
+  */
+  const enPlan = propagadas.slice(0, TOPE_PROPAGADAS);
+
+  enPlan.forEach(({ semilla, adaptador }) => {
+    agregar(
+      `site:${adaptador.dominios[0]} "${semilla.handle}"`,
+      `handle_propagado:${semilla.handle}`,
+      adaptador,
+      [],
+      {
+        via: "handle_propagado",
+        handle: semilla.handle,
+        handleOrigen: semilla.handle,
+        plataformaOrigenId: semilla.plataformaOrigenId,
+        plataformaOrigen: semilla.plataformaOrigen,
+        cuentaOrigen: semilla.cuentaOrigen,
+        cuentaOrigenAtribuida: semilla.atribuida,
+
+        /*
+          Si la semilla viene SOLO de lo que declaro el analista,
+          lo que se encuentre con ella no puede corroborarse por
+          ese origen. La declaracion orienta la busqueda; no es
+          evidencia independiente.
+        */
+        origenAnalista: semilla.origenAnalista,
+        noCuentaComoCorroboracion: semilla.origenAnalista === true
+      }
+    );
+  });
+
+  /*
+    PASADA 3 — reserva por nombre, para plataformas donde un
     perfil puede existir sin mencionar el contexto. Va despues:
     si el presupuesto no llega, se pierde una reserva, nunca la
     cobertura de una plataforma.
@@ -623,116 +746,6 @@ export function planificarConsultasDerivadas(perfil, opciones = {}) {
         anclasPrincipales
       );
     }
-  });
-
-  /*
-    ---------------------------------------------------------
-    PASADA 4 — HANDLES PROPAGADOS
-    ---------------------------------------------------------
-
-    QUE RESUELVE
-
-    Medido en la ejecucion real de las 22:14: Sentinel atribuyo
-    `jotalloretv` en X y en Instagram, y TikTok se quedo sin
-    cuenta. Su unica consulta —el nombre completo mas el
-    contexto— devolvio un solo resultado, de otra persona. El
-    perfil de TikTok con ese mismo handle nunca se busco.
-
-    Un handle ya confirmado en dos plataformas es la mejor pista
-    disponible para las que faltan, y no cuesta casi nada
-    preguntarlo.
-
-    ---------------------------------------------------------
-    MISMO HANDLE != MISMA PERSONA
-    ---------------------------------------------------------
-
-    Esta pasada solo GENERA CANDIDATOS. Nada de lo que encuentre
-    queda atribuido por coincidir el nombre de usuario: pasa por
-    el mismo clasificador de cuentas que cualquier otro hallazgo,
-    y si el nombre no corresponde, se rechaza.
-
-    El caso que hay que sostener: si `tiktok.com/@jotalloretv`
-    fuera de otra persona, el Discovery debe encontrarlo y el
-    clasificador debe rechazarlo. Atribuir por igualdad de
-    username seria autoverificacion, y ademas una forma
-    especialmente mala: la de suponer que un nombre es una
-    identidad.
-
-    ---------------------------------------------------------
-    DONDE VA Y POR QUE AQUI
-    ---------------------------------------------------------
-
-    Despues de la pasada anclada por plataforma y de la reserva
-    por nombre, antes de la consulta general. Asi no le quita el
-    turno a ninguna consulta de plataforma —que son las que
-    garantizan cobertura— y solo se adelanta a la general, que es
-    la menos especifica.
-
-    Y no se gasta en plataformas que YA tienen cuenta atribuida:
-    preguntar por un handle donde ya hay respuesta es tirar
-    presupuesto.
-    ---------------------------------------------------------
-  */
-  const semillas = semillasDeHandle(perfil);
-
-  /* Plataformas que ya tienen cuenta atribuida: no se tocan. */
-  const yaResueltas = new Set(
-    semillas
-      .filter((x) => x.atribuida)
-      .flatMap((x) => x.plataformasOrigen || [])
-      .filter(Boolean)
-  );
-
-  const propagadas = [];
-
-  const omitidasPorResueltas = [];
-
-  semillas.forEach((semilla) => {
-    adaptadores.forEach((adaptador) => {
-      if (yaResueltas.has(adaptador.plataformaId)) {
-        omitidasPorResueltas.push(
-          `${adaptador.plataformaId}:${semilla.handle}`
-        );
-
-        return;
-      }
-
-      propagadas.push({ semilla, adaptador });
-    });
-  });
-
-  /*
-    Tope propio, para no inflar el plan por la puerta de atras.
-    Lo que quede fuera se DECLARA: un recorte silencioso se leeria
-    como "no habia mas que preguntar".
-  */
-  const enPlan = propagadas.slice(0, TOPE_PROPAGADAS);
-
-  enPlan.forEach(({ semilla, adaptador }) => {
-    agregar(
-      `site:${adaptador.dominios[0]} "${semilla.handle}"`,
-      `handle_propagado:${semilla.handle}`,
-      adaptador,
-      [],
-      {
-        via: "handle_propagado",
-        handle: semilla.handle,
-        handleOrigen: semilla.handle,
-        plataformaOrigenId: semilla.plataformaOrigenId,
-        plataformaOrigen: semilla.plataformaOrigen,
-        cuentaOrigen: semilla.cuentaOrigen,
-        cuentaOrigenAtribuida: semilla.atribuida,
-
-        /*
-          Si la semilla viene SOLO de lo que declaro el analista,
-          lo que se encuentre con ella no puede corroborarse por
-          ese origen. La declaracion orienta la busqueda; no es
-          evidencia independiente.
-        */
-        origenAnalista: semilla.origenAnalista,
-        noCuentaComoCorroboracion: semilla.origenAnalista === true
-      }
-    );
   });
 
   /*

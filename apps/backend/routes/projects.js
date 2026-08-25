@@ -12,6 +12,7 @@ import {
   contenidoDeProyecto,
   renombrarProyecto,
   cambiarEstadoProyecto,
+  inventarioConsolidado,
   ESTADOS,
   agregarCandidato,
   obtenerCandidato,
@@ -231,19 +232,28 @@ router.post("/:proyectoId/candidatos/:candidatoId/investigar", async (req, res) 
       aliases: candidato.aliases || [],
 
       /*
-        HANDLES YA ATRIBUIDOS en investigaciones anteriores. Son
-        la mejor semilla de propagacion disponible: ya pasaron el
-        clasificador. Se leen del expediente, que es donde viven.
+        INVENTARIO CONSOLIDADO — BUG-17
+
+        Son la mejor semilla de propagacion: ya pasaron el
+        clasificador. Antes se leian de `candidato.expediente`,
+        que NO EXISTE en este objeto: `obtenerCandidato` devuelve
+        el registro crudo del Lake y el expediente lo ensambla
+        `contenidoDeProyecto`. La lista llegaba siempre vacia y la
+        propagacion salia con la semilla equivocada.
+
+        Ahora se pide al store con la via autoritativa. Incluye
+        las cuentas consolidadas que NO se reencontraron en la
+        ultima corrida: una identidad no deja de existir porque un
+        buscador callara.
 
         Que un handle este atribuido en una plataforma no lo
         atribuye en otra: solo sirve para ir a mirar.
       */
-      handlesAtribuidos: (candidato.expediente?.cuentas || []).map((c) => ({
-        handle: c.handle,
-        plataformaId: c.plataformaId,
-        plataforma: c.plataforma,
-        url: c.url
-      }))
+      handlesAtribuidos: await inventarioConsolidado(
+        proyectoId,
+        "candidato",
+        candidatoId
+      )
     });
 
     if (resultado?.error) return res.status(502).json(resultado);

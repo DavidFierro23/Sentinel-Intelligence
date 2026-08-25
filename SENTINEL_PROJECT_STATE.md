@@ -2231,6 +2231,190 @@ Todo eso ya esta persistido en la traza. **Alimenta P-CAND-UX-01.**
 
 ---
 
+## 18-quaterdecies. Final Identity Stability Gate (2026-08-25)
+
+Commits `fix(projects): preserve consolidated candidate identities` y
+`fix(discovery): use consolidated identities for prioritized propagation`.
+
+**411 comprobaciones, 0 fallos.** Sin red, sin cuota.
+
+### La arquitectura, ahora explicita
+
+Sentinel separa cuatro cosas que antes se confundian en una:
+
+    1. DISCOVERY DE IDENTIDAD    descubrir de quien son las cuentas
+    2. INVENTARIO CONSOLIDADO    conservar las ya atribuidas
+    3. ACCOUNT INTELLIGENCE      observar que cambia en ellas   (futuro)
+    4. DISCOVERY EXTERNO         menciones, medios, conversacion (futuro)
+
+La doctrina que se implementa:
+
+    DISCOVERY → MATCHER → ATRIBUCION → CUENTA CONSOLIDADA → MONITOREO
+
+y la que se elimina:
+
+    DISCOVERY → ATRIBUCION → siguiente corrida → borrar → redescubrir
+
+### BUG-19 — causa y correccion
+
+`resumirExpediente` reconstruia `cuentas` desde el `perfilEjecutivo` de la
+ultima ejecucion. **No acumulaba: reemplazaba.**
+
+    Antes:  cuentas: (pe?.tarjetas || []).map(...)
+    Ahora:  cuentas: consolidarIdentidades(anterior, resultado, contexto)
+
+La regla, escrita en el codigo:
+
+> **La ausencia de observacion no revoca una identidad.**
+
+Que un buscador no devuelva hoy una cuenta no dice nada sobre si esa cuenta es
+del candidato. Dice algo sobre el buscador. Es la misma familia de error que
+confundir «ausencia» con «no comprobada» —ya corregida en la cobertura por
+plataforma— y faltaba aqui.
+
+### Dos planos que no se mezclan
+
+| Plano | Campos | Quien lo decide |
+|---|---|---|
+| **Identidad** | `estado` | el clasificador y el analista |
+| **Observacion** | `seenInCurrentRun`, `lastSeenAt`, `lastCheckedAt` | el proveedor |
+
+`CONSOLIDADA` + no reencontrada no es una contradiccion: es la descripcion
+honesta de lo que sabemos. `lastCheckedAt` avanza porque **si** se miro;
+`lastSeenAt` no, porque no se vio.
+
+### Modelo de cuenta consolidada
+
+Clave canonica `plataformaId:handle` normalizado. Estados:
+
+| Estado | Significa |
+|---|---|
+| `DESCUBIERTA` | hallada, sin veredicto |
+| `ATRIBUIDA` | el clasificador la atribuyo en esta ejecucion |
+| `CONSOLIDADA` | sostenida en el inventario del proyecto |
+| `DECLARADA_POR_ANALISTA` | la escribio el analista |
+| `REVALIDADA` | consolidada y vuelta a observar |
+| `NO_REENCONTRADA_EN_ULTIMA_VERIFICACION` | no se pudo ver esta vez |
+| `REVOCADA` | retirada **por decision**, nunca por ausencia |
+
+Historia por cuenta: `firstSeenAt`, `lastSeenAt`, `lastCheckedAt`,
+`seenInCurrentRun`, `ultimaEjecucionObservada`, `proveedoresHistoricos`,
+`proveedoresUltimaObservacion`, `corroboracion`, `vias`, `origen`,
+`referenciaAnalista`, `noCuentaComoCorroboracion`, `evidenciaAtribucion`.
+
+**Limite declarado, no disimulado**: los expedientes escritos antes de este
+contrato no traen marcas de tiempo. Quedan en `null` con
+`historiaIncompleta: true`. Inventar una fecha plausible seria un dato falso
+con apariencia de dato.
+
+**Append-only intacto.** Cada consolidacion se anexa como version nueva; nada
+se reescribe. Probado.
+
+### Un efecto secundario que habia que resolver
+
+Con el inventario consolidado, las claves de cuenta ya no cambian cuando una
+cuenta deja de reencontrarse —siguen todas—, asi que la guarda `sinCambios`
+habria dejado de reescribir el expediente y `seenInCurrentRun` se habria
+quedado con el valor de ayer. Se añadio una **huella del plano de
+observacion** a esa comparacion.
+
+Consecuencia visible: la primera reejecucion **si** reescribe, porque la cuenta
+pasa de `ATRIBUIDA` a `REVALIDADA` —un cambio real—; la segunda ya no. La
+deduplicacion se conserva sin mentir sobre el estado.
+
+### BUG-17 — causa y correccion
+
+`routes/projects.js` leia `candidato.expediente?.cuentas`, pero obtenia el
+candidato con `obtenerCandidato`, que devuelve el registro crudo del Lake
+**sin campo `expediente`**. `handlesAtribuidos` llegaba siempre vacio.
+
+Ahora pide `inventarioConsolidado(proyectoId, "candidato", candidatoId)` al
+store. Y `contenidoDeProyecto` pasa a leer el expediente con la **misma**
+funcion `expedienteDe`: una sola lectura autoritativa, para que dos sitios no
+discrepen sobre cual es el expediente vigente.
+
+Verificado: el planificador recibe `jotalloretv`, **incluida** la cuenta de
+Instagram que no se reencontro.
+
+### BUG-18 — causa y correccion
+
+La propagacion iba al final. En produccion las cuatro consultas propagadas
+dieron `Error` sin proveedor: SerpAPI agotaba sus seis intentos en la pasada
+anclada. Y las tres reservas por nombre que iban delante **fallaron las tres**:
+ocupaban el turno sin producir.
+
+Nuevo orden, por **valor esperado** y no por antiguedad:
+
+| # | Pasada | Por que ahi |
+|---|---|---|
+| 1 | anclada por plataforma | la cobertura de las 6 es lo que no se puede perder |
+| 2 | **handles propagados** a plataformas faltantes | un handle ya confirmado en dos plataformas es la pista mas fuerte |
+| 3 | reserva por nombre | fallo 3 de 3 en produccion |
+| 4 | general | la menos especifica |
+
+`site:tiktok.com "jotalloretv"` pasa de la **posicion 13 a la 8**, dentro de
+los 8 intentos que el presupuesto real alcanzo. **Ningun tope se subio** y
+ninguna consulta existente se elimino.
+
+### Reglas de identidad, intactas
+
+`accountClassifier` **sin tocar**. Umbrales **sin tocar**.
+
+    MISMO HANDLE != MISMA PERSONA
+
+La propagacion solo genera candidatos. Probado que el mismo handle con otro
+objetivo **no** se atribuye. La referencia del analista persiste, orienta y
+**no corrobora**. Nada hardcodeado: ni `jotalloretv` ni `Lloret` aparecen en
+el codigo.
+
+### Preparado, no implementado
+
+**P-CAND-UX-01**: el inventario ya distingue `DECLARADA_POR_ANALISTA` de
+descubierta y de corroborada, asi que el formulario del analista podra
+alimentarlo sin rehacer nada.
+
+**Account Intelligence**: una cuenta consolidada tiene clave estable, historia
+y estado, asi que puede convertirse en objetivo de monitoreo. Discovery de
+identidad y monitoreo siguen siendo procesos distintos y sus datos no se
+mezclan.
+
+**Discovery no necesita redescubrir todo siempre**: las cuentas consolidadas ya
+no dependen de una busqueda diaria para seguir existiendo. La reverificacion
+sigue activa: actualiza `lastSeenAt`, `lastCheckedAt`, proveedores y
+corroboracion, sin reconstruir la identidad.
+
+### Pruebas
+
+`tests/identidadConsolidada.test.mjs` — **36 comprobaciones** (T1–T16).
+Cubren: la cuenta que desaparece del buscador y no del inventario; provider en
+error, cero resultados y presupuesto agotado; reaparicion sin duplicar y sin
+reescribir `firstSeenAt`; el inventario alimentando la propagacion; el orden
+del plan; el mismo handle de otra persona rechazado; la referencia del
+analista; expedientes historicos; y que el Lake sigue sin admitir `eliminar`.
+
+| Suite | Comprobaciones |
+|---|---|
+| territorial | 158 |
+| identidad · referencia · contexto | 19 · 19 · 28 |
+| persistencia · alias | 16 · 19 |
+| traza · ejecucion · cobertura | 31 · 28 · 25 |
+| propagacion | 32 |
+| **identidadConsolidada** | **36** |
+| **Total** | **411, 0 fallos** |
+
+Lake real intacto en 92 entradas.
+
+### Estado
+
+| | |
+|---|---|
+| **BUG-19** | **CERRADO POR CODIGO/TEST**, pendiente confirmacion real |
+| **BUG-17** | **CERRADO POR CODIGO/TEST**, pendiente confirmacion real |
+| **BUG-18** | **CERRADO POR CODIGO/TEST**, pendiente confirmacion real |
+| **P-CAND-01** | **NO CERRADO**. Falta una unica prueba real |
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -2308,9 +2492,9 @@ es del analista.
 | BUG-05 | Media | `KnowledgeGraph.jsx` | Grafo radial: no hay relaciones entre nodos | Abierto | No | Aristas cuenta↔medio y cuenta↔cuenta |
 | BUG-06 | Baja | `PlausibleIdentitiesPanel.jsx` | «Investigar esta identidad» presente sin acción conectada | Abierto | No | Conectar reinvestigación con la evidencia del grupo |
 | BUG-07 | Media | `projects/projectContext.js:134` | `nivelPorDefecto` compara contra `prefectura` / `presidencia` (el cargo), pero el analista escribe `Prefecto` / `Presidente` / `Asambleísta` (la persona). **Todas** las dignidades en forma personal caen a `cantonal`, y en un proyecto provincial o nacional sin `nivel` declarado la provincia o el país se quedan en fuerza 6 —por debajo del umbral de evidencia— y **no llegan a ser ancla**. Detectado en LÍNEA A (§18-bis) | Abierto, **no corregido: fuera de la autorización L-1/L-2/L-3** | No | Aceptar la forma personal de cada dignidad, o exigir `nivel` explícito en el formulario |
-| BUG-19 | **Crítica** | `services/projects/projectStore.js` `resumirExpediente` | El expediente **reemplaza** sus cuentas con las de la ultima ejecucion en lugar de acumularlas. Una cuenta atribuida antes **desaparece** si el proveedor no la devuelve otra vez. Explica 53 % → 42 % con 3 → 2 cuentas (§18-terdecies) **y la regresion 49 → 22 del 24 de agosto que quedo sin explicar**. El Lake conserva las versiones, asi que nada se pierde en disco: lo que se pierde es el estado vigente que ve el analista | Abierto | **Sí: borra hallazgos reales** | Acumular cuentas por clave plataforma+handle conservando la ultima vez que se observo cada una, y declarar las no reencontradas en vez de borrarlas |
-| BUG-18 | **Alta** | `social/discovery/platformAdapters.js` orden del plan | La propagacion de handles va detras de la reserva por nombre y **el presupuesto muere antes de llegar**: en la prueba real las 4 propagadas dieron Error, igual que las 3 de reserva que van delante y no aportaron nada. 8 de 14 consultas sin respuesta. La colocacion se eligio para no degradar consultas existentes; el efecto medido es que la pasada nueva no se ejecuta nunca (§18-terdecies) | Abierto | **Sí: la propagacion no llega a probarse** | Adelantar la propagacion por delante de la reserva por nombre, que ya fallo tres de tres, sin subir topes globales |
-| BUG-17 | **Alta** | `routes/projects.js` | Lee `candidato.expediente?.cuentas` para construir `handlesAtribuidos`, pero obtiene el candidato con `obtenerCandidato`, que devuelve el registro crudo del Lake **sin campo `expediente`** —lo ensambla `contenidoDeProyecto`—. `handlesAtribuidos` llega siempre vacio: `jotalloretv` nunca se propago y la unica semilla fue la URL del analista, que al no estar `atribuida` dejo `yaResueltas` vacio y gasto consultas en X y Facebook, ya resueltas. Introducido en `b88015c`, detectado en §18-terdecies | Abierto, **es el patch siguiente** | **Sí: anula la propagacion** | Leer las cuentas del expediente con la misma via que `contenidoDeProyecto`, o pasarlas ya resueltas a la ruta |
+| BUG-19 | **Crítica** | `services/projects/projectStore.js` `resumirExpediente` | **CERRADO POR CODIGO/TEST** (§18-quaterdecies), pendiente confirmacion real. Descripcion original: El expediente **reemplaza** sus cuentas con las de la ultima ejecucion en lugar de acumularlas. Una cuenta atribuida antes **desaparece** si el proveedor no la devuelve otra vez. Explica 53 % → 42 % con 3 → 2 cuentas (§18-terdecies) **y la regresion 49 → 22 del 24 de agosto que quedo sin explicar**. El Lake conserva las versiones, asi que nada se pierde en disco: lo que se pierde es el estado vigente que ve el analista | Abierto | **Sí: borra hallazgos reales** | Acumular cuentas por clave plataforma+handle conservando la ultima vez que se observo cada una, y declarar las no reencontradas en vez de borrarlas |
+| BUG-18 | **Alta** | `social/discovery/platformAdapters.js` orden del plan | **CERRADO POR CODIGO/TEST** (§18-quaterdecies), pendiente confirmacion real. Descripcion original: La propagacion de handles va detras de la reserva por nombre y **el presupuesto muere antes de llegar**: en la prueba real las 4 propagadas dieron Error, igual que las 3 de reserva que van delante y no aportaron nada. 8 de 14 consultas sin respuesta. La colocacion se eligio para no degradar consultas existentes; el efecto medido es que la pasada nueva no se ejecuta nunca (§18-terdecies) | Abierto | **Sí: la propagacion no llega a probarse** | Adelantar la propagacion por delante de la reserva por nombre, que ya fallo tres de tres, sin subir topes globales |
+| BUG-17 | **Alta** | `routes/projects.js` | **CERRADO POR CODIGO/TEST** (§18-quaterdecies), pendiente confirmacion real. Descripcion original: Lee `candidato.expediente?.cuentas` para construir `handlesAtribuidos`, pero obtiene el candidato con `obtenerCandidato`, que devuelve el registro crudo del Lake **sin campo `expediente`** —lo ensambla `contenidoDeProyecto`—. `handlesAtribuidos` llega siempre vacio: `jotalloretv` nunca se propago y la unica semilla fue la URL del analista, que al no estar `atribuida` dejo `yaResueltas` vacio y gasto consultas en X y Facebook, ya resueltas. Introducido en `b88015c`, detectado en §18-terdecies | Abierto, **es el patch siguiente** | **Sí: anula la propagacion** | Leer las cuentas del expediente con la misma via que `contenidoDeProyecto`, o pasarlas ya resueltas a la ruta |
 | BUG-16 | Media | Interfaz — indice de huella digital | La huella salto de 22 % a 53 % entre dos ejecuciones del mismo dia, y **+17 de los +31 vienen de que un buscador respondiera** una consulta que antes bloqueo: la cuenta de Facebook paso de 1 a 2 proveedores y su correspondencia de 25 a 86. El calculo es correcto y el indice mide lo que dice medir —amplitud y solidez de la presencia DOCUMENTADA—, pero un numero tan volatil presentado como «53 %» junto al nombre de un candidato invita a leerse como respaldo politico. Detectado en §18-undecies | Abierto | No | Mostrar los cuatro componentes junto al total, etiquetar que NO mide, y declarar la cobertura de proveedores de esa ejecucion |
 | BUG-15 | **Alta** | `services/projects/projectStore.js` `candidatosSociales` / `coberturaNormalizada` | **CERRADO Y CONFIRMADO EN PRODUCCION** (§18-undecies). Descripcion original: | Dos defectos de fidelidad de la traza. **(1)** `candidatosSociales()` lee `resultado.social.candidatos`, campo que `socialIntelligenceLayer` no expone —devuelve `fichas`—, asi que la lista de candidatos y sus motivos de rechazo sale SIEMPRE vacia: en la reprueba real, 24 de 26 candidatos rechazados sin motivo registrado. **(2)** `coberturaNormalizada()` decide `BUSCADA_SIN_RESULTADO` mirando solo si hubo consulta con exito y cero candidatos, sin mirar los RESULTADOS: Instagram devolvio 10 resultados —todos publicaciones, no perfiles— y quedo etiquetada como si la busqueda hubiera vuelto vacia. Colapsa «no habia nada» con «habia contenido, no perfiles», que es lo que el contrato de cinco estados existe para evitar. Detectado en §18-nonies | Abierto, **es el patch siguiente** | **Si: sin esto no se puede decidir si el matcher pierde cuentas** | Leer `social.fichas` y derivar la procedencia de `origenes`; contar resultados en la normalizacion |
 | BUG-14 | Media | `services/projects/projectStore.js` `resumirExpediente` / diferencial | `clavesCuenta` —la clave con la que el diferencial deduplica hallazgos— se deriva de `clasificacionCuentas.cuentasObjetivo`, mientras `cuentas` viene de `perfilEjecutivo.tarjetas`. Dos fuentes para la misma cosa: si divergen, el delta de cuentas sale mal. Detectado al implementar BUG-13 (§18-octies) | Abierto, **preexistente, declarado y no corregido**: tocarlo era cambiar la deduplicacion, excluida de la autorizacion | No | Derivar ambas de la misma fuente |
@@ -2360,10 +2544,11 @@ resueltos y verificados.
 | Sentinel AI Assistant / Pregúntale a Sentinel | 🔴 en cola |
 | Cobertura dependiente de un solo proveedor | 🔴 DuckDuckGo bloqueo 2/2 y Brave sigue sin credencial: el presupuesto de SerpAPI se agota en la primera pasada |
 | `clavesCuenta` y `cuentas` derivan de fuentes distintas | 🔴 **BUG-14**, preexistente, declarado y no corregido |
-| **P-CAND-01** — por que Lloret no alcanza las 6 plataformas | 🔴 **REQUIERE PATCH**. La propagacion se ejecuto con la semilla equivocada (BUG-17) y sin presupuesto (BUG-18) |
-| El expediente borra cuentas ya atribuidas si no se reencuentran | 🔴 **BUG-19, critico**. Explica 53→42 y la regresion 49→22 |
-| `handlesAtribuidos` llega vacio a la propagacion | 🔴 **BUG-17**, patch siguiente |
-| La propagacion nunca alcanza el presupuesto | 🔴 **BUG-18** |
+| **P-CAND-01** — por que Lloret no alcanza las 6 plataformas | 🟡 **IDENTITY STABILITY GATE IMPLEMENTADO** (§18-quaterdecies). Falta una unica prueba real |
+| El expediente borraba cuentas ya atribuidas si no se reencontraban | 🟡 **BUG-19 cerrado por codigo y test**. Pendiente confirmacion real |
+| `handlesAtribuidos` llegaba vacio a la propagacion | 🟡 **BUG-17 cerrado por codigo y test** |
+| La propagacion nunca alcanzaba el presupuesto | 🟡 **BUG-18 cerrado por codigo y test** |
+| Reverificacion programada de cuentas consolidadas | 🔴 la arquitectura lo soporta; la politica de cuando revisar no esta definida |
 | Verificar en piloto real que Pedro Palacios recibe candidatos al Discovery | 🔴 su grupo guardado no contenía ninguna URL con `palacio`; L-1 no podía cambiarlo |
 | Verificar Paúl Carrasco Carpio con búsqueda real | 🔴 no existe grupo guardado; el mecanismo está probado en unitario |
 | Expediente visual completo del candidato dentro del proyecto | 🔴 hoy solo hay resumen |
@@ -2605,6 +2790,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-25 | Identity Stability Gate | Implementado el inventario consolidado: una cuenta atribuida ya no desaparece porque un buscador no la devuelva. `estado` habla de identidad; `seenInCurrentRun`, `lastSeenAt` y `lastCheckedAt`, de observacion. NO_REENCONTRADA no es REVOCADA. BUG-17 cerrado leyendo el inventario autoritativo en lugar de un campo inexistente; BUG-18 reordenando el MISMO planificador por valor esperado, con la consulta de TikTok de la posicion 13 a la 8 y sin subir topes. Clasificador y umbrales sin tocar. 411 pruebas, 0 fallos. Nueva §18-quaterdecies. |
 | 2026-08-25 | prueba real 15:58 | La propagacion se ejecuto —4 consultas— pero con la semilla equivocada: `handlesAtribuidos` llega vacio porque la ruta lee un campo que el lector crudo no tiene (BUG-17), asi que `jotalloretv` nunca se propago y dos consultas fueron a plataformas ya resueltas. Las cuatro dieron Error: el presupuesto muere antes de llegar a la pasada nueva (BUG-18). Profile-first CONFIRMADO en produccion: `@segundo.cabrera82` entro como candidato y el clasificador lo rechazo. Y el hallazgo de fondo: el expediente REEMPLAZA sus cuentas en vez de acumularlas, asi que `instagram.com/jotalloretv` desaparecio al no reencontrarse — esto explica 53→42 y tambien la regresion 49→22 del 24 de agosto (BUG-19, critico). Nueva §18-terdecies. |
 | 2026-08-24 | Handle Propagation | Los handles atribuidos, observados y declarados se normalizan, deduplican y propagan a las plataformas sin cuenta, en el MISMO planificador y sin tocar el clasificador ni los umbrales. Plan de Lloret de 10 a 14 consultas, ninguna eliminada; tope de 4 propagadas con truncamiento declarado. Profile-first: dos huecos cerrados —propietario legible en ruta de contenido de Instagram y foto de TikTok—; watch/shorts y /p/ sin propietario siguen rechazados. Regla MISMO HANDLE != MISMA PERSONA probada con objetivo distinto. 324 pruebas, 0 fallos. Nueva §18-duodecies. |
 | 2026-08-24 | ejecucion real 22:14 | Full Discovery diagnosticado con traza completa: 29 candidatos, 26 rechazos con motivo, 16 descartes, 6 plataformas. 3 cuentas, 6 medios, 40 evidencias, delta +1/+1/+14, huella 53. Cuenta nueva `instagram.com/jotalloretv`, hallada por la capa web y no por la consulta dirigida. `tiktok.com/@jotalloretv` NO fue encontrado: TikTok recibe una sola consulta. LinkedIn no es Matcher: los 2 candidatos no son el objetivo. BUG-12, BUG-13 y BUG-15 confirmados en produccion. BUG-16 abierto por volatilidad de la huella. Nueva §18-undecies. |
