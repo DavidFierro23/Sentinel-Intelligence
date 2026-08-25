@@ -1993,6 +1993,155 @@ proveedor.
 
 ---
 
+## 18-terdecies. Prueba real 2026-08-25 15:58 — propagacion a medias (2026-08-25)
+
+    investigacionId  inv-candidato-juan-cristobal-lloret-valdivieso-2026-08-25T15:58:56.031Z
+    ejecutadaEn      2026-08-25T15:58:56.031Z
+    totalEjecuciones 6
+    expediente       v5
+    delta            0 / 0 / 0
+    resumen          2 cuentas · 5 medios · 33 evidencias web · huella 42
+
+### Handle propagation: se ejecuto, con el handle equivocado
+
+`consultasPropagadas: 4`, `propagadasTruncadas: 2`,
+`handlesPropagados: ["juancristobal.lloretvaldivieso"]`.
+
+**`jotalloretv` no se propago nunca.** Y `propagacionOmitidaPorAtribuida` salio
+**vacio**, asi que dos de las cuatro consultas propagadas fueron a X y a
+Facebook, que **ya tenian cuenta atribuida**.
+
+| Plataforma | Consulta propagada | Provider | Estado |
+|---|---|---|---|
+| X | `site:x.com "juancristobal.lloretvaldivieso"` | — | **Error** |
+| Facebook | `site:facebook.com "juancristobal…"` | — | **Error** |
+| YouTube | `site:youtube.com "juancristobal…"` | — | **Error** |
+| TikTok | `site:tiktok.com "juancristobal…"` | — | **Error** |
+
+Ninguna obtuvo respuesta.
+
+### Defecto 1 — el punto exacto donde murio
+
+`routes/projects.js` lee `candidato.expediente?.cuentas`, y el candidato lo
+obtiene con **`obtenerCandidato`**, que devuelve el registro crudo del Lake.
+**Ese registro no tiene campo `expediente`**: lo ensambla
+`contenidoDeProyecto`, no el lector individual.
+
+Consecuencia: `handlesAtribuidos` llego **siempre vacio**. La unica semilla fue
+la URL que escribio el analista, y por eso `atribuida` era `false` en todas,
+`yaResueltas` quedo vacio y la propagacion gasto consultas en plataformas ya
+resueltas en lugar de en las que faltaban.
+
+Es un defecto introducido en `b88015c`. Ver **BUG-17**.
+
+### Defecto 2 — la propagacion va detras del presupuesto
+
+**8 de 14 consultas no obtuvieron respuesta.** SerpAPI agoto sus 6 intentos
+(4 completadas, 2 errores) y DuckDuckGo hizo 2. Las 6 primeras —la pasada
+anclada por plataforma— consumieron todo.
+
+Las 3 de reserva por nombre y las 4 propagadas y la general: **todas Error**.
+
+La decision de colocar la propagacion **despues** de la reserva por nombre se
+tomo para no degradar ninguna consulta existente. El efecto medido es que la
+propagacion **nunca llega a ejecutarse**: el presupuesto muere antes. Y las 3
+de reserva que van delante tampoco aportaron nada —fallaron las tres—, asi que
+estan ocupando el turno sin producir.
+
+Aun con el handle correcto, la consulta de TikTok habria fallado igual. Ver
+**BUG-18**.
+
+### Cobertura real de las seis plataformas
+
+| Plataforma | Estado | Res. | Descart. | Cand. | Atrib. | Lanz./OK | Proveedor |
+|---|---|---|---|---|---|---|---|
+| X | `ATRIBUIDA` | 10 | 0 | 10 | 1 | 3 / 1 | OK + Error |
+| Facebook | `ATRIBUIDA` | 9 | 0 | 11 | 1 | 3 / 1 | OK + Error |
+| Instagram | `ENCONTRADA_NO_ATRIBUIDA` | **1** | 2 | 0 | **0** | 1 / 1 | OK |
+| TikTok | `ENCONTRADA_NO_ATRIBUIDA` | 1 | 0 | **1** | 0 | 2 / 1 | OK + Error |
+| YouTube | `ENCONTRADA_NO_ATRIBUIDA` | 3 | 4 | 0 | 0 | 3 / 1 | OK + Error |
+| LinkedIn | `ENCONTRADA_NO_ATRIBUIDA` | 2 | 0 | 2 | 0 | 1 / 1 | OK |
+
+### Lo que SI funciono: profile-first, confirmado en produccion
+
+TikTok produjo **1 candidato**: `tiktok.com/@segundo.cabrera82`. En la
+ejecucion anterior esa misma URL era un `/photo/…` que se descartaba entera.
+Ahora se extrae el propietario, entra al pipeline y el clasificador **lo
+rechaza** por «no lleva el nombre del objetivo».
+
+Es exactamente el comportamiento diseñado: la URL de contenido cede su
+propietario legible, y la identidad la sigue decidiendo el clasificador.
+
+### Las cuentas de esta ejecucion, y la que desaparecio
+
+| Plataforma | URL | Score | Vias | Proveedores |
+|---|---|---|---|---|
+| X | `x.com/jotalloretv` | 62 | evidencia_fusion, consulta_dirigida | DuckDuckGo + SerpAPI |
+| Facebook | `facebook.com/juancristobal.lloretvaldivieso` | 49 | handle_observado, evidencia_fusion | DuckDuckGo |
+
+**Desaparecio `instagram.com/jotalloretv`.** En la ejecucion de las 22:14 se
+habia encontrado por `evidencia_fusion` con DuckDuckGo. Esta vez la consulta de
+Instagram devolvio **1 resultado** en lugar de 9, y la evidencia web no
+contenia la URL del perfil. No se volvio a encontrar.
+
+### Defecto 3 — el expediente es un snapshot, no una acumulacion
+
+Y aqui esta el hallazgo de fondo, que explica ademas un misterio de dos dias.
+
+`resumirExpediente` reconstruye `cuentas` desde el `perfilEjecutivo` de **esta**
+ejecucion. No acumula: **reemplaza**. Una cuenta atribuida en una ejecucion
+anterior **desaparece del expediente** si el proveedor no la devuelve otra vez.
+
+Eso explica:
+
+- 53 % → 42 % y 3 → 2 cuentas hoy;
+- y la regresion **49 → 22** del 24 de agosto, que quedo sin explicar.
+
+No era perdida de corroboracion ni un problema de agregacion: es que el
+expediente no tiene memoria de sus propios hallazgos. Ver **BUG-19**, que es
+el mas importante de los tres.
+
+### La huella 42, componente a componente
+
+| Componente | 22:14 | 15:58 |
+|---|---|---|
+| Cobertura de plataformas (40) | 20 — 3 de 6 | **13 — 2 de 6** |
+| Solidez de la mejor correspondencia (30) | 26 — mejor 86 | **19 — mejor 62** |
+| Corroboracion multiproveedor (20) | 7 — 1 de 3 | **10 — 1 de 2** |
+| Declaracion (10) | 0 | 0 |
+| **Total** | **53** | **42** |
+
+Reproducido exacto. La corroboracion **subio**; lo que bajo fue la cobertura
+—una cuenta menos— y la solidez, porque la mejor correspondencia cayo de 86 a
+49→62 al perder Facebook uno de sus dos proveedores.
+
+**Nada de esto es una caida politica.** Es variabilidad de proveedor, y el
+expediente la convierte en perdida permanente por no acumular. Combinacion de
+**variabilidad de providers + reemplazo de snapshot**.
+
+### Diseño de producto — la tarjeta es insuficiente
+
+Esta prueba lo confirma. El analista vio «42 %, 2 cuentas» y no pudo ver que:
+
+- Instagram se habia encontrado ayer y hoy no;
+- 8 de 14 consultas no obtuvieron respuesta;
+- TikTok si devolvio un candidato, y por que se rechazo;
+- Brave sigue con 0 intentos;
+- ninguna plataforma esta declarada ausente.
+
+Todo eso ya esta persistido en la traza. **Alimenta P-CAND-UX-01.**
+
+### Estado
+
+| | |
+|---|---|
+| **Handle Propagation** | ejecuta, pero con la semilla equivocada y sin presupuesto |
+| **Profile-first** | **CONFIRMADO EN PRODUCCION** |
+| **TikTok `@jotalloretv`** | **PROPAGACION NO SE EJECUTO** para ese handle |
+| **P-CAND-01** | **REQUIERE PATCH** |
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -2070,6 +2219,9 @@ es del analista.
 | BUG-05 | Media | `KnowledgeGraph.jsx` | Grafo radial: no hay relaciones entre nodos | Abierto | No | Aristas cuenta↔medio y cuenta↔cuenta |
 | BUG-06 | Baja | `PlausibleIdentitiesPanel.jsx` | «Investigar esta identidad» presente sin acción conectada | Abierto | No | Conectar reinvestigación con la evidencia del grupo |
 | BUG-07 | Media | `projects/projectContext.js:134` | `nivelPorDefecto` compara contra `prefectura` / `presidencia` (el cargo), pero el analista escribe `Prefecto` / `Presidente` / `Asambleísta` (la persona). **Todas** las dignidades en forma personal caen a `cantonal`, y en un proyecto provincial o nacional sin `nivel` declarado la provincia o el país se quedan en fuerza 6 —por debajo del umbral de evidencia— y **no llegan a ser ancla**. Detectado en LÍNEA A (§18-bis) | Abierto, **no corregido: fuera de la autorización L-1/L-2/L-3** | No | Aceptar la forma personal de cada dignidad, o exigir `nivel` explícito en el formulario |
+| BUG-19 | **Crítica** | `services/projects/projectStore.js` `resumirExpediente` | El expediente **reemplaza** sus cuentas con las de la ultima ejecucion en lugar de acumularlas. Una cuenta atribuida antes **desaparece** si el proveedor no la devuelve otra vez. Explica 53 % → 42 % con 3 → 2 cuentas (§18-terdecies) **y la regresion 49 → 22 del 24 de agosto que quedo sin explicar**. El Lake conserva las versiones, asi que nada se pierde en disco: lo que se pierde es el estado vigente que ve el analista | Abierto | **Sí: borra hallazgos reales** | Acumular cuentas por clave plataforma+handle conservando la ultima vez que se observo cada una, y declarar las no reencontradas en vez de borrarlas |
+| BUG-18 | **Alta** | `social/discovery/platformAdapters.js` orden del plan | La propagacion de handles va detras de la reserva por nombre y **el presupuesto muere antes de llegar**: en la prueba real las 4 propagadas dieron Error, igual que las 3 de reserva que van delante y no aportaron nada. 8 de 14 consultas sin respuesta. La colocacion se eligio para no degradar consultas existentes; el efecto medido es que la pasada nueva no se ejecuta nunca (§18-terdecies) | Abierto | **Sí: la propagacion no llega a probarse** | Adelantar la propagacion por delante de la reserva por nombre, que ya fallo tres de tres, sin subir topes globales |
+| BUG-17 | **Alta** | `routes/projects.js` | Lee `candidato.expediente?.cuentas` para construir `handlesAtribuidos`, pero obtiene el candidato con `obtenerCandidato`, que devuelve el registro crudo del Lake **sin campo `expediente`** —lo ensambla `contenidoDeProyecto`—. `handlesAtribuidos` llega siempre vacio: `jotalloretv` nunca se propago y la unica semilla fue la URL del analista, que al no estar `atribuida` dejo `yaResueltas` vacio y gasto consultas en X y Facebook, ya resueltas. Introducido en `b88015c`, detectado en §18-terdecies | Abierto, **es el patch siguiente** | **Sí: anula la propagacion** | Leer las cuentas del expediente con la misma via que `contenidoDeProyecto`, o pasarlas ya resueltas a la ruta |
 | BUG-16 | Media | Interfaz — indice de huella digital | La huella salto de 22 % a 53 % entre dos ejecuciones del mismo dia, y **+17 de los +31 vienen de que un buscador respondiera** una consulta que antes bloqueo: la cuenta de Facebook paso de 1 a 2 proveedores y su correspondencia de 25 a 86. El calculo es correcto y el indice mide lo que dice medir —amplitud y solidez de la presencia DOCUMENTADA—, pero un numero tan volatil presentado como «53 %» junto al nombre de un candidato invita a leerse como respaldo politico. Detectado en §18-undecies | Abierto | No | Mostrar los cuatro componentes junto al total, etiquetar que NO mide, y declarar la cobertura de proveedores de esa ejecucion |
 | BUG-15 | **Alta** | `services/projects/projectStore.js` `candidatosSociales` / `coberturaNormalizada` | **CERRADO Y CONFIRMADO EN PRODUCCION** (§18-undecies). Descripcion original: | Dos defectos de fidelidad de la traza. **(1)** `candidatosSociales()` lee `resultado.social.candidatos`, campo que `socialIntelligenceLayer` no expone —devuelve `fichas`—, asi que la lista de candidatos y sus motivos de rechazo sale SIEMPRE vacia: en la reprueba real, 24 de 26 candidatos rechazados sin motivo registrado. **(2)** `coberturaNormalizada()` decide `BUSCADA_SIN_RESULTADO` mirando solo si hubo consulta con exito y cero candidatos, sin mirar los RESULTADOS: Instagram devolvio 10 resultados —todos publicaciones, no perfiles— y quedo etiquetada como si la busqueda hubiera vuelto vacia. Colapsa «no habia nada» con «habia contenido, no perfiles», que es lo que el contrato de cinco estados existe para evitar. Detectado en §18-nonies | Abierto, **es el patch siguiente** | **Si: sin esto no se puede decidir si el matcher pierde cuentas** | Leer `social.fichas` y derivar la procedencia de `origenes`; contar resultados en la normalizacion |
 | BUG-14 | Media | `services/projects/projectStore.js` `resumirExpediente` / diferencial | `clavesCuenta` —la clave con la que el diferencial deduplica hallazgos— se deriva de `clasificacionCuentas.cuentasObjetivo`, mientras `cuentas` viene de `perfilEjecutivo.tarjetas`. Dos fuentes para la misma cosa: si divergen, el delta de cuentas sale mal. Detectado al implementar BUG-13 (§18-octies) | Abierto, **preexistente, declarado y no corregido**: tocarlo era cambiar la deduplicacion, excluida de la autorizacion | No | Derivar ambas de la misma fuente |
@@ -2103,9 +2255,10 @@ resueltos y verificados.
 | La guarda `sinCambios` descartaba la traza en reejecuciones | 🟢 **BUG-13 CONFIRMADO EN PRUEBA REAL** (§18-nonies) |
 | La traza lee un campo inexistente y etiqueta mal una plataforma | 🟢 **BUG-15 CONFIRMADO EN PRODUCCION** (§18-undecies) |
 | Huella digital volatil segun la respuesta del proveedor | 🔴 **BUG-16**: 22 % → 53 % en el mismo dia, +17 por un buscador que contesto. Riesgo de lectura politica |
-| TikTok recibe una sola consulta, sin pasada de reserva | 🟡 **Handle Propagation implementado** (§18-duodecies). Pendiente prueba real |
+| TikTok recibe una sola consulta, sin pasada de reserva | 🔴 la propagada existio pero con el handle equivocado y dio Error. Ver BUG-17 y BUG-18 |
+| Profile-first: propietario legible en ruta de contenido | 🟢 **CONFIRMADO EN PRODUCCION** (§18-terdecies): `@segundo.cabrera82` entro como candidato y el clasificador lo rechazo |
 | `site:youtube.com` devuelve videos, no canales | 🟡 **Handle Propagation** pregunta por handle, que apunta a canal. Pendiente prueba real |
-| **P-CAND-UX-01 Identidad Asistida por Analista** | 🔴 en cola, no iniciada |
+| **P-CAND-UX-01 Identidad Asistida por Analista** | 🔴 en cola. **La prueba del 25-ago lo confirma como necesario**: el analista vio «42 %, 2 cuentas» sin poder ver que Instagram se hallo ayer y hoy no, que 8 de 14 consultas no respondieron, ni por que se rechazo el candidato de TikTok. Todo eso ya esta en la traza |
 | Zona horaria America/Guayaquil en la interfaz | 🔴 en cola |
 | Brave / fallback de proveedores | 🔴 sin credencial: 0 intentos en las dos ultimas ejecuciones |
 | Account Intelligence | 🔴 en cola |
@@ -2118,7 +2271,10 @@ resueltos y verificados.
 | Sentinel AI Assistant / Pregúntale a Sentinel | 🔴 en cola |
 | Cobertura dependiente de un solo proveedor | 🔴 DuckDuckGo bloqueo 2/2 y Brave sigue sin credencial: el presupuesto de SerpAPI se agota en la primera pasada |
 | `clavesCuenta` y `cuentas` derivan de fuentes distintas | 🔴 **BUG-14**, preexistente, declarado y no corregido |
-| **P-CAND-01** — por que Lloret no alcanza las 6 plataformas | 🟡 **HANDLE PROPAGATION IMPLEMENTADO** (§18-duodecies). Pendiente una sola prueba real |
+| **P-CAND-01** — por que Lloret no alcanza las 6 plataformas | 🔴 **REQUIERE PATCH**. La propagacion se ejecuto con la semilla equivocada (BUG-17) y sin presupuesto (BUG-18) |
+| El expediente borra cuentas ya atribuidas si no se reencuentran | 🔴 **BUG-19, critico**. Explica 53→42 y la regresion 49→22 |
+| `handlesAtribuidos` llega vacio a la propagacion | 🔴 **BUG-17**, patch siguiente |
+| La propagacion nunca alcanza el presupuesto | 🔴 **BUG-18** |
 | Verificar en piloto real que Pedro Palacios recibe candidatos al Discovery | 🔴 su grupo guardado no contenía ninguna URL con `palacio`; L-1 no podía cambiarlo |
 | Verificar Paúl Carrasco Carpio con búsqueda real | 🔴 no existe grupo guardado; el mecanismo está probado en unitario |
 | Expediente visual completo del candidato dentro del proyecto | 🔴 hoy solo hay resumen |
@@ -2360,6 +2516,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-25 | prueba real 15:58 | La propagacion se ejecuto —4 consultas— pero con la semilla equivocada: `handlesAtribuidos` llega vacio porque la ruta lee un campo que el lector crudo no tiene (BUG-17), asi que `jotalloretv` nunca se propago y dos consultas fueron a plataformas ya resueltas. Las cuatro dieron Error: el presupuesto muere antes de llegar a la pasada nueva (BUG-18). Profile-first CONFIRMADO en produccion: `@segundo.cabrera82` entro como candidato y el clasificador lo rechazo. Y el hallazgo de fondo: el expediente REEMPLAZA sus cuentas en vez de acumularlas, asi que `instagram.com/jotalloretv` desaparecio al no reencontrarse — esto explica 53→42 y tambien la regresion 49→22 del 24 de agosto (BUG-19, critico). Nueva §18-terdecies. |
 | 2026-08-24 | Handle Propagation | Los handles atribuidos, observados y declarados se normalizan, deduplican y propagan a las plataformas sin cuenta, en el MISMO planificador y sin tocar el clasificador ni los umbrales. Plan de Lloret de 10 a 14 consultas, ninguna eliminada; tope de 4 propagadas con truncamiento declarado. Profile-first: dos huecos cerrados —propietario legible en ruta de contenido de Instagram y foto de TikTok—; watch/shorts y /p/ sin propietario siguen rechazados. Regla MISMO HANDLE != MISMA PERSONA probada con objetivo distinto. 324 pruebas, 0 fallos. Nueva §18-duodecies. |
 | 2026-08-24 | ejecucion real 22:14 | Full Discovery diagnosticado con traza completa: 29 candidatos, 26 rechazos con motivo, 16 descartes, 6 plataformas. 3 cuentas, 6 medios, 40 evidencias, delta +1/+1/+14, huella 53. Cuenta nueva `instagram.com/jotalloretv`, hallada por la capa web y no por la consulta dirigida. `tiktok.com/@jotalloretv` NO fue encontrado: TikTok recibe una sola consulta. LinkedIn no es Matcher: los 2 candidatos no son el objetivo. BUG-12, BUG-13 y BUG-15 confirmados en produccion. BUG-16 abierto por volatilidad de la huella. Nueva §18-undecies. |
 | 2026-08-24 | hotfix BUG-15 | Traza fiel. Los candidatos se leen de `clasificacionCuentas`, que trae veredicto y procedencia juntos; `aportadaPorAnalista` y `viasDeclaradas` se derivan de los origenes. La cobertura cuenta los resultados del buscador: Instagram con 10 enlaces y ningun perfil ya no se etiqueta como ausencia. Los fixtures anteriores probaban una proyeccion en lugar de la estructura del motor —la misma raiz del bug— y se reescribieron con la forma real, reforzando las aserciones. 292 pruebas, 0 fallos. Nueva §18-decies. |
