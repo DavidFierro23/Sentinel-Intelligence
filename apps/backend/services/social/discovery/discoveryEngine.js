@@ -181,6 +181,18 @@ function registrarCandidato(mapa, datos) {
       origen: origenDeclarado || "sentinel",
       noCuentaComoCorroboracion: noCuentaComoCorroboracion === true,
 
+      /*
+        Si la consulta salio de un handle propagado, de donde
+        venia ese handle. Es lo que permite decir despues «esta
+        cuenta aparecio porque Sentinel propago el handle X que ya
+        tenia en la plataforma Y».
+      */
+      handlePropagado: datos.handlePropagado || null,
+      plataformaOrigenId: datos.plataformaOrigenId || null,
+      plataformaOrigen: datos.plataformaOrigen || null,
+      cuentaOrigen: datos.cuentaOrigen || null,
+      cuentaOrigenAtribuida: datos.cuentaOrigenAtribuida === true,
+
       registradoEn: new Date().toISOString()
     });
   }
@@ -381,7 +393,23 @@ function candidatoDesdeResultado(resultado, via, contexto = {}) {
     etiquetaConsulta: resultado.etiquetaConsulta || contexto.etiqueta || null,
     titulo: (resultado.titulo || "").trim(),
     descripcion: textoDeResultado(resultado).trim(),
-    evidenciaId: resultado.id || null
+    evidenciaId: resultado.id || null,
+
+    /*
+      PROCEDENCIA DEL HANDLE PROPAGADO.
+
+      Viaja con el candidato para que la traza pueda explicar
+      despues «esta cuenta aparecio porque Sentinel propago el
+      handle X que ya tenia en la plataforma Y». Sin esto la via
+      diria `handle_propagado` sin decir de donde.
+    */
+    handlePropagado: contexto.handle || null,
+    plataformaOrigenId: contexto.plataformaOrigenId || null,
+    plataformaOrigen: contexto.plataformaOrigen || null,
+    cuentaOrigen: contexto.cuentaOrigen || null,
+    cuentaOrigenAtribuida: contexto.cuentaOrigenAtribuida === true,
+    noCuentaComoCorroboracion: contexto.noCuentaComoCorroboracion === true,
+    origenDeclarado: contexto.origenDeclarado || null
   };
 }
 
@@ -858,11 +886,41 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
     });
 
     (respuesta.resultados || []).forEach((r) => {
-      const datos = candidatoDesdeResultado(r, "consulta_dirigida", {
-        proveedor: respuesta.proveedorUsado?.nombre || null,
-        consulta: entrada.consulta,
-        etiqueta: entrada.etiqueta
-      });
+      /*
+        LA VIA LA DICE EL PLAN.
+
+        Una consulta derivada de un handle propagado no es una
+        consulta dirigida por nombre, y la diferencia importa: con
+        ella el analista puede leer despues «esta cuenta aparecio
+        porque Sentinel propago el handle X que ya tenia en la
+        plataforma Y».
+      */
+      const datos = candidatoDesdeResultado(
+        r,
+        entrada.via || "consulta_dirigida",
+        {
+          proveedor: respuesta.proveedorUsado?.nombre || null,
+          consulta: entrada.consulta,
+          etiqueta: entrada.etiqueta,
+
+          /* Procedencia del handle que origino la consulta. */
+          handle: entrada.handle || null,
+          plataformaOrigenId: entrada.plataformaOrigenId || null,
+          plataformaOrigen: entrada.plataformaOrigen || null,
+          cuentaOrigen: entrada.cuentaOrigen || null,
+          cuentaOrigenAtribuida: entrada.cuentaOrigenAtribuida === true,
+
+          /*
+            Si el handle venia solo de lo que declaro el analista,
+            este origen NO corrobora. La declaracion orienta la
+            busqueda; no es evidencia independiente.
+          */
+          noCuentaComoCorroboracion:
+            entrada.noCuentaComoCorroboracion === true,
+          origenDeclarado:
+            entrada.noCuentaComoCorroboracion === true ? "analista" : null
+        }
+      );
 
       if (!datos) return;
 
@@ -1150,6 +1208,16 @@ export async function descubrirCandidatos(perfil, opciones = {}) {
       ejecucion uso alias o no habia ninguno declarado.
     */
     aliasUsados: planificacion.aliasUsados || [],
+
+    /*
+      Handles propagados a otras plataformas, y lo que se omitio
+      por estar ya resuelto o por no caber en el tope.
+    */
+    handlesPropagados: planificacion.handlesPropagados || [],
+    consultasPropagadas: planificacion.consultasPropagadas || 0,
+    propagadasTruncadas: planificacion.propagadasTruncadas || 0,
+    propagacionOmitidaPorAtribuida:
+      planificacion.propagacionOmitidaPorAtribuida || [],
     consultasAncladas: plan.filter((p) => p.anclada).length,
     consultasPorNombre: plan.filter((p) => !p.anclada).length,
 

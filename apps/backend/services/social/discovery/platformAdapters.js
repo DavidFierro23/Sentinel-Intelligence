@@ -287,6 +287,147 @@ que el resultado sea explicable.
 -----------------------------------------------------------
 */
 
+/*
+===========================================================
+SEMILLAS DE HANDLE
+===========================================================
+
+Un handle puede llegar escrito de muchas formas. Todas estas son
+la misma semilla:
+
+    @JotaLloretV
+    jotalloretv
+    x.com/jotalloretv
+    https://instagram.com/jotalloretv/
+
+Se normaliza a `jotalloretv` y se deduplica sin distinguir
+mayusculas. Sin esto, propagar tres formas del mismo nombre
+gastaria tres consultas para preguntar lo mismo.
+
+REGLA CENTRAL: MISMO HANDLE != MISMA PERSONA.
+
+Una semilla solo sirve para BUSCAR. Lo que se encuentre pasa por
+el clasificador de cuentas igual que cualquier otro candidato.
+Que dos plataformas compartan un nombre de usuario no dice nada
+sobre quien esta detras de cada una.
+===========================================================
+*/
+
+export function normalizarSemillaHandle(valor) {
+  let v = String(valor || "").trim();
+
+  if (!v) return null;
+
+  /*
+    Si parece una URL, se descarta el host y se toma el primer
+    segmento de la ruta.
+
+    El host se identifica POR POSICION, no por llevar un punto:
+    un handle tambien puede llevarlo
+    —`juancristobal.lloretvaldivieso`— y descartar «lo que tenga
+    punto» lo borraba entero.
+  */
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(v) || /^[\w.-]+\.[a-z]{2,}\//i.test(v)) {
+    v = v.split("?")[0].split("#")[0];
+
+    /* Fuera el esquema, si lo hay. */
+    const sinEsquema = v.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "");
+
+    const segmentos = sinEsquema.split("/").filter(Boolean);
+
+    /* El primero es el host; el siguiente es lo que interesa. */
+    v = segmentos[1] || "";
+  }
+
+  v = v.replace(/^@+/, "").replace(/\/+$/, "").trim();
+
+  if (!v) return null;
+
+  /*
+    Un handle de dos caracteres o menos no discrimina nada y
+    convertiria la propagacion en ruido.
+  */
+  if (v.length < 3) return null;
+
+  return v;
+}
+
+
+/*
+  Semillas normalizadas y deduplicadas, conservando la
+  procedencia de cada una: de que plataforma vino, si Sentinel la
+  habia ATRIBUIDO o la escribio el analista.
+*/
+export function semillasDeHandle(perfil) {
+  const vistas = new Map();
+
+  (perfil?.handlesConocidos || []).forEach((h) => {
+    const bruto = typeof h === "string" ? h : h?.handle || h?.valor;
+
+    const handle = normalizarSemillaHandle(bruto);
+
+    if (!handle) return;
+
+    const clave = normalizarTexto(handle);
+
+    const previa = vistas.get(clave);
+
+    const semilla = {
+      handle,
+      plataformaOrigenId: h?.plataformaOrigenId || h?.plataformaId || null,
+      plataformaOrigen: h?.plataformaOrigen || h?.plataforma || null,
+      cuentaOrigen: h?.cuentaOrigen || h?.url || h?.enlace || null,
+      /*
+        `atribuida` significa que Sentinel la clasifico como del
+        objetivo en una investigacion anterior. Es lo que permite
+        no gastar una consulta en una plataforma ya resuelta.
+      */
+      atribuida: h?.atribuida === true,
+      origenAnalista: h?.origen === "analista" || h?.origenAnalista === true
+    };
+
+    if (!previa) {
+      vistas.set(clave, {
+        ...semilla,
+        plataformasOrigen: [semilla.plataformaOrigenId].filter(Boolean)
+      });
+
+      return;
+    }
+
+    /*
+      La misma semilla vista en dos plataformas: se acumulan sus
+      origenes en lugar de duplicarla. Una semilla ATRIBUIDA pesa
+      mas que una solo declarada, asi que gana la atribucion.
+    */
+    previa.atribuida = previa.atribuida || semilla.atribuida;
+
+    /*
+      Deja de ser "solo del analista" en cuanto Sentinel la ve por
+      su cuenta.
+    */
+    previa.origenAnalista = previa.origenAnalista && semilla.origenAnalista;
+
+    if (
+      semilla.plataformaOrigenId &&
+      !previa.plataformasOrigen.includes(semilla.plataformaOrigenId)
+    ) {
+      previa.plataformasOrigen.push(semilla.plataformaOrigenId);
+    }
+  });
+
+  return [...vistas.values()];
+}
+
+
+/*
+  Tope de consultas propagadas por plan. Con las seis plataformas
+  y varias semillas el producto crece rapido, y el presupuesto del
+  proveedor no.
+*/
+const TOPE_PROPAGADAS = 4;
+
+
 export function planificarConsultasDerivadas(perfil, opciones = {}) {
   const nombre = perfil?.nombrePrincipal;
 
@@ -304,7 +445,7 @@ export function planificarConsultasDerivadas(perfil, opciones = {}) {
 
   const vistas = new Set();
 
-  function agregar(consulta, etiqueta, adaptador, anclasUsadas) {
+  function agregar(consulta, etiqueta, adaptador, anclasUsadas, extra = null) {
     const limpia = consulta.trim();
 
     const clave = normalizarTexto(limpia);
@@ -320,6 +461,13 @@ export function planificarConsultasDerivadas(perfil, opciones = {}) {
       adaptadorId: adaptador?.id || null,
       plataformaId: adaptador?.plataformaId || null,
       anclas: anclasUsadas.map((a) => a.termino),
+
+      /*
+        Procedencia de la consulta. Las derivadas de un handle
+        propagado la traen; el resto queda con la via por defecto
+        del Discovery.
+      */
+      ...(extra || {}),
       /*
         Una consulta sin anclas es una búsqueda por nombre: la
         que produjo el homónimo. Se marca para poder medir.
@@ -478,6 +626,116 @@ export function planificarConsultasDerivadas(perfil, opciones = {}) {
   });
 
   /*
+    ---------------------------------------------------------
+    PASADA 4 — HANDLES PROPAGADOS
+    ---------------------------------------------------------
+
+    QUE RESUELVE
+
+    Medido en la ejecucion real de las 22:14: Sentinel atribuyo
+    `jotalloretv` en X y en Instagram, y TikTok se quedo sin
+    cuenta. Su unica consulta —el nombre completo mas el
+    contexto— devolvio un solo resultado, de otra persona. El
+    perfil de TikTok con ese mismo handle nunca se busco.
+
+    Un handle ya confirmado en dos plataformas es la mejor pista
+    disponible para las que faltan, y no cuesta casi nada
+    preguntarlo.
+
+    ---------------------------------------------------------
+    MISMO HANDLE != MISMA PERSONA
+    ---------------------------------------------------------
+
+    Esta pasada solo GENERA CANDIDATOS. Nada de lo que encuentre
+    queda atribuido por coincidir el nombre de usuario: pasa por
+    el mismo clasificador de cuentas que cualquier otro hallazgo,
+    y si el nombre no corresponde, se rechaza.
+
+    El caso que hay que sostener: si `tiktok.com/@jotalloretv`
+    fuera de otra persona, el Discovery debe encontrarlo y el
+    clasificador debe rechazarlo. Atribuir por igualdad de
+    username seria autoverificacion, y ademas una forma
+    especialmente mala: la de suponer que un nombre es una
+    identidad.
+
+    ---------------------------------------------------------
+    DONDE VA Y POR QUE AQUI
+    ---------------------------------------------------------
+
+    Despues de la pasada anclada por plataforma y de la reserva
+    por nombre, antes de la consulta general. Asi no le quita el
+    turno a ninguna consulta de plataforma —que son las que
+    garantizan cobertura— y solo se adelanta a la general, que es
+    la menos especifica.
+
+    Y no se gasta en plataformas que YA tienen cuenta atribuida:
+    preguntar por un handle donde ya hay respuesta es tirar
+    presupuesto.
+    ---------------------------------------------------------
+  */
+  const semillas = semillasDeHandle(perfil);
+
+  /* Plataformas que ya tienen cuenta atribuida: no se tocan. */
+  const yaResueltas = new Set(
+    semillas
+      .filter((x) => x.atribuida)
+      .flatMap((x) => x.plataformasOrigen || [])
+      .filter(Boolean)
+  );
+
+  const propagadas = [];
+
+  const omitidasPorResueltas = [];
+
+  semillas.forEach((semilla) => {
+    adaptadores.forEach((adaptador) => {
+      if (yaResueltas.has(adaptador.plataformaId)) {
+        omitidasPorResueltas.push(
+          `${adaptador.plataformaId}:${semilla.handle}`
+        );
+
+        return;
+      }
+
+      propagadas.push({ semilla, adaptador });
+    });
+  });
+
+  /*
+    Tope propio, para no inflar el plan por la puerta de atras.
+    Lo que quede fuera se DECLARA: un recorte silencioso se leeria
+    como "no habia mas que preguntar".
+  */
+  const enPlan = propagadas.slice(0, TOPE_PROPAGADAS);
+
+  enPlan.forEach(({ semilla, adaptador }) => {
+    agregar(
+      `site:${adaptador.dominios[0]} "${semilla.handle}"`,
+      `handle_propagado:${semilla.handle}`,
+      adaptador,
+      [],
+      {
+        via: "handle_propagado",
+        handle: semilla.handle,
+        handleOrigen: semilla.handle,
+        plataformaOrigenId: semilla.plataformaOrigenId,
+        plataformaOrigen: semilla.plataformaOrigen,
+        cuentaOrigen: semilla.cuentaOrigen,
+        cuentaOrigenAtribuida: semilla.atribuida,
+
+        /*
+          Si la semilla viene SOLO de lo que declaro el analista,
+          lo que se encuentre con ella no puede corroborarse por
+          ese origen. La declaracion orienta la busqueda; no es
+          evidencia independiente.
+        */
+        origenAnalista: semilla.origenAnalista,
+        noCuentaComoCorroboracion: semilla.origenAnalista === true
+      }
+    );
+  });
+
+  /*
     c) CONSULTA GENERAL ANCLADA, sin acotar plataforma.
        Es la que descubre perfiles en dominios propios y
        menciones cruzadas.
@@ -503,6 +761,16 @@ export function planificarConsultasDerivadas(perfil, opciones = {}) {
     */
     aliasUsados: aliasUnicos.slice(0, 2),
     aliasDeclarados: aliasUnicos.length,
+
+    /*
+      HANDLES PROPAGADOS — lo que se pregunto, lo que se omitio
+      por estar ya resuelto y lo que no cupo.
+    */
+    handlesPropagados: [...new Set(enPlan.map((x) => x.semilla.handle))],
+    semillasDeHandle: semillas.length,
+    consultasPropagadas: enPlan.length,
+    propagadasTruncadas: Math.max(0, propagadas.length - TOPE_PROPAGADAS),
+    propagacionOmitidaPorAtribuida: omitidasPorResueltas,
     /*
       Diagnóstico honesto: sin anclas, este sprint no puede
       hacer su trabajo.

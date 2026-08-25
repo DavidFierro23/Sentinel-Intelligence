@@ -1832,6 +1832,167 @@ causa de TikTok: su consulta funciono y devolvio a otra persona.
 
 ---
 
+## 18-duodecies. P-CAND-01 Handle Propagation (2026-08-24)
+
+Commit `feat(discovery): propagate attributed handles across platforms`.
+
+### Estado
+
+**IMPLEMENTADO — LISTO PARA PRUEBA REAL.** 324 comprobaciones, 0 fallos.
+
+### Que resuelve
+
+En la ejecucion real de las 22:14 Sentinel atribuyo `jotalloretv` en X y en
+Instagram, y TikTok se quedo sin cuenta: su unica consulta —nombre completo
+mas contexto— devolvio un solo resultado, de otra persona. **El perfil de
+TikTok con ese mismo handle nunca se busco.** Un handle ya confirmado en dos
+plataformas es la mejor pista para las que faltan.
+
+### Regla central
+
+    MISMO HANDLE != MISMA PERSONA
+
+La propagacion **solo genera candidatos**. Aumenta el recall y no toca la
+precision: lo que se encuentre pasa por el mismo clasificador de cuentas, y si
+el nombre no corresponde, se rechaza. Atribuir por igualdad de nombre de
+usuario seria autoverificacion, y de la peor clase: suponer que un nombre es
+una identidad.
+
+### Arquitectura — la ruta, sin motores paralelos
+
+    expediente (cuentas atribuidas)      routes/projects.js
+    handlesObservados (evidencia web)    referenceProfileService
+    cuentasReferencia (analista)         projectStore
+              ↓
+    perfil.handlesConocidos              osintEngine
+              ↓
+    semillasDeHandle: normaliza y dedup  platformAdapters
+              ↓
+    PASADA 4 del MISMO planificador      platformAdapters
+              ↓
+    via: "handle_propagado"              discoveryEngine
+              ↓
+    Account Classifier SIN CAMBIOS       accountClassifier
+              ↓
+    traza -> expediente                  projectStore
+
+Ningun planner, discovery, matcher ni sistema de identidad paralelo. El
+clasificador y los umbrales **no se tocaron**.
+
+### Tres procedencias, con distinto peso
+
+| Procedencia | Corrobora |
+|---|---|
+| **Atribuida** — Sentinel la clasifico en una investigacion anterior | si |
+| **Observada** — aparecio en la evidencia web de esta investigacion | si |
+| **Del analista** — la URL que escribio | **no**: `noCuentaComoCorroboracion: true` |
+
+Una semilla deja de ser «solo del analista» en cuanto Sentinel la ve por su
+cuenta. La declaracion orienta la busqueda; no es evidencia independiente.
+
+### Orden y presupuesto
+
+La propagacion va **despues** de la pasada anclada por plataforma y de la
+reserva por nombre, y **antes** de la consulta general. Asi no le quita el
+turno a ninguna consulta de plataforma —las que garantizan cobertura— y solo
+se adelanta a la general, que es la menos especifica. Ninguna consulta
+existente se elimino: el plan de Lloret pasa de 10 a 14.
+
+Tope propio de **4** consultas propagadas por plan. Lo que no cabe se declara
+en `propagadasTruncadas`; lo omitido por estar la plataforma ya resuelta, en
+`propagacionOmitidaPorAtribuida`. Los topes globales no se subieron.
+
+No se gasta en plataformas que ya tienen cuenta atribuida: con `jotalloretv`
+atribuido en X e Instagram, la propagacion va a Facebook, YouTube, TikTok y
+LinkedIn, y omite las dos primeras.
+
+### Profile-first — dos huecos cerrados
+
+Revisados los tres casos del gate. `youtube.com/channel/UC…` y `/c/…` **ya
+funcionaban**; `watch` y `shorts` **ya** se rechazaban correctamente. Los
+huecos reales eran dos, y los dos costaron cuentas en la ejecucion real:
+
+| URL | Antes | Ahora |
+|---|---|---|
+| `instagram.com/toquillaradio/p/…` | descartada entera | cuenta `toquillaradio`, `derivado` |
+| `tiktok.com/@usuario/photo/…` | descartada entera | cuenta `usuario`, `derivado` |
+
+El propietario **no se adivina: esta escrito en la ruta**. Es el mismo
+criterio que ya se aplicaba a `x.com/usuario/status/123` y a
+`tiktok.com/@usuario/video/123`. Lo que sigue sin propietario legible
+—`/p/ABC`, `/reel/ABC`, `watch?v=`, `shorts/`— sigue rechazado: declararlo
+cuenta seria inventarla.
+
+Toda cuenta derivada de una URL de contenido pasa por el clasificador. Que
+`toquillaradio` sea legible no la hace del objetivo: se separa como medio.
+
+### YouTube
+
+Su debilidad medida —el buscador devuelve videos, no canales— se ataca con la
+infraestructura existente: la propagacion pregunta
+`site:youtube.com "<handle>"`, que apunta a canal y no a contenido. **Sin
+scraping, sin API nueva, sin credenciales nuevas.**
+
+### Trazabilidad
+
+Cada consulta propagada y cada candidato que produce conservan `via`,
+`handle`, `plataformaOrigen`, `cuentaOrigen`, `cuentaOrigenAtribuida`,
+`origenAnalista`, `noCuentaComoCorroboracion`, query, provider y el veredicto
+del clasificador con su motivo. La traza responde: *«esta cuenta aparecio
+porque Sentinel propago el handle X que ya tenia en la plataforma Y»*. BUG-15
+intacto.
+
+### Riesgos asumidos y como se acotan
+
+| Riesgo | Acotacion |
+|---|---|
+| Un homonimo con el mismo handle | El clasificador lo rechaza; probado con objetivo distinto y mismo handle |
+| Gasto de presupuesto | Tope de 4, se omiten plataformas resueltas, va despues de las de plataforma |
+| Handle del analista como evidencia | Marcado `noCuentaComoCorroboracion` |
+| Propietario inventado desde contenido | Solo se extrae si esta escrito en la ruta; el resto sigue rechazado |
+| Ruido por handles cortos | Menos de 3 caracteres no se propaga |
+
+### Archivos
+
+| Archivo | Cambio |
+|---|---|
+| `social/discovery/platformAdapters.js` | `normalizarSemillaHandle`, `semillasDeHandle`, PASADA 4, metadata en el plan |
+| `social/discovery/socialUrlClassifier.js` | dos patrones de propietario en ruta de contenido |
+| `social/discovery/discoveryEngine.js` | via y procedencia del plan al candidato y al origen |
+| `social/socialIntelligenceLayer.js` | conducto del resumen |
+| `osintEngine.js` | `perfil.handlesConocidos` con sus tres procedencias |
+| `routes/projects.js` | handles atribuidos desde el expediente |
+| `projects/projectStore.js` | la traza persiste el resumen de propagacion |
+| `tests/propagacion.test.mjs` | **32 comprobaciones** (T1–T14) |
+
+### Pruebas
+
+| Suite | Comprobaciones |
+|---|---|
+| territorial | 107 |
+| identidad · referencia · contexto | 19 · 19 · 28 |
+| persistencia · alias | 16 · 19 |
+| traza · ejecucion · cobertura | 31 · 28 · 25 |
+| **propagacion** | **32** |
+| **Total** | **324, 0 fallos** |
+
+Sin red, sin cuota. Lake real intacto en 89 entradas.
+
+### Proxima accion
+
+Reiniciar el backend y ejecutar **una sola** investigacion de Lloret. Leer
+`ultimaEjecucion.traza`: debe aparecer
+`site:tiktok.com "jotalloretv"` con `via: handle_propagado`, y el veredicto
+del clasificador sobre lo que devuelva.
+
+**Benchmark de aceptacion, no de codigo**: el analista sabe que existe
+`tiktok.com/@jotalloretv`. No esta escrito en ninguna parte del sistema y no
+debe estarlo. Si aparece atribuido, la propagacion funciono; si aparece y se
+rechaza, hay que mirar el motivo; si no aparece, el limite esta en el
+proveedor.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -1942,11 +2103,22 @@ resueltos y verificados.
 | La guarda `sinCambios` descartaba la traza en reejecuciones | 🟢 **BUG-13 CONFIRMADO EN PRUEBA REAL** (§18-nonies) |
 | La traza lee un campo inexistente y etiqueta mal una plataforma | 🟢 **BUG-15 CONFIRMADO EN PRODUCCION** (§18-undecies) |
 | Huella digital volatil segun la respuesta del proveedor | 🔴 **BUG-16**: 22 % → 53 % en el mismo dia, +17 por un buscador que contesto. Riesgo de lectura politica |
-| TikTok recibe una sola consulta, sin pasada de reserva | 🔴 **DISCOVERY**: `tiktok.com/@jotalloretv` existe y no se encontro. Es el patch siguiente |
-| `site:youtube.com` devuelve videos, no canales | 🔴 **DISCOVERY**: 3 resultados, los 3 descartados con razon |
+| TikTok recibe una sola consulta, sin pasada de reserva | 🟡 **Handle Propagation implementado** (§18-duodecies). Pendiente prueba real |
+| `site:youtube.com` devuelve videos, no canales | 🟡 **Handle Propagation** pregunta por handle, que apunta a canal. Pendiente prueba real |
+| **P-CAND-UX-01 Identidad Asistida por Analista** | 🔴 en cola, no iniciada |
+| Zona horaria America/Guayaquil en la interfaz | 🔴 en cola |
+| Brave / fallback de proveedores | 🔴 sin credencial: 0 intentos en las dos ultimas ejecuciones |
+| Account Intelligence | 🔴 en cola |
+| Snapshots historicos | 🔴 en cola |
+| Media Intelligence | 🔴 en cola |
+| Public Conversation Intelligence | 🔴 en cola |
+| Indice de Presencia e Incidencia Digital | 🔴 en cola |
+| Momentum | 🔴 en cola |
+| Change Attribution | 🔴 en cola |
+| Sentinel AI Assistant / Pregúntale a Sentinel | 🔴 en cola |
 | Cobertura dependiente de un solo proveedor | 🔴 DuckDuckGo bloqueo 2/2 y Brave sigue sin credencial: el presupuesto de SerpAPI se agota en la primera pasada |
 | `clavesCuenta` y `cuentas` derivan de fuentes distintas | 🔴 **BUG-14**, preexistente, declarado y no corregido |
-| **P-CAND-01** — por que Lloret no alcanza las 6 plataformas | 🟡 **CAUSA AISLADA: DISCOVERY**, reparto de consultas (§18-undecies). No es el Matcher: ni un perfil plausible rechazado. Falta el patch de cobertura por handle |
+| **P-CAND-01** — por que Lloret no alcanza las 6 plataformas | 🟡 **HANDLE PROPAGATION IMPLEMENTADO** (§18-duodecies). Pendiente una sola prueba real |
 | Verificar en piloto real que Pedro Palacios recibe candidatos al Discovery | 🔴 su grupo guardado no contenía ninguna URL con `palacio`; L-1 no podía cambiarlo |
 | Verificar Paúl Carrasco Carpio con búsqueda real | 🔴 no existe grupo guardado; el mecanismo está probado en unitario |
 | Expediente visual completo del candidato dentro del proyecto | 🔴 hoy solo hay resumen |
@@ -2188,6 +2360,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-24 | Handle Propagation | Los handles atribuidos, observados y declarados se normalizan, deduplican y propagan a las plataformas sin cuenta, en el MISMO planificador y sin tocar el clasificador ni los umbrales. Plan de Lloret de 10 a 14 consultas, ninguna eliminada; tope de 4 propagadas con truncamiento declarado. Profile-first: dos huecos cerrados —propietario legible en ruta de contenido de Instagram y foto de TikTok—; watch/shorts y /p/ sin propietario siguen rechazados. Regla MISMO HANDLE != MISMA PERSONA probada con objetivo distinto. 324 pruebas, 0 fallos. Nueva §18-duodecies. |
 | 2026-08-24 | ejecucion real 22:14 | Full Discovery diagnosticado con traza completa: 29 candidatos, 26 rechazos con motivo, 16 descartes, 6 plataformas. 3 cuentas, 6 medios, 40 evidencias, delta +1/+1/+14, huella 53. Cuenta nueva `instagram.com/jotalloretv`, hallada por la capa web y no por la consulta dirigida. `tiktok.com/@jotalloretv` NO fue encontrado: TikTok recibe una sola consulta. LinkedIn no es Matcher: los 2 candidatos no son el objetivo. BUG-12, BUG-13 y BUG-15 confirmados en produccion. BUG-16 abierto por volatilidad de la huella. Nueva §18-undecies. |
 | 2026-08-24 | hotfix BUG-15 | Traza fiel. Los candidatos se leen de `clasificacionCuentas`, que trae veredicto y procedencia juntos; `aportadaPorAnalista` y `viasDeclaradas` se derivan de los origenes. La cobertura cuenta los resultados del buscador: Instagram con 10 enlaces y ningun perfil ya no se etiqueta como ausencia. Los fixtures anteriores probaban una proyeccion en lugar de la estructura del motor —la misma raiz del bug— y se reescribieron con la forma real, reforzando las aserciones. 292 pruebas, 0 fallos. Nueva §18-decies. |
 | 2026-08-24 | P-CAND-01 reprueba | Primera traza real de las seis plataformas. BUG-11, BUG-12 y BUG-13 confirmados en prueba real. Instagram devolvio 10 resultados, todos publicaciones: SD-1A hizo bien su trabajo. YouTube bloqueado por proveedor. Pero `candidatosSociales` sale vacio porque lee un campo inexistente, asi que 24 de 26 rechazos no tienen motivo registrado y LinkedIn (2 candidatos, 0 atribuidos) no es verificable. BUG-15 registrado como unico patch siguiente. Nueva §18-nonies. |

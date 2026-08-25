@@ -404,9 +404,67 @@ export async function investigarObjetivo(objetivo, opciones = {}) {
         .map((a) => (typeof a === "string" ? { valor: a } : a))
         .filter((a) => a && String(a.valor || "").trim());
 
+      /*
+        ---------------------------------------------------------
+        SEMILLAS DE HANDLE PARA PROPAGACION
+        ---------------------------------------------------------
+
+        Tres procedencias, con distinto peso, y la diferencia
+        importa:
+
+          ATRIBUIDAS   cuentas que Sentinel clasifico como del
+                       objetivo en una investigacion anterior. La
+                       mejor pista: ya paso el clasificador.
+
+          OBSERVADAS   handles que aparecieron en la evidencia web
+                       de ESTA investigacion. Sin clasificar
+                       todavia, pero vistos por un proveedor.
+
+          DEL ANALISTA las URLs que escribio. Orientan la busqueda
+                       y no corroboran nada: van marcadas.
+
+        El planificador las normaliza y deduplica. Ver
+        `semillasDeHandle`.
+        ---------------------------------------------------------
+      */
+      const atribuidas = (opciones.handlesAtribuidos || [])
+        .map((c) => ({
+          handle: c.handle,
+          plataformaId: c.plataformaId,
+          plataforma: c.plataforma || null,
+          url: c.url || null,
+          cuentaOrigen: c.url || null,
+          atribuida: true
+        }))
+        .filter((c) => c.handle);
+
+      const observadas = (perfilReferencia.handlesObservados || []).map((h) => ({
+        handle: h.handle,
+        plataformaId: h.plataformaId,
+        plataforma: h.plataforma || null,
+        url: h.enlace || null,
+        cuentaOrigen: h.enlace || null,
+        atribuida: false
+      }));
+
+      const delAnalista = (opciones.cuentasReferencia || []).map((r) => ({
+        /*
+          Se pasa la URL entera: el planificador extrae el handle
+          con la misma normalizacion que el resto.
+        */
+        handle: r.url,
+        plataformaId: null,
+        plataforma: r.plataforma || null,
+        url: r.url || null,
+        cuentaOrigen: r.url || null,
+        atribuida: false,
+        origen: "analista"
+      }));
+
       perfilReferencia = {
         ...perfilReferencia,
-        aliasDeclarados: declarados
+        aliasDeclarados: declarados,
+        handlesConocidos: [...atribuidas, ...observadas, ...delAnalista]
       };
     }
   } catch (error) {

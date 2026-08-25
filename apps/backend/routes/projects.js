@@ -228,7 +228,22 @@ router.post("/:proyectoId/candidatos/:candidatoId/investigar", async (req, res) 
       cuentasReferencia: candidato.cuentasReferencia || [],
 
       /* Amplian el descubrimiento; no deciden identidad. */
-      aliases: candidato.aliases || []
+      aliases: candidato.aliases || [],
+
+      /*
+        HANDLES YA ATRIBUIDOS en investigaciones anteriores. Son
+        la mejor semilla de propagacion disponible: ya pasaron el
+        clasificador. Se leen del expediente, que es donde viven.
+
+        Que un handle este atribuido en una plataforma no lo
+        atribuye en otra: solo sirve para ir a mirar.
+      */
+      handlesAtribuidos: (candidato.expediente?.cuentas || []).map((c) => ({
+        handle: c.handle,
+        plataformaId: c.plataformaId,
+        plataforma: c.plataforma,
+        url: c.url
+      }))
     });
 
     if (resultado?.error) return res.status(502).json(resultado);

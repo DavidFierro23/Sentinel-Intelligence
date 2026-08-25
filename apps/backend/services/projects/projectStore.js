@@ -1473,6 +1473,21 @@ function resumirExpediente(resultado) {
 
       aliasUsados: resultado?.social?.descubrimiento?.aliasUsados || [],
 
+      /*
+        Propagacion de handles: que se pregunto en otras
+        plataformas, que se omitio por estar ya resuelto y que no
+        cupo en el tope. El truncamiento se declara: un recorte
+        silencioso se leeria como "no habia mas que preguntar".
+      */
+      handlesPropagados:
+        resultado?.social?.descubrimiento?.handlesPropagados || [],
+      consultasPropagadas:
+        resultado?.social?.descubrimiento?.consultasPropagadas || 0,
+      propagadasTruncadas:
+        resultado?.social?.descubrimiento?.propagadasTruncadas || 0,
+      propagacionOmitidaPorAtribuida:
+        resultado?.social?.descubrimiento?.propagacionOmitidaPorAtribuida || [],
+
       advertencias: resultado?.social?.descubrimiento?.advertencias || [],
 
       contrato:

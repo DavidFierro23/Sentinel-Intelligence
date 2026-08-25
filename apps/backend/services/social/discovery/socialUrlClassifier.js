@@ -169,8 +169,13 @@ const PLATAFORMAS = Object.freeze([
     patrones: [
       { re: /^\/(tag|discover|foryou|explore|music|search|live)(\/|$)/, tipo: TIPOS_URL.NO_CUENTA, handle: null, esCuenta: false },
 
-      /* El video de TikTok SI lleva al autor en la ruta. */
-      { re: /^\/@([A-Za-z0-9._]{2,30})\/video\/\d+/, tipo: TIPOS_URL.VIDEO, handle: 1, esCuenta: true, derivado: true },
+      /*
+        El video de TikTok SI lleva al autor en la ruta. Y la
+        FOTO tambien: quedaba fuera por omision, no por criterio.
+        Medido en la ejecucion real: `/@segundo.cabrera82/photo/…`
+        se descarto entero pudiendo leerse su autor.
+      */
+      { re: /^\/@([A-Za-z0-9._]{2,30})\/(?:video|photo)\/\d+/, tipo: TIPOS_URL.VIDEO, handle: 1, esCuenta: true, derivado: true },
 
       { re: /^\/@([A-Za-z0-9._]{2,30})\/?$/, tipo: TIPOS_URL.PERFIL, handle: 1, esCuenta: true }
     ]
@@ -192,7 +197,38 @@ const PLATAFORMAS = Object.freeze([
     nombre: "Instagram",
     dominios: ["instagram.com", "www.instagram.com"],
     patrones: [
+      /*
+        SIN PROPIETARIO EN LA RUTA. `/p/ABC` y `/reel/ABC` no
+        dicen de quien es la publicacion. Va primero para que
+        ninguna regla posterior intente adivinarlo.
+      */
       { re: /^\/(p|reel|reels|tv|explore|stories|accounts|direct)(\/|$)/, tipo: TIPOS_URL.NO_CUENTA, handle: null, esCuenta: false },
+
+      /*
+        ---------------------------------------------------------
+        CON PROPIETARIO EN LA RUTA
+        ---------------------------------------------------------
+
+            instagram.com/toquillaradio/p/DcKIL5rH0aL/
+
+        Aqui el propietario NO se adivina: esta escrito. Es el
+        mismo criterio que ya se aplicaba a
+        `x.com/usuario/status/123` y a
+        `tiktok.com/@usuario/video/123`, y no se aplicaba aqui.
+
+        Medido en la ejecucion real de las 22:14: dos URLs de
+        Instagram llevaban su propietario en la ruta
+        —`/nuevotiempocuenca/reel/…` y `/toquillaradio/p/…`— y se
+        descartaron enteras, perdiendo dos cuentas identificables.
+
+        `derivado: true` declara que la cuenta se dedujo de una
+        URL de contenido, no de una URL de perfil. Sigue pasando
+        por el clasificador de cuentas como cualquier otra: que el
+        propietario sea legible no dice de quien es la cuenta.
+        ---------------------------------------------------------
+      */
+      { re: /^\/([A-Za-z0-9._]{2,30})\/(?:p|reel|reels|tv)\//, tipo: TIPOS_URL.POST, handle: 1, esCuenta: true, derivado: true },
+
       { re: /^\/([A-Za-z0-9._]{2,30})\/?$/, tipo: TIPOS_URL.PERFIL, handle: 1, esCuenta: true }
     ]
   }
