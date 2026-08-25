@@ -2415,6 +2415,120 @@ Lake real intacto en 92 entradas.
 
 ---
 
+## 18-quindecies. Validacion real 2026-08-25 17:23 (2026-08-25)
+
+    investigacionId  inv-candidato-juan-cristobal-lloret-valdivieso-2026-08-25T17:23:55.558Z
+    ejecutadaEn      2026-08-25T17:23:55.558Z
+    expediente       v6
+    inventario       3 cuentas · 3 observadas · 0 no reencontradas
+    porEstado        REVALIDADA 2 · ATRIBUIDA 1
+    huella           35
+
+### BUG-17 — VALIDADO EN REAL
+
+    handlesPropagados: ["jotalloretv", "juancristobal.lloretvaldivieso"]
+
+`jotalloretv` se propago, obtenido de las cuentas consolidadas de **X** y de
+**Instagram**. Antes de la correccion la lista llegaba vacia y solo se
+propagaba la URL del analista.
+
+Y la omision funciono: `propagacionOmitidaPorAtribuida` lista las seis
+combinaciones de X, Facebook e Instagram con los dos handles. **Ninguna
+consulta se gasto en una plataforma ya consolidada.**
+
+### BUG-18 — VALIDADO EN REAL, con un limite que aparece detras
+
+`site:tiktok.com "jotalloretv"` esta en la **posicion 8** del plan, **antes**
+de las tres reservas por nombre (posiciones 11, 12 y 13). El reordenamiento
+hizo exactamente lo que debia: de la posicion 13 a la 8.
+
+Y por primera vez **una consulta propagada se ejecuto de verdad**:
+
+    7. [youtube] OK  DuckDuckGo Web  6 resultados   site:youtube.com "jotalloretv"
+
+Pero la de TikTok, inmediatamente despues, dio `Error` sin proveedor.
+
+**El limite es de capacidad, no de orden.** SerpAPI tiene presupuesto 6 y
+DuckDuckGo 2: **ocho intentos en total**. Las siete primeras consultas
+—las seis de cobertura por plataforma mas la primera propagada— los agotaron.
+La posicion 8 es la primera que ya no tiene proveedor que la sirva.
+
+Reordenar era necesario y no es suficiente: **el plan pide mas de lo que la
+capacidad da**. Brave sigue con **0 intentos** por falta de credencial, y es la
+capacidad que falta.
+
+### TikTok — clasificacion
+
+**B — el proveedor fallo.** La consulta se planifico, quedo delante de las
+reservas y se intento; ningun proveedor tenia capacidad para servirla.
+
+No es A (llego al plan y se intento), no es C ni D ni E ni F: **no hubo
+respuesta que clasificar**. Y por tanto **no se puede afirmar nada** sobre si
+`tiktok.com/@jotalloretv` existe o de quien es. Sentinel declara lo que
+observo, y aqui no observo.
+
+### BUG-19 — no contradicho, y NO ejercitado
+
+Las tres cuentas del inventario se observaron en esta corrida:
+`noReencontradas: 0`. **Ninguna cuenta consolidada desaparecio.**
+
+Pero hay que decirlo con precision: **la rama de preservacion no se ejercito**.
+Todo se reencontro, asi que la produccion no tuvo ocasion de demostrar que una
+cuenta no reencontrada sobrevive. Esta probado por test —36 comprobaciones— y
+la produccion no lo contradice; no es lo mismo que confirmarlo.
+
+`instagram.com/jotalloretv` **si esta en el inventario**, y con matiz
+importante: entro como `ATRIBUIDA`, no como `REVALIDADA`. El codigo anterior la
+habia **borrado** del estado vigente a las 15:58, y la consolidacion no puede
+resucitar lo que ya no estaba: se reencontro y volvio a entrar como nueva. El
+Lake conserva la v4 donde estaba, asi que la historia existe; lo que se perdio
+en su momento fue el estado vigente, que es justo lo que BUG-19 corrige de
+ahora en adelante.
+
+### Inventario consolidado
+
+| Plataforma | URL | Estado | Vista | Corresp. | Prov. historicos | Prov. ultima obs. | Analista |
+|---|---|---|---|---|---|---|---|
+| X | `x.com/jotalloretv` | REVALIDADA | si | 46 | DuckDuckGo + SerpAPI | SerpAPI | no |
+| Facebook | `facebook.com/juancristobal.lloretvaldivieso` | REVALIDADA | si | 49 | DuckDuckGo | DuckDuckGo | **si** |
+| Instagram | `instagram.com/jotalloretv` | ATRIBUIDA | si | 21 | DuckDuckGo | DuckDuckGo | no |
+
+La de Facebook conserva `referenciaAnalista: true` y
+`noCuentaComoCorroboracion: true`: **la declaracion del analista sigue sin
+corroborar nada**, aunque un proveedor la haya devuelto.
+
+`proveedoresHistoricos` acumula —X recuerda a los dos que la han visto— y
+`proveedoresUltimaObservacion` dice quien la vio esta vez. Los dos planos,
+separados y visibles.
+
+### Dos imprecisiones detectadas, declaradas y no corregidas
+
+**BUG-20.** X y Facebook vienen de un expediente anterior al contrato y por
+tanto sin marcas de tiempo. Al reobservarlas, `firstSeenAt` tomo el instante de
+**esta** corrida, de modo que afirma «vistas por primera vez hoy» cuando en
+realidad se conocian desde el 24 de agosto. `historiaIncompleta: true` avisa,
+pero el valor sigue siendo una suposicion con apariencia de dato. Deberia
+quedarse en `null` mientras la historia sea incompleta.
+
+**BUG-21.** La huella cayo a 35 y el motivo es instructivo: el indice lee
+`corroboracion.totalProveedores`, que es **la ultima observacion**, no
+`proveedoresHistoricos`. X fue devuelta hoy solo por SerpAPI, asi que su
+corroboracion cuenta 1 y el componente multiproveedor bajo a 0 pese a que dos
+proveedores distintos la han visto. Es la misma volatilidad de BUG-16, ahora
+con una causa concreta y una solucion evidente: leer el historico. Se declara,
+no se toca.
+
+### Veredicto
+
+**P-CAND-01 VALIDADO EN REAL.** La condicion de fallo del gate —que una cuenta
+consolidada desapareciera por ausencia del proveedor— **no ocurrio**. BUG-17 y
+BUG-18 quedan demostrados en produccion.
+
+Lo que queda abierto no es un defecto de identidad: es **capacidad de
+proveedores**. Ocho intentos no alcanzan para seis plataformas mas propagacion.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -2492,6 +2606,8 @@ es del analista.
 | BUG-05 | Media | `KnowledgeGraph.jsx` | Grafo radial: no hay relaciones entre nodos | Abierto | No | Aristas cuenta↔medio y cuenta↔cuenta |
 | BUG-06 | Baja | `PlausibleIdentitiesPanel.jsx` | «Investigar esta identidad» presente sin acción conectada | Abierto | No | Conectar reinvestigación con la evidencia del grupo |
 | BUG-07 | Media | `projects/projectContext.js:134` | `nivelPorDefecto` compara contra `prefectura` / `presidencia` (el cargo), pero el analista escribe `Prefecto` / `Presidente` / `Asambleísta` (la persona). **Todas** las dignidades en forma personal caen a `cantonal`, y en un proyecto provincial o nacional sin `nivel` declarado la provincia o el país se quedan en fuerza 6 —por debajo del umbral de evidencia— y **no llegan a ser ancla**. Detectado en LÍNEA A (§18-bis) | Abierto, **no corregido: fuera de la autorización L-1/L-2/L-3** | No | Aceptar la forma personal de cada dignidad, o exigir `nivel` explícito en el formulario |
+| BUG-21 | Media | `social/executive/executiveProfile.js` `indiceHuellaDigital` | El componente de corroboracion multiproveedor lee `corroboracion.totalProveedores`, que refleja **la ultima observacion**, no `proveedoresHistoricos`. En la validacion real X fue devuelta solo por SerpAPI y su corroboracion conto 1, bajando el componente a 0, pese a que DuckDuckGo y SerpAPI la han visto ambos. Es la causa concreta de la volatilidad de BUG-16 (§18-quindecies) | Abierto, **declarado y no corregido** | No | Contar los proveedores historicos, no los de la ultima corrida |
+| BUG-20 | Baja | `services/projects/projectStore.js` `consolidarIdentidades` | Una cuenta que viene de un expediente anterior al contrato no tiene `firstSeenAt`; al reobservarla toma el instante de la corrida actual, afirmando «vista por primera vez hoy» cuando se conocia desde antes. `historiaIncompleta: true` avisa, pero el valor es una suposicion con apariencia de dato (§18-quindecies) | Abierto, **declarado y no corregido** | No | Dejar `firstSeenAt` en `null` mientras `historiaIncompleta` sea true |
 | BUG-19 | **Crítica** | `services/projects/projectStore.js` `resumirExpediente` | **CERRADO POR CODIGO/TEST** (§18-quaterdecies), pendiente confirmacion real. Descripcion original: El expediente **reemplaza** sus cuentas con las de la ultima ejecucion en lugar de acumularlas. Una cuenta atribuida antes **desaparece** si el proveedor no la devuelve otra vez. Explica 53 % → 42 % con 3 → 2 cuentas (§18-terdecies) **y la regresion 49 → 22 del 24 de agosto que quedo sin explicar**. El Lake conserva las versiones, asi que nada se pierde en disco: lo que se pierde es el estado vigente que ve el analista | Abierto | **Sí: borra hallazgos reales** | Acumular cuentas por clave plataforma+handle conservando la ultima vez que se observo cada una, y declarar las no reencontradas en vez de borrarlas |
 | BUG-18 | **Alta** | `social/discovery/platformAdapters.js` orden del plan | **CERRADO POR CODIGO/TEST** (§18-quaterdecies), pendiente confirmacion real. Descripcion original: La propagacion de handles va detras de la reserva por nombre y **el presupuesto muere antes de llegar**: en la prueba real las 4 propagadas dieron Error, igual que las 3 de reserva que van delante y no aportaron nada. 8 de 14 consultas sin respuesta. La colocacion se eligio para no degradar consultas existentes; el efecto medido es que la pasada nueva no se ejecuta nunca (§18-terdecies) | Abierto | **Sí: la propagacion no llega a probarse** | Adelantar la propagacion por delante de la reserva por nombre, que ya fallo tres de tres, sin subir topes globales |
 | BUG-17 | **Alta** | `routes/projects.js` | **CERRADO POR CODIGO/TEST** (§18-quaterdecies), pendiente confirmacion real. Descripcion original: Lee `candidato.expediente?.cuentas` para construir `handlesAtribuidos`, pero obtiene el candidato con `obtenerCandidato`, que devuelve el registro crudo del Lake **sin campo `expediente`** —lo ensambla `contenidoDeProyecto`—. `handlesAtribuidos` llega siempre vacio: `jotalloretv` nunca se propago y la unica semilla fue la URL del analista, que al no estar `atribuida` dejo `yaResueltas` vacio y gasto consultas en X y Facebook, ya resueltas. Introducido en `b88015c`, detectado en §18-terdecies | Abierto, **es el patch siguiente** | **Sí: anula la propagacion** | Leer las cuentas del expediente con la misma via que `contenidoDeProyecto`, o pasarlas ya resueltas a la ruta |
@@ -2544,10 +2660,12 @@ resueltos y verificados.
 | Sentinel AI Assistant / Pregúntale a Sentinel | 🔴 en cola |
 | Cobertura dependiente de un solo proveedor | 🔴 DuckDuckGo bloqueo 2/2 y Brave sigue sin credencial: el presupuesto de SerpAPI se agota en la primera pasada |
 | `clavesCuenta` y `cuentas` derivan de fuentes distintas | 🔴 **BUG-14**, preexistente, declarado y no corregido |
-| **P-CAND-01** — por que Lloret no alcanza las 6 plataformas | 🟡 **IDENTITY STABILITY GATE IMPLEMENTADO** (§18-quaterdecies). Falta una unica prueba real |
-| El expediente borraba cuentas ya atribuidas si no se reencontraban | 🟡 **BUG-19 cerrado por codigo y test**. Pendiente confirmacion real |
-| `handlesAtribuidos` llegaba vacio a la propagacion | 🟡 **BUG-17 cerrado por codigo y test** |
-| La propagacion nunca alcanzaba el presupuesto | 🟡 **BUG-18 cerrado por codigo y test** |
+| **P-CAND-01** — estabilidad de identidad | 🟢 **VALIDADO EN REAL** (§18-quindecies). Ninguna cuenta consolidada desaparecio |
+| El expediente borraba cuentas ya atribuidas si no se reencontraban | 🟡 **BUG-19**: no contradicho en real, pero la rama de preservacion **no se ejercito** (todo se reencontro). Probado por test |
+| `handlesAtribuidos` llegaba vacio a la propagacion | 🟢 **BUG-17 VALIDADO EN REAL**: `jotalloretv` propagado desde X e Instagram |
+| La propagacion nunca alcanzaba el presupuesto | 🟢 **BUG-18 VALIDADO EN REAL**: TikTok de la posicion 13 a la 8, y una propagada se ejecuto |
+| **Capacidad de proveedores insuficiente para el plan** | 🔴 **P0 nuevo**. 8 intentos totales (SerpAPI 6 + DuckDuckGo 2) no alcanzan para 6 plataformas mas propagacion. Brave sigue con 0 intentos por falta de credencial. Es el unico bloqueo real de la cobertura de 6 plataformas |
+| `tiktok.com/@jotalloretv` | 🔴 **no observado**: la consulta se intento y ningun proveedor tenia capacidad. No se puede afirmar nada sobre esa cuenta |
 | Reverificacion programada de cuentas consolidadas | 🔴 la arquitectura lo soporta; la politica de cuando revisar no esta definida |
 | Verificar en piloto real que Pedro Palacios recibe candidatos al Discovery | 🔴 su grupo guardado no contenía ninguna URL con `palacio`; L-1 no podía cambiarlo |
 | Verificar Paúl Carrasco Carpio con búsqueda real | 🔴 no existe grupo guardado; el mecanismo está probado en unitario |
@@ -2790,6 +2908,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-25 | validacion real 17:23 | **P-CAND-01 VALIDADO EN REAL.** Ninguna cuenta consolidada desaparecio: inventario de 3, todas observadas. BUG-17 validado —`jotalloretv` propagado desde las consolidadas de X e Instagram, y ninguna consulta gastada en plataforma ya resuelta—. BUG-18 validado: TikTok por handle pasa de la posicion 13 a la 8 y una propagada se ejecuto por fin (`site:youtube.com "jotalloretv"`, 6 resultados). BUG-19 no contradicho pero NO ejercitado: todo se reencontro. El bloqueo restante es de CAPACIDAD de proveedores: 8 intentos no alcanzan para 6 plataformas mas propagacion, y Brave sigue sin credencial. BUG-20 y BUG-21 declarados sin corregir. Nueva §18-quindecies. |
 | 2026-08-25 | Identity Stability Gate | Implementado el inventario consolidado: una cuenta atribuida ya no desaparece porque un buscador no la devuelva. `estado` habla de identidad; `seenInCurrentRun`, `lastSeenAt` y `lastCheckedAt`, de observacion. NO_REENCONTRADA no es REVOCADA. BUG-17 cerrado leyendo el inventario autoritativo en lugar de un campo inexistente; BUG-18 reordenando el MISMO planificador por valor esperado, con la consulta de TikTok de la posicion 13 a la 8 y sin subir topes. Clasificador y umbrales sin tocar. 411 pruebas, 0 fallos. Nueva §18-quaterdecies. |
 | 2026-08-25 | prueba real 15:58 | La propagacion se ejecuto —4 consultas— pero con la semilla equivocada: `handlesAtribuidos` llega vacio porque la ruta lee un campo que el lector crudo no tiene (BUG-17), asi que `jotalloretv` nunca se propago y dos consultas fueron a plataformas ya resueltas. Las cuatro dieron Error: el presupuesto muere antes de llegar a la pasada nueva (BUG-18). Profile-first CONFIRMADO en produccion: `@segundo.cabrera82` entro como candidato y el clasificador lo rechazo. Y el hallazgo de fondo: el expediente REEMPLAZA sus cuentas en vez de acumularlas, asi que `instagram.com/jotalloretv` desaparecio al no reencontrarse — esto explica 53→42 y tambien la regresion 49→22 del 24 de agosto (BUG-19, critico). Nueva §18-terdecies. |
 | 2026-08-24 | Handle Propagation | Los handles atribuidos, observados y declarados se normalizan, deduplican y propagan a las plataformas sin cuenta, en el MISMO planificador y sin tocar el clasificador ni los umbrales. Plan de Lloret de 10 a 14 consultas, ninguna eliminada; tope de 4 propagadas con truncamiento declarado. Profile-first: dos huecos cerrados —propietario legible en ruta de contenido de Instagram y foto de TikTok—; watch/shorts y /p/ sin propietario siguen rechazados. Regla MISMO HANDLE != MISMA PERSONA probada con objetivo distinto. 324 pruebas, 0 fallos. Nueva §18-duodecies. |
