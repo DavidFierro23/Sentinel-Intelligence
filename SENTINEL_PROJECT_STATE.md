@@ -3061,6 +3061,157 @@ Merece leerse porque confirma en produccion lo del gate anterior:
 
 ---
 
+## 18-duodevicies. P-CAND-UX-03 Flujo y fotografia (2026-08-25)
+
+Commit `fix(projects): refine candidate identity workflow and profile photo provenance`.
+**527 comprobaciones, 0 fallos.** Sin red, sin cuota.
+
+### Causa del comportamiento UX anterior
+
+Al guardar, `guardarIdentidad` cerraba el modal pero **dejaba
+`fichaAbierta`**, asi que la ficha completa seguia desplegada. Y usaba
+`setAviso`, que es un aviso **persistente**: habia que cerrarlo a mano.
+
+Con un candidato se tolera. Con veinte, cada guardado deja un panel abierto y
+un aviso que cerrar, y la lista se vuelve ilegible.
+
+### Antes / despues
+
+| | Antes | Ahora |
+|---|---|---|
+| Tras guardar | modal cerrado, **ficha desplegada** | vuelve a la tarjeta compacta |
+| Confirmacion | aviso persistente | flotante, se borra en 4 s |
+| Orden | avisar y luego recargar | **recargar y luego colapsar**, para que la tarjeta no muestre un dato viejo ni un instante |
+| Cancelar | cerraba el modal | igual: cierra solo el modal, la ficha sigue abierta |
+| Error al guardar | modal abierto | igual, y **conserva lo escrito** |
+| URL de cuenta en el campo de foto | se guardaba como `url` → **icono roto** | se rechaza con motivo |
+| Imagen que falla al cargar | icono roto del navegador | avatar con iniciales |
+
+### Contrato de fotografia
+
+    url, sourceUrl
+    origen                      analista | cuenta_declarada | cuenta_descubierta
+    provider
+    derivadaDeCuenta, cuentaId, plataformaId, handle
+    obtenidaEn, ultimaComprobacion
+    verificadaPorSentinel       hoy siempre false
+    intentoRechazado            { url, motivo, esUrlDeCuenta, plataformaId }
+    historial[]                 hasta 5, con reemplazadaEn
+    utilizable, motivoNoUtilizable, esUrlDeCuenta   (calculados en la ficha)
+
+**Jerarquia** implementada entera: `manual → instagram → facebook → tiktok →
+x → youtube → linkedin → web`.
+
+### El limite real, declarado
+
+**No existe API de ninguna plataforma social en este sistema y el scraping
+esta excluido.** Por tanto no hay mecanismo legitimo para obtener el avatar de
+Instagram, Facebook, TikTok, X, YouTube ni LinkedIn.
+
+La jerarquia esta completa y **esas plataformas registran
+`no_disponible_sin_api` con su motivo** en `fotoNoDisponible`, en lugar de
+fingir una imagen. Lo que si produce fotografia: una URL que escriba el
+analista, y una imagen ya presente en el expediente —por ejemplo la que el
+Avatar Intelligence Engine obtiene de Wikidata P18—.
+
+Declarar la ausencia es la mitad del trabajo: sin eso, un hueco parece un
+fallo del sistema y no una limitacion conocida.
+
+### Procedencia: dos afirmaciones que no se mezclan
+
+  **A** · Sentinel corroboro que la cuenta corresponde al candidato.
+  **B** · Sentinel verifico el contenido de la fotografia.
+
+Que la cuenta pase a corroborada **no** convierte su fotografia en verificada.
+`verificadaPorSentinel` solo habla de B, que hoy nunca es cierta. Probado.
+
+Y **nunca se llama «oficial»** a una imagen por haberla encontrado: se dice de
+donde salio.
+
+### Una URL de cuenta no es una URL de imagen
+
+El defecto visible: se pego `facebook.com/usuario` en el campo de fotografia y
+la interfaz lo puso como `src` de un `<img>`. El navegador dibujo su icono
+roto.
+
+`esUrlDeImagen` decide por extension o por servicio de imagenes conocido, y
+`diagnosticarUrlFoto` explica el rechazo con palabras que el analista pueda
+usar para corregirlo. La regla vive en el backend **y** en la interfaz a
+proposito: el backend decide al guardar, la interfaz decide si intenta pintar.
+Un test comprueba que no discrepan.
+
+`CandidatePhoto` valida antes de pintar y ademas escucha `onError`: si la carga
+falla, cae a un avatar con iniciales. **Nunca el icono roto.**
+
+### Dato real encontrado
+
+El expediente de Lloret tenia ya una **URL de cuenta de Facebook guardada como
+fotografia**, escrita por el codigo anterior. No se corrige el dato del
+analista sin que lo pida: se **diagnostica**. La ficha devuelve
+`utilizable: false` con el motivo, y la interfaz lo dice en lugar de dejar un
+hueco sin explicacion.
+
+En la misma lectura se confirma que **P-CAND-UX-02 funciona con datos
+reales**: TikTok y YouTube persistidos como `DECLARADA_POR_ANALISTA`, y
+Facebook con **las dos procedencias a la vez** —declarada y corroborada—.
+
+### Persistencia e historial
+
+La fotografia vive en el expediente con `obtenidaEn` y `ultimaComprobacion`:
+un re-render lee lo guardado y **no dispara ninguna obtencion**. Si dependiera
+del render, cada pintado seria una peticion.
+
+Al cambiar de fotografia la anterior **no se destruye**: pasa a `historial`
+con su procedencia y `reemplazadaEn`, acotado a 5. Guardar la misma URL
+actualiza la comprobacion y **no duplica** historia. El contrato admite crecer
+a un historial completo sin rehacerlo.
+
+### Pruebas
+
+`tests/fotoIdentidad.test.mjs` — **32 comprobaciones**, T1 a T20.
+
+Nota honesta sobre T1–T3: el flujo de la interfaz —cerrar, colapsar, confirmar—
+es estado de React y no se puede ejercitar desde Node. Lo que se prueba es el
+**contrato del que depende**: que guardar devuelva un aviso, que persista antes
+de colapsar, y que un fallo no destruya nada. La comprobacion visual queda
+para el analista.
+
+| Suite | Total |
+|---|---|
+| las trece anteriores | 495 |
+| **fotoIdentidad** | **32** |
+| **Total** | **527, 0 fallos** |
+
+Build correcta. Lint: **introduje dos errores** —dos imports que quedaron sin
+usar al refactorizar la ficha— y los corregi; vuelve a los 6 preexistentes de
+BUG-01 y BUG-02.
+
+### Preparacion para Account Intelligence
+
+Contrato minimo por cuenta, **verificado por prueba**: `id`, `plataformaId`,
+`handle`, `url`, `estado`, procedencia (`declaradaPorAnalista`,
+`descubiertaPorSentinel`, `corroboradaPorSentinel`), `corroboracion`,
+`firstSeenAt`, `lastSeenAt`, `lastCheckedAt`, mas `candidatoId` en la ficha.
+
+Es suficiente para que el proximo gate analice actividad **por cuenta** y la
+consolide **por candidato**. No se implementa nada del motor y el modelo no
+queda acoplado a la interfaz.
+
+### Riesgos y limitaciones reales
+
+- **Sin API de plataforma, la foto derivada de redes no es obtenible.** Es la
+  limitacion dominante de este gate y esta declarada, no disimulada.
+- El expediente de Lloret conserva una URL de cuenta en el campo de foto. No
+  se toca: la corrige el analista desde la interfaz.
+- `SERVICIOS_DE_IMAGEN` reconoce los CDN habituales; una URL de imagen sin
+  extension en un dominio desconocido se rechazaria. Es el lado seguro del
+  error: mejor pedir el enlace directo que dibujar una pagina.
+- La confirmacion efimera usa `setTimeout`; si el modulo se desmontara justo
+  antes, el temporizador quedaria huerfano. `ProjectsModule` no se desmonta en
+  el flujo actual.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -3179,7 +3330,9 @@ resueltos y verificados.
 | TikTok recibe una sola consulta, sin pasada de reserva | 🔴 la propagada existio pero con el handle equivocado y dio Error. Ver BUG-17 y BUG-18 |
 | Profile-first: propietario legible en ruta de contenido | 🟢 **CONFIRMADO EN PRODUCCION** (§18-terdecies): `@segundo.cabrera82` entro como candidato y el clasificador lo rechazo |
 | `site:youtube.com` devuelve videos, no canales | 🟡 **Handle Propagation** pregunta por handle, que apunta a canal. Pendiente prueba real |
-| **P-CAND-UX-02 Edicion de identidad** | 🟢 **IMPLEMENTADO** (§18-septendecies). Pendiente prueba visual y carga real |
+| **P-CAND-UX-03 Flujo y fotografia** | 🟢 **IMPLEMENTADO** (§18-duodevicies). Pendiente prueba visual |
+| **P-CAND-UX-02 Edicion de identidad** | 🟢 **CONFIRMADO CON DATOS REALES** (§18-duodevicies): TikTok y YouTube persistidos como declarados, Facebook con las dos procedencias |
+| Fotografia derivada de cuentas sociales | 🔴 **no obtenible**: no hay API de plataforma y el scraping esta excluido. Declarado en `fotoNoDisponible` |
 | **P-CAND-UX-01 Identidad Asistida por Analista** | 🟢 **IMPLEMENTADO** (§18-sexdecies). Pendiente cargar identidad real desde la interfaz. Nota original: **La prueba del 25-ago lo confirma como necesario**: el analista vio «42 %, 2 cuentas» sin poder ver que Instagram se hallo ayer y hoy no, que 8 de 14 consultas no respondieron, ni por que se rechazo el candidato de TikTok. Todo eso ya esta en la traza |
 | Zona horaria America/Guayaquil en la interfaz | 🔴 en cola |
 | Brave / fallback de proveedores | 🔴 sin credencial: 0 intentos en las dos ultimas ejecuciones |
@@ -3441,6 +3594,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-25 | P-CAND-UX-03 | Causa: al guardar se cerraba el modal pero la ficha quedaba desplegada y el aviso era persistente. Ahora se recarga, se colapsa y se confirma con un aviso que se borra solo. Contrato de fotografia con procedencia, historial acotado y `verificadaPorSentinel` que nunca hereda la corroboracion de la cuenta: son dos afirmaciones distintas. Una URL de cuenta ya no se acepta como imagen —era la causa del icono roto— y `CandidatePhoto` cae a iniciales si la carga falla. La jerarquia esta completa y las seis plataformas sociales quedan declaradas como no obtenibles sin API. Encontrada una URL de cuenta guardada como foto en el expediente real: se diagnostica, no se corrige sin permiso. 527 pruebas, 0 fallos. Nueva §18-duodevicies. |
 | 2026-08-25 | P-CAND-UX-02 | Causa raiz: el formulario estaba montado en la rama de render de la LISTA de proyectos, que retorna antes que la del detalle, asi que al pulsar el boton su JSX no se renderizaba nunca. Defecto introducido por mi en el gate anterior al anclar la insercion sin comprobar la rama. Corregido y convertido en espacio de trabajo por plataforma, con varias cuentas, vista previa de foto y aviso de dominio. Dos defectos mas de la auditoria: retirar BORRABA la cuenta en vez de marcarla REVOCADA con su historia, y la ficha no exponia el id para retirar por identidad exacta. Probado que un PATCH parcial no borra nada y que el candidateId no cambia. 495 pruebas, 0 fallos. Nueva §18-septendecies. |
 | 2026-08-25 | P-CAND-UX-01 | Ficha de identidad implementada. `cuentasReferencia` pasa de campo a coleccion y admite varias cuentas por plataforma; la plataforma se lee del dominio con SD-1A y no de la casilla. Las siete plataformas se muestran siempre, tambien las vacias, con `PENDIENTE` que no afirma ausencia. Declarada por el analista y corroborada por Sentinel se muestran a la vez. Editar identidad sin borrar y recrear, con el id intacto; retirar una cuenta es explicito por id. La metrica pasa a «Solidez del expediente» con aclaracion y escala neutra: BUG-16 mitigado en interfaz, formula sin tocar. Hora local `America/Guayaquil`, persistencia en UTC. BUG-20 mitigado en interfaz y abierto en el modelo. 453 pruebas, 0 fallos. Nueva §18-sexdecies. |
 | 2026-08-25 | validacion real 17:23 | **P-CAND-01 VALIDADO EN REAL.** Ninguna cuenta consolidada desaparecio: inventario de 3, todas observadas. BUG-17 validado —`jotalloretv` propagado desde las consolidadas de X e Instagram, y ninguna consulta gastada en plataforma ya resuelta—. BUG-18 validado: TikTok por handle pasa de la posicion 13 a la 8 y una propagada se ejecuto por fin (`site:youtube.com "jotalloretv"`, 6 resultados). BUG-19 no contradicho pero NO ejercitado: todo se reencontro. El bloqueo restante es de CAPACIDAD de proveedores: 8 intentos no alcanzan para 6 plataformas mas propagacion, y Brave sigue sin credencial. BUG-20 y BUG-21 declarados sin corregir. Nueva §18-quindecies. |

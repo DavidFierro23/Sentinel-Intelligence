@@ -15,7 +15,12 @@ import {
   Globe
 } from "lucide-react";
 
-import { estadoVisual, procedencia } from "../services/identidadCandidato";
+import CandidatePhoto from "./CandidatePhoto";
+import {
+  estadoVisual,
+  procedencia,
+  esUrlDeImagen
+} from "../services/identidadCandidato";
 
 /*
 ===========================================================
@@ -585,30 +590,17 @@ export default function CandidateIdentityForm({
               marginTop: "14px"
             }}
           >
-            {fotoUrl ? (
-              <img
-                src={fotoUrl}
-                alt="Vista previa de la fotografía"
-                style={{
-                  width: "58px",
-                  height: "58px",
-                  objectFit: "cover",
-                  borderRadius: "var(--radio-s)",
-                  border: "1px solid var(--sentinel-borde-vivo)",
-                  flexShrink: 0
-                }}
-              />
-            ) : (
-              <div
-                style={{
-                  width: "58px",
-                  height: "58px",
-                  borderRadius: "var(--radio-s)",
-                  border: "1px dashed var(--sentinel-borde-vivo)",
-                  flexShrink: 0
-                }}
-              />
-            )}
+            {/*
+              Vista previa real. Si el enlace no es una imagen no
+              se intenta pintar: se cae al avatar y el aviso de
+              abajo explica por que.
+            */}
+            <CandidatePhoto
+              foto={{ url: fotoUrl }}
+              nombre={nombre}
+              tamano={58}
+              radio="var(--radio-s)"
+            />
 
             <div style={{ flex: 1, minWidth: 0 }}>
               <label style={rotulo} htmlFor="ci-foto">
@@ -637,6 +629,16 @@ export default function CandidateIdentityForm({
                 */}
                 Se guarda su procedencia. No se hace reconocimiento facial y no
                 se presentará como fotografía oficial.
+                {fotoUrl.trim() && !esUrlDeImagen(fotoUrl) && (
+                  <>
+                    {" "}
+                    <strong style={{ color: "#F59E0B" }}>
+                      Ese enlace no parece una imagen. Si es la página de una
+                      cuenta, pega el enlace directo a la fotografía: una página
+                      de perfil no se puede mostrar como imagen.
+                    </strong>
+                  </>
+                )}
                 {ficha?.foto && (
                   <>
                     {" "}

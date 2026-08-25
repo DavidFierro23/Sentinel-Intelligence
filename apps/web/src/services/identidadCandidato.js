@@ -278,3 +278,93 @@ export function textoUltimaVerificacion(cuenta, proyecto) {
 
   return "sin verificar todavía";
 }
+
+
+/*
+-----------------------------------------------------------
+UNA URL DE CUENTA NO ES UNA URL DE IMAGEN
+
+Misma regla que el backend, y a proposito duplicada aqui: la
+interfaz tiene que poder decidir si intenta pintar algo ANTES de
+pedirselo al navegador. Si no lo comprueba, una pagina de perfil
+llega a `src` y el navegador dibuja su icono de imagen rota.
+
+El backend sigue siendo la autoridad: es el que rechaza la URL al
+guardar. Esto solo evita el icono roto.
+-----------------------------------------------------------
+*/
+const EXTENSIONES_IMAGEN = /\.(jpe?g|png|gif|webp|avif|bmp|svg)(\?|#|$)/i;
+
+const SERVICIOS_DE_IMAGEN =
+  /(pbs\.twimg\.com|cdninstagram|fbcdn\.net|licdn\.com\/.*media|ytimg\.com|tiktokcdn|upload\.wikimedia\.org|gravatar\.com|googleusercontent\.com)/i;
+
+export function esUrlDeImagen(url) {
+  const u = String(url || "").trim();
+
+  if (!u) return false;
+
+  if (/^data:image\//i.test(u)) return true;
+
+  if (!/^https?:\/\//i.test(u)) return false;
+
+  return EXTENSIONES_IMAGEN.test(u) || SERVICIOS_DE_IMAGEN.test(u);
+}
+
+
+/*
+  Iniciales para el avatar de respaldo. No finge ser una
+  fotografia: son las iniciales del nombre que el analista
+  escribio.
+*/
+export function iniciales(nombre) {
+  const partes = String(nombre || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (!partes.length) return "";
+
+  if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
+
+  /*
+    Primera y ultima: en un nombre compuesto como «Juan Cristobal
+    Lloret Valdivieso», JV identifica mejor que JC.
+  */
+  return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
+}
+
+
+/*
+  Procedencia de la fotografia en palabras. Distingue lo que
+  escribio una persona de lo que salio de una cuenta, y NUNCA
+  llama «oficial» a una imagen encontrada.
+*/
+export function procedenciaFoto(foto) {
+  if (!foto?.url) return "sin fotografía";
+
+  const partes = [];
+
+  if (foto.derivadaDeCuenta && foto.plataformaId) {
+    partes.push(
+      `obtenida de la cuenta de ${foto.plataformaId}${foto.handle ? ` @${foto.handle}` : ""}`
+    );
+  } else if (foto.origen === "analista") {
+    partes.push("declarada por el analista");
+  } else if (foto.provider) {
+    partes.push(`encontrada por Sentinel en ${foto.provider}`);
+  } else {
+    partes.push("procedencia no registrada");
+  }
+
+  /*
+    Que la cuenta este corroborada no verifica la imagen. Son dos
+    afirmaciones distintas y se dicen por separado.
+  */
+  partes.push(
+    foto.verificadaPorSentinel
+      ? "verificada por Sentinel"
+      : "no verificada por Sentinel"
+  );
+
+  return partes.join(" · ");
+}

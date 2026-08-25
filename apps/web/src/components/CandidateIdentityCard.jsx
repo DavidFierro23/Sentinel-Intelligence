@@ -19,15 +19,15 @@ import {
   RefreshCw,
   FolderOpen,
   Activity,
-  User,
   Info,
   Loader2
 } from "lucide-react";
 
+import CandidatePhoto from "./CandidatePhoto";
 import {
   estadoVisual,
   procedencia,
-  fechaLocal,
+  procedenciaFoto,
   METRICA,
   nivelSolidez,
   textoPrimeraObservacion,
@@ -391,35 +391,15 @@ export default function CandidateIdentityCard({
       {/* ---- CABECERA: foto, nombre, alias, contexto ---- */}
 
       <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
-        {ficha.foto?.url ? (
-          <img
-            src={ficha.foto.url}
-            alt={`Fotografía de ${ficha.nombre}`}
-            style={{
-              width: "74px",
-              height: "74px",
-              objectFit: "cover",
-              borderRadius: "var(--radio-m)",
-              border: "1px solid var(--sentinel-borde-vivo)"
-            }}
-          />
-        ) : (
-          <div
-            style={{
-              width: "74px",
-              height: "74px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              borderRadius: "var(--radio-m)",
-              border: "1px dashed var(--sentinel-borde-vivo)",
-              color: "var(--sentinel-texto-tenue)"
-            }}
-            title="Sin fotografía"
-          >
-            <User size={26} />
-          </div>
-        )}
+        {/*
+          Nunca una URL de cuenta como `src`, y nunca el icono
+          roto del navegador. Ver CandidatePhoto.
+        */}
+        <CandidatePhoto
+          foto={ficha.foto?.utilizable ? ficha.foto : null}
+          nombre={ficha.nombre}
+          tamano={74}
+        />
 
         <div style={{ minWidth: 0, flex: "1 1 260px" }}>
           <div style={{ color: "#FFFFFF", fontSize: "17px", fontWeight: 600 }}>
@@ -463,23 +443,56 @@ export default function CandidateIdentityCard({
                 .join(", ")}`}
           </div>
 
-          {ficha.foto && (
+          {(ficha.foto || ficha.fotoSugerida) && (
             <div
               style={{
                 color: "var(--sentinel-texto-tenue)",
                 fontSize: "10px",
-                marginTop: "5px"
+                marginTop: "5px",
+                lineHeight: 1.6
               }}
             >
               {/*
                 No se llama «foto oficial» a una imagen solo por
-                haberla encontrado. Se dice de donde salio.
+                haberla encontrado: se dice de donde salio y si
+                esta verificada, que son dos cosas distintas.
               */}
-              Fotografía {ficha.foto.origen === "analista" ? "proporcionada por el analista" : `obtenida de ${ficha.foto.provider || "una fuente pública"}`}
-              {ficha.foto.obtenidaEn
-                ? ` el ${fechaLocal(ficha.foto.obtenidaEn, proyecto)}`
-                : ""}
-              {!ficha.foto.verificadaPorSentinel && " · no verificada por Sentinel"}
+              {ficha.foto?.utilizable
+                ? procedenciaFoto(ficha.foto)
+                : ficha.fotoSugerida
+                  ? `sugerida: ${procedenciaFoto(ficha.fotoSugerida)}`
+                  : "sin fotografía"}
+
+              {/*
+                Si hay una URL guardada que no es una imagen, se
+                dice por que no se muestra. Un hueco sin
+                explicacion parece un fallo del sistema.
+              */}
+              {ficha.foto?.url && !ficha.foto.utilizable && (
+                <>
+                  <br />
+                  <em style={{ fontStyle: "normal", color: "#F59E0B" }}>
+                    La fotografía guardada no se puede mostrar:{" "}
+                    {ficha.foto.motivoNoUtilizable}
+                  </em>
+                </>
+              )}
+
+              {ficha.foto?.intentoRechazado && (
+                <>
+                  <br />
+                  <em style={{ fontStyle: "normal", color: "#F59E0B" }}>
+                    El último enlace indicado no se usó: {ficha.foto.intentoRechazado.motivo}
+                  </em>
+                </>
+              )}
+
+              {ficha.foto?.historial?.length > 0 && (
+                <>
+                  <br />
+                  {`${ficha.foto.historial.length} fotografía(s) anterior(es) conservada(s)`}
+                </>
+              )}
             </div>
           )}
         </div>

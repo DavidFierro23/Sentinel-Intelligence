@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import {
   FolderPlus,
   FolderOpen,
@@ -9,6 +9,7 @@ import {
   BarChart3,
   Info,
   Loader2,
+  Check,
   MoreHorizontal,
   Pencil,
   Archive,
@@ -592,6 +593,28 @@ export default function ProjectsModule() {
 
   const [editando, setEditando] = useState(false);
 
+  /*
+    CONFIRMACION EFIMERA. Un aviso que no se va obliga al analista
+    a cerrarlo, y con muchos candidatos eso es fricción por cada
+    guardado. Se borra sola.
+  */
+  const [confirmacion, setConfirmacion] = useState(null);
+
+  const temporizadorConfirmacion = useRef(null);
+
+  const confirmar = (texto) => {
+    setConfirmacion(texto);
+
+    if (temporizadorConfirmacion.current) {
+      clearTimeout(temporizadorConfirmacion.current);
+    }
+
+    temporizadorConfirmacion.current = setTimeout(
+      () => setConfirmacion(null),
+      4000
+    );
+  };
+
   const [archivados, setArchivados] = useState([]);
 
   const pedir = useCallback(async (ruta, cuerpo = null, metodo = null) => {
@@ -858,21 +881,39 @@ export default function ProjectsModule() {
         "PATCH"
       );
 
-      setFicha(j.ficha);
-
-      setEditando(false);
-
-      setAviso(j.aviso);
-
       /*
-        El estado del proyecto se recarga del backend: editar la
-        identidad cambia el candidato persistido, y la lista debe
-        reflejarlo sin inventar nada.
+        -----------------------------------------------------------
+        VUELTA A LA TARJETA COMPACTA
+        -----------------------------------------------------------
+
+        Antes se cerraba el modal y la ficha quedaba desplegada.
+        Con un candidato se tolera; con veinte, cada guardado deja
+        un panel abierto y la lista se vuelve ilegible.
+
+        Se recarga el estado autoritativo del backend ANTES de
+        colapsar, para que la tarjeta compacta ya muestre lo
+        guardado y no un dato viejo durante un instante.
+        -----------------------------------------------------------
       */
       const contenido = await pedir(`/${proyecto.id}`);
 
       setCandidatos(contenido.candidatos || []);
+
+      setEditando(false);
+
+      /* Colapsa la ficha: se vuelve a abrir con «Ver identidad». */
+      setFichaAbierta(null);
+
+      setFicha(null);
+
+      confirmar(j.aviso || "Identidad actualizada correctamente.");
     } catch (e) {
+      /*
+        El modal NO se cierra y `ficha` no se toca: el formulario
+        conserva su estado local y el analista no tiene que
+        volver a escribir las URLs. Perder lo escrito por un fallo
+        de red seria castigarle por un problema que no es suyo.
+      */
       setAviso(e.message);
     } finally {
       setOcupado(null);
@@ -2088,6 +2129,39 @@ export default function ProjectsModule() {
         renderizarse nunca: el formulario existia y era
         inalcanzable. Es la causa raiz de P-CAND-UX-02.
       */}
+      {/*
+        CONFIRMACION NO INTRUSIVA. Flota abajo a la derecha, no
+        bloquea nada y se va sola. Ver `confirmar`.
+      */}
+      {confirmacion && (
+        <div
+          className="sentinel-fade"
+          role="status"
+          aria-live="polite"
+          style={{
+            position: "fixed",
+            bottom: "22px",
+            right: "22px",
+            zIndex: 160,
+            display: "flex",
+            alignItems: "center",
+            gap: "9px",
+            maxWidth: "min(420px, calc(100vw - 44px))",
+            background: "var(--sentinel-primary)",
+            border: "1px solid #22C55E",
+            borderRadius: "var(--radio-m)",
+            padding: "11px 15px",
+            boxShadow: "0 12px 28px rgba(0,0,0,.45)"
+          }}
+        >
+          <Check size={14} color="#22C55E" style={{ flexShrink: 0 }} />
+
+          <span style={{ color: "var(--sentinel-texto)", fontSize: "11.5px", lineHeight: 1.6 }}>
+            {confirmacion}
+          </span>
+        </div>
+      )}
+
       {editando && ficha && (
         <CandidateIdentityForm
           ficha={ficha}

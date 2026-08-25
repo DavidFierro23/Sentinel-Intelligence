@@ -216,87 +216,315 @@ function construirCuentaReferencia(url, plataformaDeclarada) {
 
 
 /*
+===========================================================
+FOTOGRAFIA DEL CANDIDATO — P-CAND-UX-03
+===========================================================
+
+QUE ES Y QUE NO ES
+
+Una fotografia vinculada a una CUENTA no demuestra identidad. Es
+un dato mas del expediente, con su procedencia, y se presenta
+como lo que es.
+
+    NO hay reconocimiento facial.
+    NO hay identificacion biometrica.
+    NO se infiere identidad a partir de una cara.
+    NO se llama «foto oficial» a una imagen encontrada.
+
+DOS AFIRMACIONES QUE NO SE MEZCLAN
+
+  A · Sentinel corroboro que la cuenta corresponde al candidato.
+  B · Sentinel verifico el contenido de la fotografia.
+
+Que la cuenta pase a corroborada NO convierte su fotografia en
+verificada. Son cosas distintas y `verificadaPorSentinel` solo
+habla de la segunda, que hoy nunca es cierta.
+
+LIMITE REAL, DECLARADO
+
+No existe API de ninguna plataforma social en este sistema, y el
+scraping esta excluido. Por tanto **no hay mecanismo legitimo
+para obtener el avatar de Instagram, Facebook, TikTok, X,
+YouTube ni LinkedIn**. La jerarquia esta implementada entera,
+pero esas plataformas registran `no_disponible_sin_api` con su
+motivo en lugar de fingir una imagen.
+
+Lo que si puede producir imagen: una URL que el analista escriba,
+y una imagen ya presente en el expediente —por ejemplo la que el
+Avatar Intelligence Engine obtiene de Wikidata P18—.
+===========================================================
+*/
+
+/*
+  Jerarquia de seleccion. El orden lo fija el gate; lo que cambia
+  entre plataformas es si hay forma legitima de obtener la imagen.
+*/
+export const PRIORIDAD_FOTO = Object.freeze([
+  "manual",
+  "instagram",
+  "facebook",
+  "tiktok",
+  "x",
+  "youtube",
+  "linkedin",
+  "web"
+]);
+
+/*
+  Plataformas para las que NO tenemos forma legitima de obtener la
+  imagen con la infraestructura actual. No es una opinion sobre la
+  plataforma: es el estado de nuestra infraestructura, y se dice.
+*/
+const SIN_MECANISMO_DE_IMAGEN = Object.freeze({
+  instagram: "no hay API de Instagram y el scraping esta excluido",
+  facebook: "no hay API de Facebook y el scraping esta excluido",
+  tiktok: "no hay API de TikTok y el scraping esta excluido",
+  x: "no hay API de X y el scraping esta excluido",
+  youtube: "no hay API de YouTube y el scraping esta excluido",
+  linkedin: "no hay API de LinkedIn y el scraping esta excluido"
+});
+
+
+/*
 -----------------------------------------------------------
-FOTO DEL CANDIDATO
+UNA URL DE CUENTA NO ES UNA URL DE IMAGEN
 
-Se conserva de donde salio. Y NO se llama «oficial» a una imagen
-solo porque se haya encontrado: una foto hallada en la web es una
-foto hallada en la web.
+El defecto visible que esto corrige: el analista pego
+`facebook.com/usuario` en el campo de fotografia y la interfaz lo
+puso como `src` de un `<img>`. El navegador mostro su icono roto.
 
-No hay reconocimiento facial, y no lo habra aqui: la ficha
-declara la procedencia y deja el juicio al analista.
+Una pagina de perfil no es un archivo de imagen. Confundirlas
+produce una imagen rota y, peor, hace creer que se intento
+obtener algo cuando lo que se hizo fue pedirle al navegador que
+dibujara una pagina HTML.
 -----------------------------------------------------------
 */
-function construirFoto(datos, previa) {
-  const url = String(datos?.fotoUrl || datos?.foto?.url || "").trim();
+const EXTENSIONES_IMAGEN = /\.(jpe?g|png|gif|webp|avif|bmp|svg)(\?|#|$)/i;
 
-  if (!url) return previa || null;
+const SERVICIOS_DE_IMAGEN =
+  /(pbs\.twimg\.com|cdninstagram|fbcdn\.net|licdn\.com\/.*media|ytimg\.com|tiktokcdn|upload\.wikimedia\.org|gravatar\.com|googleusercontent\.com)/i;
+
+export function esUrlDeImagen(url) {
+  const u = String(url || "").trim();
+
+  if (!u) return false;
+
+  /* Data URI de imagen: es la imagen misma. */
+  if (/^data:image\//i.test(u)) return true;
+
+  if (!/^https?:\/\//i.test(u)) return false;
+
+  return EXTENSIONES_IMAGEN.test(u) || SERVICIOS_DE_IMAGEN.test(u);
+}
+
+
+/*
+  Diagnostico de por que una URL no sirve como fotografia. Se
+  devuelve el motivo en lugar de fallar en silencio: el analista
+  tiene que poder corregirlo.
+*/
+export function diagnosticarUrlFoto(url) {
+  const u = String(url || "").trim();
+
+  if (!u) return { valida: false, motivo: "no se indicó ninguna URL" };
+
+  if (esUrlDeImagen(u)) return { valida: true, motivo: null };
+
+  const clasificacion = clasificarUrlSocial(u);
+
+  if (clasificacion?.esSocial) {
+    return {
+      valida: false,
+      esUrlDeCuenta: true,
+      plataformaId: clasificacion.plataformaId,
+      motivo: `es la URL de una cuenta de ${clasificacion.plataforma}, no de una imagen. Pega el enlace directo a la fotografía.`
+    };
+  }
 
   return {
-    url,
-    sourceUrl: datos?.fotoSourceUrl || datos?.foto?.sourceUrl || url,
-    origen: datos?.fotoOrigen || datos?.foto?.origen || "analista",
-    provider: datos?.fotoProvider || datos?.foto?.provider || null,
-    obtenidaEn: new Date().toISOString(),
-
-    /*
-      Solo Sentinel puede marcarla verificada, y hoy no lo hace.
-      Que el analista la pegue no la verifica.
-    */
-    verificadaPorSentinel: false
+    valida: false,
+    motivo:
+      "no parece un enlace directo a una imagen (se esperaba .jpg, .png, .webp… o un servicio de imágenes conocido)"
   };
 }
 
 
 /*
-===========================================================
-IDENTIDAD CONSOLIDADA — BUG-19
-===========================================================
+-----------------------------------------------------------
+CONSTRUIR LA FOTOGRAFIA
 
-EL DEFECTO
-
-El expediente reconstruia sus cuentas desde el `perfilEjecutivo`
-de la ultima ejecucion. No acumulaba: REEMPLAZABA. Una cuenta
-correctamente atribuida desaparecia si el buscador no la devolvia
-otra vez.
-
-Medido en produccion: `instagram.com/jotalloretv` se atribuyo el
-24 de agosto a las 22:14 y desaparecio a las 15:58 del dia
-siguiente, cuando la consulta de Instagram devolvio 1 resultado
-en lugar de 9. La misma mecanica explica la regresion 49 → 22 que
-quedo dos dias sin explicacion.
-
-LA REGLA
-
-    LA AUSENCIA DE OBSERVACION NO REVOCA UNA IDENTIDAD.
-
-Que Google no devuelva hoy una cuenta no dice nada sobre si esa
-cuenta es del candidato. Dice algo sobre Google. Confundir las
-dos cosas es la misma familia de error que confundir «ausencia»
-con «no comprobada», y ya se corrigio una vez en la cobertura por
-plataforma; faltaba aqui.
-
-DOS PLANOS SEPARADOS
-
-    IDENTIDAD        de quien es la cuenta. Cambia poco y no la
-                     decide un proveedor.
-
-    OBSERVACION      si hoy se pudo ver. Cambia en cada corrida y
-                     depende por completo del proveedor.
-
-`estado` habla del primero. `seenInCurrentRun`, `lastSeenAt` y
-`lastCheckedAt` hablan del segundo. Una cuenta puede estar
-CONSOLIDADA y no reencontrada, y eso no es una contradiccion: es
-la descripcion honesta de lo que sabemos.
-
-SALIDAS DEL INVENTARIO
-
-Una cuenta solo deja de pertenecer al candidato por revocacion
-explicita, correccion del analista, evidencia de identidad
-incorrecta o eliminacion autorizada. Nunca por silencio de un
-buscador.
-===========================================================
+Historial: cuando la fotografia cambia, la anterior NO se
+destruye en silencio. Se guarda en `historial`, acotado, para que
+se pueda ver que hubo otra antes y de donde venia.
+-----------------------------------------------------------
 */
+const TOPE_HISTORIAL_FOTO = 5;
+
+function construirFoto(datos, previa) {
+  const bruta = String(datos?.fotoUrl || datos?.foto?.url || "").trim();
+
+  /* Sin URL nueva: se conserva exactamente lo que habia. */
+  if (!bruta) return previa || null;
+
+  const diagnostico = diagnosticarUrlFoto(bruta);
+
+  const ahora = new Date().toISOString();
+
+  if (!diagnostico.valida) {
+    /*
+      NO se guarda como `url`: eso es lo que producia la imagen
+      rota. Se guarda el intento con su motivo y se conserva la
+      fotografia anterior, si habia.
+    */
+    return {
+      ...(previa || {}),
+      url: previa?.url || null,
+      intentoRechazado: {
+        url: bruta,
+        motivo: diagnostico.motivo,
+        esUrlDeCuenta: diagnostico.esUrlDeCuenta === true,
+        plataformaId: diagnostico.plataformaId || null,
+        rechazadoEn: ahora
+      }
+    };
+  }
+
+  const nueva = {
+    url: bruta,
+    sourceUrl: datos?.fotoSourceUrl || datos?.foto?.sourceUrl || bruta,
+
+    origen: datos?.fotoOrigen || datos?.foto?.origen || "analista",
+    provider: datos?.fotoProvider || datos?.foto?.provider || null,
+
+    /* Vinculo con la cuenta de la que proviene, si proviene de una. */
+    derivadaDeCuenta: datos?.fotoDerivadaDeCuenta === true,
+    cuentaId: datos?.fotoCuentaId || null,
+    plataformaId: datos?.fotoPlataformaId || null,
+    handle: datos?.fotoHandle || null,
+
+    obtenidaEn: ahora,
+    ultimaComprobacion: ahora,
+
+    /*
+      Solo Sentinel puede marcarla verificada, y hoy no lo hace
+      nunca. Que el analista la pegue no la verifica, y que la
+      cuenta se corrobore tampoco: son dos afirmaciones distintas.
+    */
+    verificadaPorSentinel: false,
+
+    /* Nada nuevo que rechazar. */
+    intentoRechazado: null
+  };
+
+  /* Misma URL: se actualiza la comprobacion, no se duplica historia. */
+  if (previa?.url && previa.url === nueva.url) {
+    return {
+      ...previa,
+      ...nueva,
+      obtenidaEn: previa.obtenidaEn || nueva.obtenidaEn,
+      historial: previa.historial || []
+    };
+  }
+
+  /*
+    Cambio de fotografia: la anterior pasa al historial con su
+    procedencia. Destruirla en silencio borraria de donde venia lo
+    que el analista veia ayer.
+  */
+  const historial = previa?.url
+    ? [
+        {
+          url: previa.url,
+          sourceUrl: previa.sourceUrl || null,
+          origen: previa.origen || null,
+          plataformaId: previa.plataformaId || null,
+          handle: previa.handle || null,
+          cuentaId: previa.cuentaId || null,
+          derivadaDeCuenta: previa.derivadaDeCuenta === true,
+          obtenidaEn: previa.obtenidaEn || null,
+          reemplazadaEn: ahora
+        },
+        ...(previa.historial || [])
+      ].slice(0, TOPE_HISTORIAL_FOTO)
+    : previa?.historial || [];
+
+  return { ...nueva, historial };
+}
+
+
+/*
+-----------------------------------------------------------
+FOTOGRAFIA DERIVADA DE UNA CUENTA
+
+Recorre la jerarquia sobre las cuentas que YA existen en el
+expediente. No crea otro registro de redes y no consulta a nadie:
+solo mira si alguna cuenta trae ya una imagen utilizable.
+
+Para las seis plataformas sociales no hay mecanismo legitimo, asi
+que se registra `no_disponible_sin_api` con el motivo. Declarar la
+ausencia es la mitad del trabajo: sin eso, un hueco parece un
+fallo y no una limitacion conocida.
+-----------------------------------------------------------
+*/
+export function seleccionarFotoDeCuentas(cuentas, opciones = {}) {
+  const disponibles = [];
+
+  const noDisponibles = [];
+
+  PRIORIDAD_FOTO.filter((x) => x !== "manual").forEach((plataformaId) => {
+    const suyas = (cuentas || []).filter(
+      (c) => c.plataformaId === plataformaId
+    );
+
+    if (!suyas.length) return;
+
+    suyas.forEach((c) => {
+      /*
+        Una imagen ya presente en el expediente —por ejemplo la
+        que el Avatar Intelligence Engine obtuvo de Wikidata— es
+        utilizable. Se comprueba que sea de verdad una imagen.
+      */
+      const candidata = c.imagen || c.avatar || c.fotoUrl || null;
+
+      if (candidata && esUrlDeImagen(candidata)) {
+        disponibles.push({
+          url: candidata,
+          sourceUrl: c.url || null,
+          plataformaId,
+          handle: c.handle || null,
+          cuentaId: c.id || null,
+          origen: c.declaradaPorAnalista ? "cuenta_declarada" : "cuenta_descubierta",
+          provider: (c.proveedoresHistoricos || [])[0] || null
+        });
+
+        return;
+      }
+
+      const motivo = SIN_MECANISMO_DE_IMAGEN[plataformaId];
+
+      noDisponibles.push({
+        plataformaId,
+        handle: c.handle || null,
+        cuentaId: c.id || null,
+        disponibilidad: motivo ? "no_disponible_sin_api" : "sin_imagen_en_el_expediente",
+        motivo:
+          motivo ||
+          "la cuenta no trae ninguna imagen en el expediente y no se consulta la plataforma"
+      });
+    });
+  });
+
+  return {
+    /* La primera por orden de prioridad, si hay alguna. */
+    elegida: disponibles[0] || null,
+    disponibles,
+    noDisponibles,
+
+    limite:
+      "No hay API de plataforma social en este sistema y el scraping esta excluido: para esas plataformas la fotografia no es obtenible y se declara, no se inventa."
+  };
+}
+
 
 export const ESTADOS_IDENTIDAD = Object.freeze({
   /* Hallada, sin veredicto de identidad todavia. */
@@ -338,6 +566,8 @@ export const ESTADOS_IDENTIDAD_FICHA = Object.freeze({
   */
   PENDIENTE: "PENDIENTE"
 });
+
+
 
 
 /*
@@ -2337,6 +2567,30 @@ export async function fichaIdentidad(proyectoId, candidatoId, tipo = "candidato"
 
   const cuentas = [...porClave.values()];
 
+  /*
+    FOTOGRAFIA DERIVADA. Se calcula sobre las cuentas que ya
+    estan en el expediente: no se crea otro registro de redes y
+    no se consulta a nadie. Lo que no es obtenible se declara.
+  */
+  const fotoDeCuentas = seleccionarFotoDeCuentas(cuentas);
+
+  /*
+    DIAGNOSTICO DE LA FOTOGRAFIA YA GUARDADA.
+
+    Los expedientes escritos antes de este contrato pueden tener
+    una URL de cuenta en el campo de fotografia: era lo que
+    producia el icono roto. La interfaz ya no la pinta, pero
+    callarse el motivo dejaria un hueco sin explicacion.
+
+    No se corrige el dato: se diagnostica. Reescribir el
+    expediente del analista sin que lo pida seria decidir por el.
+  */
+  const foto = candidato.foto || null;
+
+  const diagnosticoFoto = foto?.url
+    ? diagnosticarUrlFoto(foto.url)
+    : { valida: false, motivo: "no hay fotografía registrada" };
+
   /* 3 · las siete plataformas, tambien las vacias. */
   const plataformas = PLATAFORMAS_FICHA.map((pf) => {
     const suyas = cuentas.filter((c) => c.plataformaId === pf.id);
@@ -2369,6 +2623,39 @@ export async function fichaIdentidad(proyectoId, candidatoId, tipo = "candidato"
     dignidad: candidato.dignidad || null,
 
     plataformas,
+
+    /*
+      -----------------------------------------------------------
+      FOTOGRAFIA: LO MANUAL MANDA, Y LO QUE FALTA SE EXPLICA
+      -----------------------------------------------------------
+
+      `foto` es la vigente. `fotoSugerida` es la que se derivaria
+      de una cuenta si no hubiera manual, y `fotoNoDisponible`
+      dice por que las demas plataformas no dan imagen.
+
+      Ese ultimo campo importa: sin el, un hueco parece un fallo
+      del sistema en lugar de una limitacion conocida y declarada.
+    */
+    /*
+      `foto.utilizable` dice si se puede pintar. Si no, `motivo`
+      explica por que, y se sugiere una derivada como si no
+      hubiera ninguna: una URL que no es imagen no es una
+      fotografia.
+    */
+    foto: foto
+      ? {
+          ...foto,
+          utilizable: diagnosticoFoto.valida === true,
+          motivoNoUtilizable: diagnosticoFoto.valida ? null : diagnosticoFoto.motivo,
+          esUrlDeCuenta: diagnosticoFoto.esUrlDeCuenta === true
+        }
+      : null,
+
+    fotoSugerida: diagnosticoFoto.valida ? null : fotoDeCuentas.elegida,
+    fotoCandidatas: fotoDeCuentas.disponibles,
+    fotoNoDisponible: fotoDeCuentas.noDisponibles,
+    fotoLimite: fotoDeCuentas.limite,
+    prioridadFoto: PRIORIDAD_FOTO,
 
     /* Cuentas fuera de las siete casillas, si las hubiera. */
     otras: cuentas.filter(
