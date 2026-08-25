@@ -10,6 +10,14 @@ import {
 } from "../knowledgeLake/lakeQuery.js";
 
 /*
+  SD-1A es la autoridad para leer una URL: de que plataforma es y
+  cual es su handle. No se adivina por el campo del formulario,
+  porque el analista puede pegar una URL de Instagram en la
+  casilla de Facebook.
+*/
+import { clasificarUrlSocial } from "../social/discovery/socialUrlClassifier.js";
+
+/*
 ===========================================================
 ALMACÉN DE PROYECTOS Y EXPEDIENTES — ARQ-INV-002
 ===========================================================
@@ -110,6 +118,138 @@ const PREFIJO_EJECUCION = "ejecucion-";
 
 /*
 ===========================================================
+FICHA DE IDENTIDAD — P-CAND-UX-01
+===========================================================
+
+Las seis plataformas obligatorias mas la web oficial. La ficha
+declara SIEMPRE las siete, tambien las que no tienen cuenta: una
+plataforma sin cuenta no es una plataforma sin comprobar, y
+ocultarla haria imposible distinguirlas.
+===========================================================
+*/
+
+export const PLATAFORMAS_FICHA = Object.freeze([
+  { id: "facebook", nombre: "Facebook", campo: "facebook" },
+  { id: "instagram", nombre: "Instagram", campo: "instagram" },
+  { id: "x", nombre: "X", campo: "x" },
+  { id: "tiktok", nombre: "TikTok", campo: "tiktok" },
+  { id: "youtube", nombre: "YouTube", campo: "youtube" },
+  { id: "linkedin", nombre: "LinkedIn", campo: "linkedin" },
+  { id: "web", nombre: "Web oficial", campo: "web" }
+]);
+
+
+/*
+-----------------------------------------------------------
+UNA CUENTA DE REFERENCIA
+
+COLECCION, NO CAMPO. El modelo anterior era `instagram: string`,
+asi que un candidato con dos cuentas de Instagram —la personal y
+la de campana, que es lo normal— solo podia tener una.
+
+Ahora es una entrada de coleccion con identidad propia:
+plataforma + handle normalizado. Se admiten varias de la misma
+plataforma; lo que no se admite es la misma dos veces.
+
+PROCEDENCIA, SIEMPRE. Lo que escribe el analista entra como
+declarado y NO como verificado. Puede pasar despues a corroborado
+si un proveedor la encuentra por su cuenta, y entonces las dos
+cosas son verdad a la vez: la declaro una persona Y la
+corroboro Sentinel. La ficha debe poder decir ambas.
+-----------------------------------------------------------
+*/
+function construirCuentaReferencia(url, plataformaDeclarada) {
+  const limpia = String(url || "").trim();
+
+  if (!limpia) return null;
+
+  const clasificacion = clasificarUrlSocial(limpia);
+
+  /*
+    Manda el dominio, no la casilla del formulario. Si la URL no
+    es de una plataforma conocida se trata como web: no se
+    descarta, porque una web propia es una senal de identidad
+    legitima.
+  */
+  const plataformaId = clasificacion?.esSocial
+    ? clasificacion.plataformaId
+    : "web";
+
+  const plataforma = clasificacion?.esSocial
+    ? clasificacion.plataforma
+    : plataformaDeclarada || "Web oficial";
+
+  const handle = clasificacion?.handle || null;
+
+  const ahora = new Date().toISOString();
+
+  return {
+    /*
+      Identidad estable de la entrada. Con handle es
+      plataforma:handle; sin handle —una web— la URL normalizada
+      hace de clave.
+    */
+    id: `${plataformaId}:${normalizarTexto(handle || clasificacion?.urlNormalizada || limpia)}`,
+
+    plataformaId,
+    plataforma,
+    url: clasificacion?.urlCanonica || limpia,
+    urlOriginal: limpia,
+    handle,
+
+    tipo: "cuenta_referencia",
+
+    /* ---- PROCEDENCIA ---- */
+    origen: "analista",
+    pertenenciaDeclarada: true,
+    verificadaPorSentinel: false,
+    noCuentaComoCorroboracion: true,
+    estado: ESTADOS_IDENTIDAD.DECLARADA_POR_ANALISTA,
+
+    creadaEn: ahora,
+    actualizadaEn: null,
+
+    nota:
+      "Cuenta proporcionada por el analista como referencia inicial. Sentinel no la ha verificado."
+  };
+}
+
+
+/*
+-----------------------------------------------------------
+FOTO DEL CANDIDATO
+
+Se conserva de donde salio. Y NO se llama «oficial» a una imagen
+solo porque se haya encontrado: una foto hallada en la web es una
+foto hallada en la web.
+
+No hay reconocimiento facial, y no lo habra aqui: la ficha
+declara la procedencia y deja el juicio al analista.
+-----------------------------------------------------------
+*/
+function construirFoto(datos, previa) {
+  const url = String(datos?.fotoUrl || datos?.foto?.url || "").trim();
+
+  if (!url) return previa || null;
+
+  return {
+    url,
+    sourceUrl: datos?.fotoSourceUrl || datos?.foto?.sourceUrl || url,
+    origen: datos?.fotoOrigen || datos?.foto?.origen || "analista",
+    provider: datos?.fotoProvider || datos?.foto?.provider || null,
+    obtenidaEn: new Date().toISOString(),
+
+    /*
+      Solo Sentinel puede marcarla verificada, y hoy no lo hace.
+      Que el analista la pegue no la verifica.
+    */
+    verificadaPorSentinel: false
+  };
+}
+
+
+/*
+===========================================================
 IDENTIDAD CONSOLIDADA — BUG-19
 ===========================================================
 
@@ -182,6 +322,21 @@ export const ESTADOS_IDENTIDAD = Object.freeze({
 
   /* Retirada por decision, nunca por ausencia. */
   REVOCADA: "REVOCADA"
+});
+
+
+/*
+  Estados que solo existen en la FICHA, no en el inventario:
+  describen una plataforma, no una cuenta.
+*/
+export const ESTADOS_IDENTIDAD_FICHA = Object.freeze({
+  /*
+    No hay ninguna cuenta atribuida ni declarada en esta
+    plataforma. NO afirma que el candidato no la use: afirma que
+    Sentinel no tiene nada. Es la distincion que impide que la
+    interfaz escriba «no tiene redes».
+  */
+  PENDIENTE: "PENDIENTE"
 });
 
 
@@ -973,32 +1128,26 @@ export async function agregarCandidato(proyectoId, datos = {}) {
     Sentinel: no lo es, y confundirlo seria atribuir a Sentinel
     una conclusion que tomo una persona.
   */
-  const cuentasReferencia = [];
+  /*
+    Las siete casillas de la ficha, mas cualquier URL suelta. Se
+    admite tambien un array `cuentas` para varias de la misma
+    plataforma, que es el caso normal: personal y de campana.
+  */
+  const entradas = [
+    ...PLATAFORMAS_FICHA.map((pf) => ({
+      url: datos[pf.campo],
+      plataforma: pf.nombre
+    })),
+    { url: datos.urlReferencia, plataforma: datos.plataformaReferencia || null },
+    ...(Array.isArray(datos.cuentas) ? datos.cuentas : []).map((c) =>
+      typeof c === "string" ? { url: c, plataforma: null } : c
+    )
+  ];
 
-  const registrarReferencia = (url, plataforma) => {
-    const limpia = String(url || "").trim();
+  const cuentasReferencia = entradas
+    .map((e) => construirCuentaReferencia(e?.url, e?.plataforma))
+    .filter(Boolean);
 
-    if (!limpia) return;
-
-    cuentasReferencia.push({
-      plataforma: plataforma || null,
-      url: limpia,
-      tipo: "cuenta_referencia",
-      origen: "analista",
-      estado: "proporcionada_por_analista",
-      verificadaPorSentinel: false,
-      nota:
-        "Cuenta proporcionada por el analista como referencia inicial. Sentinel no la ha verificado."
-    });
-  };
-
-  registrarReferencia(datos.facebook, "Facebook");
-  registrarReferencia(datos.instagram, "Instagram");
-  registrarReferencia(datos.x, "X");
-  registrarReferencia(datos.tiktok, "TikTok");
-  registrarReferencia(datos.youtube, "YouTube");
-  registrarReferencia(datos.linkedin, "LinkedIn");
-  registrarReferencia(datos.urlReferencia, datos.plataformaReferencia || null);
 
   /*
     -----------------------------------------------------------
@@ -1046,13 +1195,21 @@ export async function agregarCandidato(proyectoId, datos = {}) {
       Las cuentas de referencia se ACUMULAN y se deduplican por
       URL: aportar una nueva no borra las anteriores.
     */
+    /*
+      Se ACUMULAN y se deduplican por identidad de cuenta
+      —plataforma + handle—, no por URL literal: la misma cuenta
+      escrita con y sin «www» es una sola. Y se admiten varias de
+      la misma plataforma, porque son cuentas distintas.
+    */
     cuentasReferencia: [
       ...(previo?.cuentasReferencia || []),
       ...cuentasReferencia
     ].filter(
-      (r, i, todas) =>
-        todas.findIndex((x) => x.url === r.url) === i
+      (r, i, todas) => todas.findIndex((x) => (x.id || x.url) === (r.id || r.url)) === i
     ),
+
+    /* Foto, con su procedencia. Ver construirFoto. */
+    foto: construirFoto(datos, previo?.foto),
 
     /*
       Se ACUMULAN y se deduplican sin distinguir mayusculas ni
@@ -1873,6 +2030,309 @@ function resumirExpediente(resultado, anterior = null, contexto = {}) {
 }
 
 
+/*
+===========================================================
+EDITAR LA IDENTIDAD DE UN CANDIDATO
+===========================================================
+
+Sin borrar y recrear. Recrear perderia el expediente, las
+ejecuciones y el inventario consolidado, que es justo lo que el
+analista NO quiere perder al corregir un nombre.
+
+Lo que llega con valor se actualiza; lo que llega vacio se deja
+como estaba. Para quitar una cuenta hay que pedirlo
+explicitamente por su id: un formulario enviado a medias no
+puede borrar identidad.
+===========================================================
+*/
+export async function editarCandidato(proyectoId, candidatoId, cambios = {}) {
+  const previo = await obtenerCandidato(proyectoId, candidatoId);
+
+  if (!previo) {
+    return {
+      editado: false,
+      motivo: `el candidato ${candidatoId} no está en el proyecto ${proyectoId}`
+    };
+  }
+
+  const nombre = String(cambios.nombre || "").trim();
+
+  /*
+    El id NO cambia aunque cambie el nombre: es la clave con la
+    que el Lake guarda el expediente y las ejecuciones. Es la
+    misma razon por la que renombrar un proyecto no cambia su id.
+  */
+  const nuevasEntradas = [
+    ...PLATAFORMAS_FICHA.map((pf) => ({
+      url: cambios[pf.campo],
+      plataforma: pf.nombre
+    })),
+    ...(Array.isArray(cambios.cuentas) ? cambios.cuentas : []).map((c) =>
+      typeof c === "string" ? { url: c, plataforma: null } : c
+    )
+  ]
+    .map((e) => construirCuentaReferencia(e?.url, e?.plataforma))
+    .filter(Boolean);
+
+  /* Retiradas explicitas, por id. */
+  const aQuitar = new Set(
+    (Array.isArray(cambios.quitarCuentas) ? cambios.quitarCuentas : []).map(
+      String
+    )
+  );
+
+  const acumuladas = [...(previo.cuentasReferencia || []), ...nuevasEntradas]
+    .filter(
+      (r, i, todas) => todas.findIndex((x) => (x.id || x.url) === (r.id || r.url)) === i
+    )
+    .filter((r) => !aQuitar.has(String(r.id)))
+    .map((r) =>
+      nuevasEntradas.some((n) => n.id === r.id)
+        ? { ...r, actualizadaEn: new Date().toISOString() }
+        : r
+    );
+
+  /* Alias: se acumulan y se deduplican, como en agregarCandidato. */
+  const aliasEntrantes = (
+    Array.isArray(cambios.aliases)
+      ? cambios.aliases
+      : String(cambios.aliases || cambios.alias || "").split(",")
+  )
+    .map((x) => String(x || "").trim())
+    .filter(Boolean);
+
+  const aliases = [
+    ...(previo.aliases || []),
+    ...aliasEntrantes.map((valor) => ({
+      valor,
+      origen: "analista",
+      declaradoEn: new Date().toISOString(),
+      noCuentaComoCorroboracion: true
+    }))
+  ].filter((al, i, todas) => {
+    const clave = normalizarTexto(al.valor);
+
+    if (!clave || clave === normalizarTexto(nombre || previo.nombre)) return false;
+
+    return todas.findIndex((x) => normalizarTexto(x.valor) === clave) === i;
+  });
+
+  const candidato = {
+    ...previo,
+
+    nombre: nombre || previo.nombre,
+    nombreAnterior: nombre && nombre !== previo.nombre ? previo.nombre : previo.nombreAnterior || null,
+
+    rol: cambios.rol || previo.rol || null,
+    nivel: cambios.nivel || previo.nivel || null,
+    dignidad: cambios.dignidad || previo.dignidad || null,
+
+    aliases,
+    cuentasReferencia: acumuladas,
+    foto: construirFoto(cambios, previo.foto),
+
+    actualizadoEn: new Date().toISOString()
+  };
+
+  const r = await escribirEnLake(
+    {
+      entidad: `${PREFIJO_CANDIDATO}${candidatoId}`,
+      tipoEntidad: TIPO_EXPEDIENTE,
+      tenantId: TENANT,
+      proyectoId,
+      fuente: SUBMOTOR,
+      linaje: linaje("editar_candidato"),
+      datos: candidato
+    },
+    {}
+  );
+
+  return {
+    editado: r?.escrito === true,
+    candidato,
+    aviso:
+      "Identidad actualizada. El identificador, el expediente y las cuentas ya consolidadas no cambian; las URLs que escribiste entran como declaradas por el analista y sin verificar."
+  };
+}
+
+
+/*
+===========================================================
+FICHA DE IDENTIDAD PARA LA INTERFAZ
+===========================================================
+
+Une lo que el analista declaro con lo que Sentinel consolido, y
+devuelve SIEMPRE las siete plataformas de la ficha, incluso las
+vacias.
+
+POR QUE SIEMPRE LAS SIETE
+
+Porque «no tiene cuenta» y «no hemos encontrado cuenta» son cosas
+distintas, y una lista que solo muestra lo hallado las vuelve
+indistinguibles. La misma razon por la que la cobertura declara
+las seis plataformas aunque esten vacias.
+
+Y por que las dos procedencias a la vez: una cuenta puede estar
+declarada por el analista Y corroborada por Sentinel. No es una
+contradiccion, es informacion mas rica, y la ficha la muestra
+entera.
+===========================================================
+*/
+export async function fichaIdentidad(proyectoId, candidatoId, tipo = "candidato") {
+  const candidato =
+    tipo === "actor"
+      ? await obtenerActor(proyectoId, candidatoId)
+      : await obtenerCandidato(proyectoId, candidatoId);
+
+  if (!candidato) return null;
+
+  const expediente = await expedienteDe(proyectoId, tipo, candidatoId);
+
+  const consolidadas = expediente?.cuentas || [];
+
+  const declaradas = candidato.cuentasReferencia || [];
+
+  const claveDe = (c) =>
+    `${normalizarTexto(String(c.plataformaId || ""))}:${normalizarTexto(
+      String(c.handle || "")
+    )}`;
+
+  const porClave = new Map();
+
+  /* 1 · lo consolidado por Sentinel. */
+  consolidadas.forEach((c) => {
+    porClave.set(claveDe(c), {
+      plataformaId: c.plataformaId,
+      plataforma: c.plataforma,
+      url: c.url,
+      handle: c.handle,
+
+      estado: c.estado || ESTADOS_IDENTIDAD.CONSOLIDADA,
+
+      /* Las dos procedencias, por separado y a la vez. */
+      declaradaPorAnalista: c.referenciaAnalista === true,
+      descubiertaPorSentinel: c.referenciaAnalista !== true,
+      corroboradaPorSentinel:
+        (c.proveedoresHistoricos || c.proveedores || []).length > 0,
+
+      seenInCurrentRun: c.seenInCurrentRun === true,
+      firstSeenAt: c.firstSeenAt || null,
+      lastSeenAt: c.lastSeenAt || null,
+      lastCheckedAt: c.lastCheckedAt || null,
+      historiaIncompleta: c.historiaIncompleta === true,
+
+      proveedoresHistoricos: c.proveedoresHistoricos || c.proveedores || [],
+      proveedoresUltimaObservacion: c.proveedoresUltimaObservacion || [],
+      corroboracion: c.corroboracion || null,
+      correspondencia: c.correspondencia ?? null,
+      noCuentaComoCorroboracion: c.noCuentaComoCorroboracion === true
+    });
+  });
+
+  /* 2 · lo declarado que aun no se ha consolidado. */
+  declaradas.forEach((d) => {
+    const clave = claveDe(d);
+
+    const ya = porClave.get(clave);
+
+    if (ya) {
+      /*
+        Ya la conocia Sentinel: se marca tambien como declarada.
+        Las dos cosas son verdad.
+      */
+      ya.declaradaPorAnalista = true;
+
+      return;
+    }
+
+    porClave.set(clave, {
+      plataformaId: d.plataformaId,
+      plataforma: d.plataforma,
+      url: d.url,
+      handle: d.handle,
+
+      estado: ESTADOS_IDENTIDAD.DECLARADA_POR_ANALISTA,
+
+      declaradaPorAnalista: true,
+      descubiertaPorSentinel: false,
+      corroboradaPorSentinel: false,
+
+      seenInCurrentRun: false,
+      firstSeenAt: d.creadaEn || null,
+      lastSeenAt: null,
+      lastCheckedAt: null,
+      historiaIncompleta: false,
+
+      proveedoresHistoricos: [],
+      proveedoresUltimaObservacion: [],
+      corroboracion: null,
+      correspondencia: null,
+      noCuentaComoCorroboracion: true
+    });
+  });
+
+  const cuentas = [...porClave.values()];
+
+  /* 3 · las siete plataformas, tambien las vacias. */
+  const plataformas = PLATAFORMAS_FICHA.map((pf) => {
+    const suyas = cuentas.filter((c) => c.plataformaId === pf.id);
+
+    return {
+      plataformaId: pf.id,
+      plataforma: pf.nombre,
+      cuentas: suyas,
+      total: suyas.length,
+
+      /*
+        PENDIENTE no afirma ausencia: dice que aqui todavia no hay
+        nada atribuido. Es lo que la interfaz necesita para no
+        escribir «no tiene».
+      */
+      estado: suyas.length
+        ? suyas[0].estado
+        : ESTADOS_IDENTIDAD_FICHA.PENDIENTE
+    };
+  });
+
+  return {
+    candidatoId,
+    tipo,
+    nombre: candidato.nombre,
+    aliases: candidato.aliases || [],
+    foto: candidato.foto || null,
+    rol: candidato.rol || null,
+    nivel: candidato.nivel || null,
+    dignidad: candidato.dignidad || null,
+
+    plataformas,
+
+    /* Cuentas fuera de las siete casillas, si las hubiera. */
+    otras: cuentas.filter(
+      (c) => !PLATAFORMAS_FICHA.some((pf) => pf.id === c.plataformaId)
+    ),
+
+    metricas: {
+      cuentas: cuentas.length,
+      consolidadas: cuentas.filter((c) =>
+        [
+          ESTADOS_IDENTIDAD.CONSOLIDADA,
+          ESTADOS_IDENTIDAD.REVALIDADA,
+          ESTADOS_IDENTIDAD.ATRIBUIDA
+        ].includes(c.estado)
+      ).length,
+      declaradas: cuentas.filter((c) => c.declaradaPorAnalista).length,
+      corroboradas: cuentas.filter((c) => c.corroboradaPorSentinel).length,
+      noReencontradas: cuentas.filter(
+        (c) => c.estado === ESTADOS_IDENTIDAD.NO_REENCONTRADA
+      ).length,
+      plataformasPendientes: plataformas.filter(
+        (p) => p.estado === ESTADOS_IDENTIDAD_FICHA.PENDIENTE
+      ).length
+    }
+  };
+}
+
+
 export async function registrarInvestigacion(
   proyectoId,
   candidatoId,
@@ -2175,5 +2635,14 @@ export default {
   agregarActor,
   obtenerActor,
   activarComparativo,
-  registrarInvestigacion
+  registrarInvestigacion,
+
+  /* P-CAND-UX-01 */
+  editarCandidato,
+  fichaIdentidad,
+  inventarioConsolidado,
+  expedienteDe,
+  PLATAFORMAS_FICHA,
+  ESTADOS_IDENTIDAD,
+  ESTADOS_IDENTIDAD_FICHA
 };

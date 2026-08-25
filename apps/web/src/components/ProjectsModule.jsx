@@ -17,6 +17,10 @@ import {
   AlertTriangle
 } from "lucide-react";
 
+import CandidateIdentityCard from "./CandidateIdentityCard";
+import CandidateIdentityForm from "./CandidateIdentityForm";
+import { METRICA, fechaLocal } from "../services/identidadCandidato";
+
 /*
 ===========================================================
 MÓDULO DE PROYECTOS — ARQ-INV-003
@@ -577,11 +581,22 @@ export default function ProjectsModule() {
 
   const [verArchivados, setVerArchivados] = useState(false);
 
+  /*
+    FICHA DE IDENTIDAD. Se pide al backend, que es la fuente
+    autoritativa del inventario consolidado: la interfaz no
+    reconstruye cuentas desde la ultima corrida.
+  */
+  const [fichaAbierta, setFichaAbierta] = useState(null);
+
+  const [ficha, setFicha] = useState(null);
+
+  const [editando, setEditando] = useState(false);
+
   const [archivados, setArchivados] = useState([]);
 
-  const pedir = useCallback(async (ruta, cuerpo = null) => {
+  const pedir = useCallback(async (ruta, cuerpo = null, metodo = null) => {
     const r = await fetch(`${BACKEND}/api/proyectos${ruta}`, {
-      method: cuerpo === null ? "GET" : "POST",
+      method: metodo || (cuerpo === null ? "GET" : "POST"),
       headers: { "Content-Type": "application/json" },
       body: cuerpo === null ? undefined : JSON.stringify(cuerpo)
     });
@@ -810,6 +825,73 @@ export default function ProjectsModule() {
     } finally {
       setOcupado(null);
     }
+  };
+
+  /*
+    -----------------------------------------------------------
+    FICHA DE IDENTIDAD
+    -----------------------------------------------------------
+  */
+  const abrirFicha = async (candidatoId) => {
+    setOcupado(`ficha:${candidatoId}`);
+
+    try {
+      const f = await pedir(`/${proyecto.id}/candidatos/${candidatoId}/identidad`);
+
+      setFicha(f);
+
+      setFichaAbierta(candidatoId);
+    } catch (e) {
+      setAviso(e.message);
+    } finally {
+      setOcupado(null);
+    }
+  };
+
+  const guardarIdentidad = async (cambios) => {
+    setOcupado(`editar:${fichaAbierta}`);
+
+    try {
+      const j = await pedir(
+        `/${proyecto.id}/candidatos/${fichaAbierta}`,
+        cambios,
+        "PATCH"
+      );
+
+      setFicha(j.ficha);
+
+      setEditando(false);
+
+      setAviso(j.aviso);
+
+      /*
+        El estado del proyecto se recarga del backend: editar la
+        identidad cambia el candidato persistido, y la lista debe
+        reflejarlo sin inventar nada.
+      */
+      const contenido = await pedir(`/${proyecto.id}`);
+
+      setCandidatos(contenido.candidatos || []);
+    } catch (e) {
+      setAviso(e.message);
+    } finally {
+      setOcupado(null);
+    }
+  };
+
+  /*
+    COMPROBAR REDES. Reutiliza la ruta de investigacion, que ya
+    reverifica sin destruir: el inventario consolidado conserva
+    las cuentas atribuidas aunque el proveedor falle. No es
+    «borrar y redescubrir».
+
+    Consume cuota, asi que se lanza solo cuando el analista lo
+    pide.
+  */
+  const comprobarRedes = async (candidatoId) => {
+    await investigar("candidato", candidatoId);
+
+    if (fichaAbierta === candidatoId) await abrirFicha(candidatoId);
   };
 
   const investigar = async (tipo, id) => {
@@ -1094,6 +1176,17 @@ export default function ProjectsModule() {
         </div>
 
         {/* MODAL DE ELIMINACION */}
+
+        {/* EDITAR IDENTIDAD */}
+
+        {editando && ficha && (
+          <CandidateIdentityForm
+            ficha={ficha}
+            ocupado={ocupado === `editar:${fichaAbierta}`}
+            onCancelar={() => setEditando(false)}
+            onGuardar={guardarIdentidad}
+          />
+        )}
 
         {porEliminar && (
           <ModalEliminar
@@ -1398,24 +1491,63 @@ export default function ProjectsModule() {
                       }}
                       title={c.resumen.actualizadoEn}
                     >
+                      {/*
+                        Se PERSISTE en UTC y se MUESTRA en la hora
+                        del territorio del proyecto. Un analista en
+                        Cuenca no tiene que restar cinco horas
+                        mentalmente cada vez que lee una fecha.
+                      */}
                       última actualización{" "}
-                      {String(c.resumen.actualizadoEn).slice(0, 16).replace("T", " ")}
+                      {fechaLocal(c.resumen.actualizadoEn, proyecto)}
                     </span>
                   )}
 
+                {/*
+                  LA METRICA, CON SU NOMBRE Y SU LIMITE.
+
+                  Antes era un «42 %» suelto junto al nombre de un
+                  candidato, y en rojo cuando era bajo. Asi se lee
+                  como respaldo o como caida, y no mide ninguna de
+                  las dos cosas: mide cuanto expediente hay
+                  documentado. Se nombra y se acota.
+                */}
                 {(c.resumen?.huellaDigital ?? c.cobertura) != null && (
                   <span
+                    title={METRICA.aclaracion}
                     style={{
-                      color: colorCobertura(
-                        c.resumen?.huellaDigital ?? c.cobertura
-                      ),
-                      fontFamily: "monospace",
-                      fontSize: "15px"
+                      display: "inline-flex",
+                      alignItems: "baseline",
+                      gap: "5px",
+                      color: "var(--sentinel-texto-suave)",
+                      fontSize: "10.5px"
                     }}
                   >
-                    {c.resumen?.huellaDigital ?? c.cobertura}%
+                    {METRICA.abreviado}
+                    <strong
+                      style={{
+                        color: "var(--sentinel-cyan)",
+                        fontFamily: "monospace",
+                        fontSize: "14px"
+                      }}
+                    >
+                      {c.resumen?.huellaDigital ?? c.cobertura}/100
+                    </strong>
                   </span>
                 )}
+
+                <button
+                  className="sentinel-boton"
+                  onClick={() =>
+                    fichaAbierta === c.id
+                      ? setFichaAbierta(null)
+                      : abrirFicha(c.id)
+                  }
+                  disabled={ocupado === `ficha:${c.id}`}
+                  title="Ficha de identidad: las seis redes y la web, con su estado y procedencia"
+                  style={{ padding: "6px 13px", fontSize: "11px" }}
+                >
+                  {fichaAbierta === c.id ? "ocultar identidad" : "Ver identidad"}
+                </button>
 
                 <button
                   className={
@@ -1502,6 +1634,26 @@ export default function ProjectsModule() {
                   {c.resumen.actualizadoEn
                     ? ` · última actualización ${String(c.resumen.actualizadoEn).slice(0, 10)}`
                     : ""}
+                </div>
+              )}
+
+              {/*
+                LA FICHA DE IDENTIDAD. Se pide al backend y se
+                muestra entera: las siete plataformas, tambien las
+                vacias. Nada queda detras de un «+3 cuentas».
+              */}
+              {fichaAbierta === c.id && ficha && (
+                <div style={{ marginTop: "12px" }}>
+                  <CandidateIdentityCard
+                    ficha={ficha}
+                    proyecto={proyecto}
+                    solidez={c.resumen?.huellaDigital ?? c.cobertura ?? null}
+                    componentesSolidez={null}
+                    ocupado={ocupado === `candidato:${c.id}`}
+                    onEditar={() => setEditando(true)}
+                    onComprobar={() => comprobarRedes(c.id)}
+                    onExpediente={() => investigar("candidato", c.id)}
+                  />
                 </div>
               )}
 

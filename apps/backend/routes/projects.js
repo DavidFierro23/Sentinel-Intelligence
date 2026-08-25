@@ -13,6 +13,8 @@ import {
   renombrarProyecto,
   cambiarEstadoProyecto,
   inventarioConsolidado,
+  editarCandidato,
+  fichaIdentidad,
   ESTADOS,
   agregarCandidato,
   obtenerCandidato,
@@ -199,6 +201,65 @@ INVESTIGAR UN CANDIDATO DENTRO DEL PROYECTO
 Mismo motor, contexto del proyecto.
 -----------------------------------------------------------
 */
+
+/*
+-----------------------------------------------------------
+FICHA DE IDENTIDAD — P-CAND-UX-01
+-----------------------------------------------------------
+
+Solo LEE. Devuelve las siete plataformas, tambien las vacias, con
+el estado de cada cuenta y su procedencia. No lanza ninguna
+investigacion y no gasta cuota.
+-----------------------------------------------------------
+*/
+router.get("/:proyectoId/candidatos/:candidatoId/identidad", async (req, res) => {
+  try {
+    const f = await fichaIdentidad(
+      req.params.proyectoId,
+      req.params.candidatoId,
+      "candidato"
+    );
+
+    if (!f) {
+      return res.status(404).json({
+        error: `el candidato ${req.params.candidatoId} no está en el proyecto ${req.params.proyectoId}`
+      });
+    }
+
+    res.json(absolutizarAvatares(f, req));
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo al leer la identidad" });
+  }
+});
+
+
+/*
+  EDITAR IDENTIDAD. No borra ni recrea: recrear perderia el
+  expediente y el inventario consolidado, que es justo lo que el
+  analista no quiere perder al corregir un nombre.
+*/
+router.patch("/:proyectoId/candidatos/:candidatoId", async (req, res) => {
+  try {
+    const r = await editarCandidato(
+      req.params.proyectoId,
+      req.params.candidatoId,
+      req.body || {}
+    );
+
+    if (!r.editado) return res.status(400).json(r);
+
+    const ficha = await fichaIdentidad(
+      req.params.proyectoId,
+      req.params.candidatoId,
+      "candidato"
+    );
+
+    res.json(absolutizarAvatares({ ...r, ficha }, req));
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo al editar el candidato" });
+  }
+});
+
 
 router.post("/:proyectoId/candidatos/:candidatoId/investigar", async (req, res) => {
   const { proyectoId, candidatoId } = req.params;

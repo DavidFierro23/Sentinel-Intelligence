@@ -2625,6 +2625,176 @@ proveedores**. Ocho intentos no alcanzan para seis plataformas mas propagacion.
 
 ---
 
+## 18-sexdecies. P-CAND-UX-01 Ficha de identidad (2026-08-25)
+
+Commit `feat(projects): add assisted candidate identity workspace`.
+**453 comprobaciones, 0 fallos.** Sin red, sin cuota.
+
+**P-CAND-01: VALIDADO FUNCIONALMENTE / provider-limited.** No se reabre.
+
+### La interfaz, antes y despues
+
+Antes la tarjeta decia «42 %, 2 cuentas». Con eso el analista no podia ver que
+Instagram se habia hallado el dia anterior y hoy no, que ocho de catorce
+consultas no obtuvieron respuesta, ni por que se habia rechazado un candidato
+de TikTok. **Todo eso ya estaba persistido; solo faltaba mostrarlo.**
+
+Ahora la ficha muestra foto, nombre, alias, proyecto y **las siete plataformas
+—las seis redes y la web— tambien las vacias**, cada una con estado,
+procedencia, ultima verificacion, proveedores y accion de abrir. Nada queda
+detras de un «+3 cuentas»: si hay tres cuentas, se ven las tres.
+
+### Modelo de identidad
+
+`cuentasReferencia` deja de ser un campo por plataforma y pasa a ser una
+**coleccion**. El modelo anterior era `instagram: string`, asi que un candidato
+con dos cuentas de Instagram —la personal y la de campana, que es lo normal—
+solo podia tener una.
+
+Cada entrada: `id` (plataforma + handle normalizado), `plataformaId`,
+`plataforma`, `url`, `handle`, `origen`, `pertenenciaDeclarada`,
+`verificadaPorSentinel`, `noCuentaComoCorroboracion`, `creadaEn`,
+`actualizadaEn`, `estado`.
+
+La plataforma se lee **del dominio** con SD-1A, no de la casilla del
+formulario: si el analista pega una URL de Instagram en el campo de Facebook,
+manda la URL.
+
+### Las dos distinciones que la ficha no pierde
+
+    declarada por el analista   vs   corroborada por Sentinel
+    no reencontrada             vs   no existe
+
+La primera es de procedencia y **las dos pueden ser verdad a la vez**: que una
+persona escribiera la URL no impide que un proveedor la encuentre despues por
+su cuenta. La ficha muestra ambas.
+
+La segunda es la diferencia entre una limitacion nuestra y una afirmacion sobre
+alguien. Una plataforma sin cuenta queda `PENDIENTE` con el texto «Sentinel no
+tiene ninguna cuenta aqui. No es una afirmacion de que el candidato no use esta
+plataforma». **Nunca se escribe «no tiene redes».**
+
+### Foto
+
+Se conserva `url`, `sourceUrl`, `origen`, `provider`, `obtenidaEn` y
+`verificadaPorSentinel`. **No hay reconocimiento facial** y no se llama «foto
+oficial» a una imagen solo porque se haya encontrado: la ficha dice de donde
+salio y que Sentinel no la ha verificado. Sin imagen, marcador de posicion.
+
+### Editar identidad
+
+`PATCH /api/proyectos/:id/candidatos/:cid`. Todas las redes son **opcionales**
+y **no hay que borrar y recrear**: recrear perderia el expediente, las
+ejecuciones y el inventario consolidado, que es justo lo que no se quiere
+perder al corregir una errata.
+
+Lo que llega con valor se actualiza; lo que llega vacio se deja. **El id no
+cambia** aunque cambie el nombre —es la clave con la que el Lake guarda el
+expediente—, igual que al renombrar un proyecto.
+
+Retirar una cuenta es **explicito, por su id**: un formulario enviado a medias
+no puede borrar identidad. Y el Lake conserva su historia: nada se destruye.
+
+### Comprobar redes
+
+Reutiliza la ruta de investigacion, que **ya reverifica sin destruir**: el
+inventario consolidado conserva las cuentas atribuidas aunque el proveedor
+falle. Probado: una comprobacion sin ningun hallazgo conserva todas las cuentas
+y las marca `NO_REENCONTRADA`, nunca `REVOCADA`.
+
+No se ejecuto durante el desarrollo. Consume cuota, asi que se lanza solo
+cuando el analista lo pide.
+
+`Analizar actividad` queda visible y **deshabilitado**, con su motivo: Account
+Intelligence no esta implementado.
+
+### La metrica
+
+`huellaDigital` se presentaba como un porcentaje suelto junto al nombre de un
+candidato, y **en rojo cuando era bajo**. Con ese formato un 53 % se lee como
+respaldo y un 35 % como caida, y no mide ninguna de las dos cosas.
+
+Nombre elegido: **«Solidez del expediente»**. Es el exacto: la formula suma
+cobertura de plataformas (40), solidez de la mejor correspondencia (30),
+corroboracion multiproveedor (20) y declaracion en base de referencia (10). Es
+decir, amplitud y solidez de lo documentado. «Cobertura de identidad»
+describiria solo el primer componente, que son 40 de 100 puntos.
+
+Se muestra como `Solidez 35/100`, con aclaracion al pasar el raton y desglose
+por componentes al pulsar:
+
+> Esta metrica refleja amplitud y corroboracion del expediente digital
+> observado. No representa intencion de voto, popularidad ni apoyo ciudadano.
+
+Y la escala de color es **neutra**: un expediente poco documentado no es
+«malo», es poco documentado. El rojo queda para lo revocado y los errores
+reales. **La formula no se toco.** BUG-16 queda **mitigado en la interfaz**.
+
+### Hora local
+
+Se **persiste en UTC** y se **muestra** en la hora del territorio del proyecto,
+`America/Guayaquil` para Ecuador y configurable por proyecto. Un analista en
+Cuenca que lee «17:23» tiene que poder compararlo con su reloj; obligarle a
+restar cinco horas mentalmente termina en un hallazgo mal fechado. Si el
+entorno no conoce la zona, se muestra UTC **etiquetado como UTC**, nunca
+disfrazado de hora local.
+
+### BUG-20 mitigado en la interfaz
+
+Mientras `historiaIncompleta` sea true, la ficha **no escribe «vista por
+primera vez»**: dice «historial previo incompleto», que es lo unico que
+sabemos. El campo sigue mal en el modelo y BUG-20 **sigue abierto**.
+
+### Archivos
+
+| Archivo | Cambio |
+|---|---|
+| `services/projects/projectStore.js` | coleccion `cuentasReferencia`, foto, `editarCandidato`, `fichaIdentidad`, `PLATAFORMAS_FICHA`, `ESTADOS_IDENTIDAD_FICHA` |
+| `routes/projects.js` | `GET …/identidad`, `PATCH …/candidatos/:cid` |
+| `web/src/services/identidadCandidato.js` | **nuevo**: estados, procedencia, hora local, metrica, textos de BUG-20 |
+| `web/src/components/CandidateIdentityCard.jsx` | **nuevo**: la ficha |
+| `web/src/components/CandidateIdentityForm.jsx` | **nuevo**: editar identidad |
+| `web/src/components/ProjectsModule.jsx` | cableado, metrica renombrada, hora local, `PATCH` |
+| `tests/fichaIdentidad.test.mjs` | **nuevo**, 42 comprobaciones |
+
+### Pruebas
+
+42 comprobaciones nuevas: candidato sin redes, una red, varias, **dos cuentas
+de la misma plataforma**, alias, foto y su procedencia, edicion, persistencia
+tras relectura, inventario consolidado en la ficha, cuenta no reencontrada
+visible, referencia que no autoverifica, corroboracion independiente,
+`America/Guayaquil`, `historiaIncompleta` sin fecha inventada, metrica
+renombrada y no politica, y que comprobar redes no borra cuentas.
+
+Los helpers de la interfaz son funciones puras sin React, y por eso se prueban
+desde Node: la interfaz no tiene arnes de pruebas propio.
+
+| Suite | Total |
+|---|---|
+| las once anteriores | 411 |
+| **fichaIdentidad** | **42** |
+| **Total** | **453, 0 fallos** |
+
+Build de la interfaz correcta. Lint: los 6 preexistentes de BUG-01 y BUG-02.
+Lake real intacto en 95 entradas.
+
+**Nota tecnica:** los iconos de marca se retiraron de `lucide-react`, asi que
+se usan iconos genericos que describen la naturaleza de cada plataforma; el
+nombre va escrito al lado, que es lo que de verdad la identifica.
+
+### Proxima accion
+
+Cargar la identidad real de los candidatos desde la interfaz. La ficha de
+Lloret ya puede mostrar Facebook, X e Instagram **desde el inventario**, sin
+una sola URL en el codigo. TikTok, YouTube y LinkedIn apareceran como
+`PENDIENTE`, que es la situacion real.
+
+`@jotalloretv` de TikTok **no se introduce a mano**: lo cargara el analista
+desde el formulario, y quedara como declarado hasta que un proveedor lo
+corrobore.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -2739,11 +2909,11 @@ resueltos y verificados.
 | Estado de investigacion en la interfaz | 🟢 **BUG-11 CERRADO**, confirmado en prueba real |
 | La guarda `sinCambios` descartaba la traza en reejecuciones | 🟢 **BUG-13 CONFIRMADO EN PRUEBA REAL** (§18-nonies) |
 | La traza lee un campo inexistente y etiqueta mal una plataforma | 🟢 **BUG-15 CONFIRMADO EN PRODUCCION** (§18-undecies) |
-| Huella digital volatil segun la respuesta del proveedor | 🔴 **BUG-16**: 22 % → 53 % en el mismo dia, +17 por un buscador que contesto. Riesgo de lectura politica |
+| Huella digital volatil segun la respuesta del proveedor | 🟡 **BUG-16 mitigado en la interfaz** (§18-sexdecies): renombrada «Solidez del expediente», con aclaracion y escala neutra. La formula y la volatilidad siguen. Original: **BUG-16**: 22 % → 53 % en el mismo dia, +17 por un buscador que contesto. Riesgo de lectura politica |
 | TikTok recibe una sola consulta, sin pasada de reserva | 🔴 la propagada existio pero con el handle equivocado y dio Error. Ver BUG-17 y BUG-18 |
 | Profile-first: propietario legible en ruta de contenido | 🟢 **CONFIRMADO EN PRODUCCION** (§18-terdecies): `@segundo.cabrera82` entro como candidato y el clasificador lo rechazo |
 | `site:youtube.com` devuelve videos, no canales | 🟡 **Handle Propagation** pregunta por handle, que apunta a canal. Pendiente prueba real |
-| **P-CAND-UX-01 Identidad Asistida por Analista** | 🔴 en cola. **La prueba del 25-ago lo confirma como necesario**: el analista vio «42 %, 2 cuentas» sin poder ver que Instagram se hallo ayer y hoy no, que 8 de 14 consultas no respondieron, ni por que se rechazo el candidato de TikTok. Todo eso ya esta en la traza |
+| **P-CAND-UX-01 Identidad Asistida por Analista** | 🟢 **IMPLEMENTADO** (§18-sexdecies). Pendiente cargar identidad real desde la interfaz. Nota original: **La prueba del 25-ago lo confirma como necesario**: el analista vio «42 %, 2 cuentas» sin poder ver que Instagram se hallo ayer y hoy no, que 8 de 14 consultas no respondieron, ni por que se rechazo el candidato de TikTok. Todo eso ya esta en la traza |
 | Zona horaria America/Guayaquil en la interfaz | 🔴 en cola |
 | Brave / fallback de proveedores | 🔴 sin credencial: 0 intentos en las dos ultimas ejecuciones |
 | Account Intelligence | 🔴 en cola |
@@ -2756,7 +2926,7 @@ resueltos y verificados.
 | Sentinel AI Assistant / Pregúntale a Sentinel | 🔴 en cola |
 | Cobertura dependiente de un solo proveedor | 🔴 DuckDuckGo bloqueo 2/2 y Brave sigue sin credencial: el presupuesto de SerpAPI se agota en la primera pasada |
 | `clavesCuenta` y `cuentas` derivan de fuentes distintas | 🔴 **BUG-14**, preexistente, declarado y no corregido |
-| **P-CAND-01** — estabilidad de identidad | 🟢 **VALIDADO EN REAL** (§18-quindecies). Ninguna cuenta consolidada desaparecio |
+| **P-CAND-01** — estabilidad de identidad | 🟢 **VALIDADO FUNCIONALMENTE / provider-limited** (§18-quindecies). Ninguna cuenta consolidada desaparecio |
 | El expediente borraba cuentas ya atribuidas si no se reencontraban | 🟡 **BUG-19**: no contradicho en real, pero la rama de preservacion **no se ejercito** (todo se reencontro). Probado por test |
 | `handlesAtribuidos` llegaba vacio a la propagacion | 🟢 **BUG-17 VALIDADO EN REAL**: `jotalloretv` propagado desde X e Instagram |
 | La propagacion nunca alcanzaba el presupuesto | 🟢 **BUG-18 VALIDADO EN REAL**: TikTok de la posicion 13 a la 8, y una propagada se ejecuto |
@@ -3004,6 +3174,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-25 | P-CAND-UX-01 | Ficha de identidad implementada. `cuentasReferencia` pasa de campo a coleccion y admite varias cuentas por plataforma; la plataforma se lee del dominio con SD-1A y no de la casilla. Las siete plataformas se muestran siempre, tambien las vacias, con `PENDIENTE` que no afirma ausencia. Declarada por el analista y corroborada por Sentinel se muestran a la vez. Editar identidad sin borrar y recrear, con el id intacto; retirar una cuenta es explicito por id. La metrica pasa a «Solidez del expediente» con aclaracion y escala neutra: BUG-16 mitigado en interfaz, formula sin tocar. Hora local `America/Guayaquil`, persistencia en UTC. BUG-20 mitigado en interfaz y abierto en el modelo. 453 pruebas, 0 fallos. Nueva §18-sexdecies. |
 | 2026-08-25 | validacion real 17:23 | **P-CAND-01 VALIDADO EN REAL.** Ninguna cuenta consolidada desaparecio: inventario de 3, todas observadas. BUG-17 validado —`jotalloretv` propagado desde las consolidadas de X e Instagram, y ninguna consulta gastada en plataforma ya resuelta—. BUG-18 validado: TikTok por handle pasa de la posicion 13 a la 8 y una propagada se ejecuto por fin (`site:youtube.com "jotalloretv"`, 6 resultados). BUG-19 no contradicho pero NO ejercitado: todo se reencontro. El bloqueo restante es de CAPACIDAD de proveedores: 8 intentos no alcanzan para 6 plataformas mas propagacion, y Brave sigue sin credencial. BUG-20 y BUG-21 declarados sin corregir. Nueva §18-quindecies. |
 | 2026-08-25 | Identity Stability Gate | Implementado el inventario consolidado: una cuenta atribuida ya no desaparece porque un buscador no la devuelva. `estado` habla de identidad; `seenInCurrentRun`, `lastSeenAt` y `lastCheckedAt`, de observacion. NO_REENCONTRADA no es REVOCADA. BUG-17 cerrado leyendo el inventario autoritativo en lugar de un campo inexistente; BUG-18 reordenando el MISMO planificador por valor esperado, con la consulta de TikTok de la posicion 13 a la 8 y sin subir topes. Clasificador y umbrales sin tocar. 411 pruebas, 0 fallos. Nueva §18-quaterdecies. |
 | 2026-08-25 | prueba real 15:58 | La propagacion se ejecuto —4 consultas— pero con la semilla equivocada: `handlesAtribuidos` llega vacio porque la ruta lee un campo que el lector crudo no tiene (BUG-17), asi que `jotalloretv` nunca se propago y dos consultas fueron a plataformas ya resueltas. Las cuatro dieron Error: el presupuesto muere antes de llegar a la pasada nueva (BUG-18). Profile-first CONFIRMADO en produccion: `@segundo.cabrera82` entro como candidato y el clasificador lo rechazo. Y el hallazgo de fondo: el expediente REEMPLAZA sus cuentas en vez de acumularlas, asi que `instagram.com/jotalloretv` desaparecio al no reencontrarse — esto explica 53→42 y tambien la regresion 49→22 del 24 de agosto (BUG-19, critico). Nueva §18-terdecies. |
