@@ -1,7 +1,7 @@
 // apps/backend/services/conversation/publicConversationEngine.js
 
 import { recolectar } from "./conversationHarvester.js";
-import { extraerTemas } from "./topicExtractor.js";
+import { extraerTemas2 } from "./topicEngine2.js";
 import { resumirEncuadre } from "./framingClassifier.js";
 import { resumirMedios } from "./mediaRegistry.js";
 import { contarMenciones, mediosPorActor } from "./actorMentions.js";
@@ -85,14 +85,19 @@ export async function analizarConversacionPublica(opciones = {}) {
   let temas = { temas: [], descartados: [], metricas: {}, loQueNoSabemos: [] };
 
   try {
-    temas = extraerTemas(evidencias, {
-      ...opciones,
+    /*
+      TOPIC ENGINE 2 (Gate C). Tres niveles —categoria, tema,
+      subtema— y cuatro filtros contra defectos medidos.
 
-      /*
-        El ambito viaja al extractor para que su propio nombre
-        no acabe convertido en tema. Ver terminosDelAmbito.
-      */
-      ambito: opciones.ambito || null
+      El ambito y las CONSULTAS viajan al extractor: sin ellos,
+      el territorio analizado y los terminos que el planner puso
+      en la query acaban convertidos en tema, que es el criterio
+      de busqueda devuelto como hallazgo.
+    */
+    temas = extraerTemas2(evidencias, {
+      ...opciones,
+      ambito: opciones.ambito || null,
+      consultas: recoleccion.consultasPlanificadas || []
     });
   } catch (error) {
     console.error("[conversacion] extraccion de temas fallo:", error);

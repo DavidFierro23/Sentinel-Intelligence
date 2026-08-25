@@ -585,6 +585,93 @@ Las áreas calculadas desde la geometría CONALI **coinciden con las publicadas 
 
 ---
 
+## 13-ter. Gazetteer territorial — GATE B (2026-08-25)
+
+✅ **Implementado sobre la arquitectura existente**, sin registro paralelo.
+
+Nuevo nivel bajo parroquia: `toponimo` (barrio · sector · vía · hito).
+Fichero `territories/toponimos-cuenca.json` — **9 entradas, ninguna verificada**.
+
+### La separación que sostiene el gate
+
+`geoContracts.autorizaAtribucion()` introduce un límite **distinto de GEO-1**:
+
+| Límite | Pregunta que responde |
+|---|---|
+| **GEO-1** | ¿hasta dónde llega el **dato**? |
+| **autorizaAtribucion** | ¿hasta dónde llega la **unidad**? |
+
+Un topónimo con `resolucionMaximaAutorizada: null` **no ubica nada**. Registra la mención y punto.
+
+Sin esta separación, un gazetteer de barrios sería una máquina de fabricar precisión: cada barrio reconocido produciría un punto en el mapa sostenido únicamente por que alguien escribió su nombre en un JSON.
+
+### Comportamiento verificado
+
+| Texto | Resultado |
+|---|---|
+| «Comerciantes de **El Vado** piden seguridad» | ⛔ no ubica · mención registrada |
+| «Comerciantes de El Vado, **en Cuenca**» | ✅ cantón *(por «Cuenca», no por El Vado)* · mención registrada |
+| «Congestión en la **Avenida de las Américas**» | ⛔ no ubica ni con fuente local — una vía atraviesa varias unidades |
+| «Obras en **Sayausí**» | ✅ parroquia rural · con geometría |
+| «Feria en **Totoracocha**» | ✅ parroquia urbana · **sin** geometría (atribución nominal válida) |
+| «El Vado **y** Las Herrerías, en Cuenca» | ✅ cantón · **2** menciones no certificadas |
+
+**Ninguna relación barrio→parroquia inferida.** Todos con `padre: null`, `padreFuente: "pendiente"`. Ninguna coordenada inventada.
+
+---
+
+## 13-quater. Topic Engine 2 — GATE C (2026-08-25)
+
+✅ **Tres niveles y cuatro filtros.** `services/conversation/topicEngine2.js`.
+
+### Antes → Después, mismo corpus
+
+```
+ANTES                                    DESPUÉS
+Movilidad y transporte              →    CATEGORÍA Movilidad y transporte
+                                            TEMA    congestión y tráfico
+                                            SUBTEMA Avenida de las Américas
+                                            emergente · 3 ev · 3 fuentes · serie 3
+
+Proceso electoral                   →    CATEGORÍA Proceso electoral
+                                            TEMA    candidaturas
+                                            SUBTEMA Alcaldía de Cuenca
+
+azuay · wikipedia · ciudad · capital →    ELIMINADO (referencia + promocional)
+clima · pronóstico · tiempo · agosto →    ELIMINADO (automatizado + casi-duplicado)
+```
+
+### Los cuatro filtros, cada uno contra un defecto medido
+
+| # | Filtro | Fichero | Defecto que mata |
+|---|---|---|---|
+| 1 | **Tipo de contenido** | `contentTypeClassifier.js` | Wikipedia, turismo y bancos de imágenes formaban `azuay · capital · provincia · ciudad` |
+| 2 | **Casi-duplicados** | `nearDuplicate.js` | 3 boletines diarios del clima contaban como 3 evidencias |
+| 3 | **Stop-concepts** | `stopConcepts.js` | territorio, **ancestros**, meses, publicador, términos de la query |
+| 4 | **Residuo puro** | `stopConcepts.js` | etiqueta hecha solo de stop-concepts |
+
+**Nada se borra.** El contenido excluido se conserva, se cuenta y se declara.
+
+### Expediente de cada tema
+
+`nombre` · `categoría` · `subtemas` · `estado` · `evidencias` · `volumenObservado` · `repeticionesIncluidas` · `primeraObservación` · `últimaObservación` · `serie` · `fuentes` · `fuentesDistintas` · `territorios` · `encuadre` · `términos` · `metodoClasificacion` · `explicación` · `confianza` · `limitaciones` · `índices` (→ evidencias)
+
+**Estados:** `consolidado` (≥5 evidencias **y** ≥2 fuentes) · `emergente` (≥3 y ≥2) · `evidencia_insuficiente`.
+
+Un tema sostenido por **una sola fuente** lo declara como limitación: es un medio insistiendo, no cobertura.
+
+### Tres frases que viajan en cada respuesta
+
+> El volumen mide **publicación**, no opinión ciudadana.
+> Las publicaciones **no son personas**.
+> Un tema que crece **no indica apoyo político**.
+
+### Lo que NO se hizo
+
+Tendencias comparando ventanas: **no implementado**. Exige recolectar la ventana anterior, y Google News ofrece una ventana móvil de semanas, no un archivo. Sin eso, «en crecimiento» sería una afirmación sin baseline.
+
+---
+
 ## 14. Pendientes críticos territoriales
 
 🔴 **CRÍTICO** — sin esto el módulo es funcional pero incompleto:
@@ -600,6 +687,8 @@ Las áreas calculadas desde la geometría CONALI **coinciden con las publicadas 
 | 7 | **Credencial Brave** | segundo proveedor web | 🔴 `BRAVE_API_KEY` |
 | 8 | Attribution Engine · Replay Reconstructor | atribución y reconstrucción | UX-3 |
 | 9 | Ingesta continua | separar actividad de observación | riesgo WR-7 |
+| 10 | **Nomenclatura oficial de barrios y sectores** del GAD, con su relación a parroquia | resolución infra-parroquial | 🔴 no localizada; 9 topónimos son candidatos sin certificar |
+| 11 | **Ventana temporal anterior** en el recolector | tendencias, emergentes, «en crecimiento» | 🔴 Google News no da archivo histórico |
 
 `POST /api/territorio/recargar` integra 1–4 **sin reiniciar el backend y sin
 cambiar arquitectura**.

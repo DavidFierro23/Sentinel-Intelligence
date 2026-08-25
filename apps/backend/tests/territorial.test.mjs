@@ -7,7 +7,10 @@ import {
 
 import { agregar } from "../services/geo/spatialAggregator.js";
 import { normalizar } from "../services/geo/normalizer.js";
-import { comprobarGeo1 } from "../services/geo/geoContracts.js";
+import {
+  comprobarGeo1,
+  autorizaAtribucion
+} from "../services/geo/geoContracts.js";
 
 import {
   estadoRegistro,
@@ -18,6 +21,15 @@ import {
 } from "../services/geo/territoryRegistry.js";
 
 import { extraerTemas } from "../services/conversation/topicExtractor.js";
+import { extraerTemas2 } from "../services/conversation/topicEngine2.js";
+
+import {
+  construirStopConcepts,
+  esResiduoPuro
+} from "../services/conversation/stopConcepts.js";
+
+import { agruparCasiDuplicados } from "../services/conversation/nearDuplicate.js";
+import { clasificarTipoContenido } from "../services/conversation/contentTypeClassifier.js";
 import { clasificarEncuadre } from "../services/conversation/framingClassifier.js";
 
 import {
@@ -108,8 +120,8 @@ const registro = estadoRegistro();
 
 t("carga sin errores", () => registro.errores.length === 0);
 
-t("41 unidades (39 administrativas + 2 sectores)", () => {
-  return registro.metricas.unidades === 41;
+t("50 unidades (39 administrativas + 2 sectores + 9 toponimos)", () => {
+  return registro.metricas.unidades === 50;
 });
 
 t("36 parroquias", () => registro.metricas.porResolucion.parroquia === 36);
@@ -124,8 +136,8 @@ t("las carencias siguen declarandose", () => {
   return ["geometria", "padron", "verificacion"].every((x) => ids.includes(x));
 });
 
-t("solo el Centro Historico queda sin verificar", () => {
-  return registro.metricas.sinVerificar === 1;
+t("sin verificar: Centro Historico + los 9 toponimos", () => {
+  return registro.metricas.sinVerificar === 10;
 });
 
 t("22 unidades con geometria oficial", () => {
@@ -505,6 +517,129 @@ t("sin toponimo y sin fuente: sin ubicar", () => {
 
 
 /* ---------------------------------------------------------
+   3-BIS. GAZETTEER — GATE B
+--------------------------------------------------------- */
+
+bloque("[3b] GAZETTEER — jerarquia y autorizacion");
+
+t("los 9 toponimos estan cargados", () => {
+  return listarUnidades({ resolucion: "toponimo" }).length === 9;
+});
+
+t("NINGUN toponimo esta verificado", () => {
+  return listarUnidades({ resolucion: "toponimo" }).every(
+    (u) => u.verificado === false
+  );
+});
+
+t("NINGUN toponimo tiene padre inferido", () => {
+  return listarUnidades({ resolucion: "toponimo" }).every(
+    (u) => !u.padre && u.padreFuente === "pendiente"
+  );
+});
+
+t("NINGUN toponimo tiene geometria ni coordenadas", () => {
+  return listarUnidades({ resolucion: "toponimo" }).every(
+    (u) => !u.geometria && !u.coordenadas
+  );
+});
+
+t("un toponimo NO certificado NO autoriza atribucion", () => {
+  return autorizaAtribucion(unidadPorId("top-el-vado")).autoriza === false;
+});
+
+t("una parroquia oficial SI autoriza", () => {
+  return autorizaAtribucion(unidadPorId("sayausi")).autoriza === true;
+});
+
+t("«El Vado» solo: se registra la mencion, NO ubica", () => {
+  const r = resolverUbicacion(
+    { titulo: "Comerciantes de El Vado piden mas seguridad" },
+    { ambitoId: AMBITO }
+  );
+
+  return (
+    r.unidadId === null &&
+    r.mencionesNoCertificadas.some((m) => m.unidadId === "top-el-vado")
+  );
+});
+
+t("«El Vado, en Cuenca»: ubica en CANTON, no en un barrio", () => {
+  const r = resolverUbicacion(
+    { titulo: "Comerciantes de El Vado, en Cuenca, piden seguridad" },
+    { ambitoId: AMBITO }
+  );
+
+  return r.unidadId === AMBITO;
+});
+
+t("...y sigue registrando la mencion del barrio", () => {
+  const r = resolverUbicacion(
+    { titulo: "Comerciantes de El Vado, en Cuenca, piden seguridad" },
+    { ambitoId: AMBITO }
+  );
+
+  return r.mencionesNoCertificadas.some((m) => m.unidadId === "top-el-vado");
+});
+
+t("una VIA no ubica ni con fuente local: atraviesa varias unidades", () => {
+  return (
+    resolverUbicacion(
+      { titulo: "Congestion en la Avenida de las Americas" },
+      { ambitoId: AMBITO, pistaDeFuente: FUENTE_LOCAL }
+    ).unidadId === null
+  );
+});
+
+t("parroquia URBANA sin geometria SI ubica (atribucion nominal)", () => {
+  const r = resolverUbicacion(
+    { titulo: "Feria ciudadana en Totoracocha" },
+    { ambitoId: AMBITO }
+  );
+
+  return r.unidadId === "totoracocha" && !unidadPorId("totoracocha").geometria;
+});
+
+t("parroquia RURAL oficial ubica y tiene geometria", () => {
+  const r = resolverUbicacion({ titulo: "Obras en Sayausi" }, { ambitoId: AMBITO });
+
+  return r.unidadId === "sayausi" && Boolean(unidadPorId("sayausi").geometria);
+});
+
+t("evidencia insuficiente mantiene el nivel superior", () => {
+  const r = resolverUbicacion(
+    { titulo: "El Vado y Las Herrerias, en Cuenca, sin agua" },
+    { ambitoId: AMBITO }
+  );
+
+  /* Dos barrios no certificados: la unica atribucion posible es el canton. */
+  return r.unidadId === AMBITO && r.mencionesNoCertificadas.length === 2;
+});
+
+t("un toponimo ambiguo externo tampoco ubica pese al contexto", () => {
+  return (
+    resolverUbicacion(
+      { titulo: "El Ejido de Cuenca sera intervenido" },
+      { ambitoId: AMBITO }
+    ).unidadId === AMBITO
+  );
+});
+
+t("UTF-8: «Las Herrerías» con tilde se reconoce", () => {
+  const r = resolverUbicacion(
+    { titulo: "Las Herrerías celebran su fiesta" },
+    { ambitoId: AMBITO }
+  );
+
+  return r.mencionesNoCertificadas.some((m) => m.unidadId === "top-las-herrerias");
+});
+
+t("el nombre mostrado conserva su tilde", () => {
+  return unidadPorId("top-las-herrerias").nombre === "Las Herrerías";
+});
+
+
+/* ---------------------------------------------------------
    4. AGREGACION
 --------------------------------------------------------- */
 
@@ -797,6 +932,323 @@ t("el total viaja siempre con sus dominios distintos", () => {
   );
 
   return typeof r.actores[0].dominiosDistintos === "number";
+});
+
+
+/* ---------------------------------------------------------
+   6-BIS. TOPIC ENGINE 2 — GATE C
+--------------------------------------------------------- */
+
+bloque("[6b] TOPIC ENGINE 2 — jerarquia y filtros");
+
+const AMBITO_CUENCA = {
+  nombre: "Cuenca",
+  alias: ["canton cuenca"],
+  ancestros: ["Azuay", "Ecuador"]
+};
+
+/* Reproduce el corpus que produjo los dos clusters defectuosos. */
+const CORPUS = [
+  {
+    titulo: "Congestion vehicular en la Avenida de las Americas",
+    descripcion: "El trafico colapso en horas pico",
+    fecha: "2026-08-10",
+    enlace: "https://elmercurio.com.ec/1"
+  },
+  {
+    titulo: "Nuevo plan para la Avenida de las Americas",
+    descripcion: "Anuncian cambios por la congestion del trafico",
+    fecha: "2026-08-11",
+    enlace: "https://eltiempo.com.ec/2"
+  },
+  {
+    titulo: "Trafico y congestion preocupan a conductores",
+    descripcion: "Vias saturadas",
+    fecha: "2026-08-12",
+    enlace: "https://primicias.ec/3"
+  },
+  {
+    titulo: "Cuenca (Ecuador) - Wikipedia",
+    descripcion: "Cuenca es una ciudad, capital de la provincia del Azuay",
+    enlace: "https://es.wikipedia.org/x"
+  },
+  {
+    titulo: "Provincia de Azuay - Wikipedia",
+    descripcion: "Su capital es la ciudad de Cuenca",
+    enlace: "https://es.wikipedia.org/y"
+  },
+  {
+    titulo: "5.700+ fotos de stock de Cuenca Azuay",
+    descripcion: "imagenes libres de derechos",
+    enlace: "https://istockphoto.com/z"
+  },
+  {
+    titulo:
+      "Clima hoy en Cuenca, Ecuador: el pronostico del tiempo para el 21 de agosto",
+    fecha: "2026-08-21",
+    enlace: "https://n.com/a"
+  },
+  {
+    titulo:
+      "Clima hoy en Cuenca, Ecuador: el pronostico del tiempo para el 22 de agosto",
+    fecha: "2026-08-22",
+    enlace: "https://n.com/b"
+  },
+  {
+    titulo:
+      "Clima hoy en Cuenca, Ecuador: el pronostico del tiempo para el 23 de agosto",
+    fecha: "2026-08-23",
+    enlace: "https://n.com/c"
+  },
+  {
+    titulo: "Nueve candidatos inscritos para la Alcaldia de Cuenca",
+    descripcion: "El CNE cerro la inscripcion de candidaturas",
+    fecha: "2026-08-15",
+    enlace: "https://ecuavisa.com/d"
+  },
+  {
+    titulo: "Azuay confirma aspirantes para la Alcaldia de Cuenca",
+    descripcion: "Elecciones seccionales 2027 candidaturas",
+    fecha: "2026-08-16",
+    enlace: "https://teleamazonas.com/e"
+  },
+  {
+    titulo: "Movimientos definen candidaturas en Cuenca",
+    descripcion: "Campana electoral y candidaturas",
+    fecha: "2026-08-17",
+    enlace: "https://elmercurio.com.ec/f"
+  }
+];
+
+const T2 = extraerTemas2(CORPUS, {
+  ambito: AMBITO_CUENCA,
+  consultas: [{ texto: "Cuenca Azuay" }, { texto: "Cuenca municipio alcaldia" }]
+});
+
+t("EL CLUSTER «azuay · capital · provincia · ciudad» YA NO EXISTE", () => {
+  return !T2.temas.some((x) => /azuay|capital|provincia|ciudad/i.test(x.nombre));
+});
+
+t("EL CLUSTER «clima · pronostico · tiempo · agosto» YA NO EXISTE", () => {
+  return !T2.temas.some((x) => /clima|pronostico|agosto/i.test(x.nombre));
+});
+
+t("Wikipedia y banco de imagenes quedan fuera del clustering", () => {
+  return T2.contenidoExcluido.conteo.referencia >= 2;
+});
+
+t("los boletines automaticos se detectan", () => {
+  return T2.contenidoExcluido.conteo.automatizado === 3;
+});
+
+t("los 3 boletines se agrupan como casi-duplicados", () => {
+  return T2.metricas.repeticionesAgrupadas === 2;
+});
+
+t("el contenido excluido NO se borra: se cuenta y se declara", () => {
+  return (
+    T2.contenidoExcluido.porTipo.length === T2.metricas.excluidasPorTipo &&
+    Boolean(T2.contenidoExcluido.declaracion)
+  );
+});
+
+t("JERARQUIA: categoria distinta de tema", () => {
+  const mov = T2.temas.find((x) => /Movilidad/.test(x.categoria));
+
+  return Boolean(mov) && mov.nombre !== mov.categoria;
+});
+
+t("el tema recoge lo discriminante, no el nombre propio", () => {
+  const mov = T2.temas.find((x) => /Movilidad/.test(x.categoria));
+
+  return /congestion|trafico/i.test(mov.nombre);
+});
+
+t("SUBTEMA: la entidad nombrada se extrae aparte", () => {
+  const mov = T2.temas.find((x) => /Movilidad/.test(x.categoria));
+
+  return mov.subtemas.some((s) => /Avenida de las Americas/i.test(s.nombre));
+});
+
+t("el subtema NO es el territorio analizado", () => {
+  return T2.temas.every((x) =>
+    x.subtemas.every((s) => !/^cuenca$|^azuay$/i.test(s.nombre.trim()))
+  );
+});
+
+t("cada tema declara su estado", () => {
+  const validos = ["consolidado", "emergente", "evidencia_insuficiente"];
+
+  return T2.temas.every((x) => validos.includes(x.estado));
+});
+
+t("cada tema conserva su expediente completo", () => {
+  return T2.temas.every(
+    (x) =>
+      typeof x.evidencias === "number" &&
+      Array.isArray(x.fuentes) &&
+      Array.isArray(x.indices) &&
+      Array.isArray(x.limitaciones) &&
+      Boolean(x.metodoClasificacion) &&
+      typeof x.confianza === "number" &&
+      Object.hasOwn(x, "primeraObservacion") &&
+      Object.hasOwn(x, "ultimaObservacion") &&
+      Object.hasOwn(x, "serie") &&
+      Object.hasOwn(x, "encuadre") &&
+      Object.hasOwn(x, "territorios")
+  );
+});
+
+t("cada tema puede remontarse a sus evidencias", () => {
+  return T2.temas.every(
+    (x) =>
+      x.indices.length === x.evidencias &&
+      x.indices.every((i) => CORPUS[i] !== undefined)
+  );
+});
+
+t("cada tema explica POR QUE agrupo", () => {
+  return T2.temas.every((x) => Boolean(x.explicacion));
+});
+
+t("un tema de una sola fuente lo declara como limitacion", () => {
+  const unaFuente = T2.temas.filter((x) => x.fuentesDistintas === 1);
+
+  return unaFuente.every((x) =>
+    x.limitaciones.some((l) => /UNA sola fuente/i.test(l))
+  );
+});
+
+t("«consolidado» exige diversidad de fuentes", () => {
+  return T2.temas
+    .filter((x) => x.estado === "consolidado")
+    .every((x) => x.fuentesDistintas >= 2);
+});
+
+t("la serie temporal aparece cuando hay dos o mas periodos", () => {
+  const conSerie = T2.temas.filter((x) => x.serie);
+
+  return conSerie.every((x) => x.serie.length >= 2);
+});
+
+t("NO se afirma opinion ciudadana", () => {
+  const texto = T2.loQueNoSabemos.join(" ");
+
+  return (
+    /no opinion ciudadana|no es opinion|NO opinion/i.test(texto) &&
+    /no son personas/i.test(texto) &&
+    /no indica apoyo politico/i.test(texto)
+  );
+});
+
+t("el metodo declara sus filtros y sus stop-concepts", () => {
+  return (
+    T2.metodo.filtros.length === 4 &&
+    T2.metodo.totalStopConcepts > 40 &&
+    T2.metodo.niveles.join(",") === "categoria,tema,subtema"
+  );
+});
+
+bloque("[6c] STOP-CONCEPTS");
+
+const STOP = construirStopConcepts({
+  ambito: AMBITO_CUENCA,
+  consultas: [{ texto: "Cuenca municipio alcaldia" }],
+  evidencias: [{ fuenteDeclarada: "El Mercurio", dominio: "elmercurio.com.ec" }]
+});
+
+t("excluye el territorio analizado", () => STOP.has("cuenca"));
+
+t("excluye los ANCESTROS del territorio", () => {
+  return STOP.has("azuay") && STOP.has("ecuador");
+});
+
+t("excluye descriptores administrativos", () => {
+  return ["capital", "provincia", "ciudad", "canton"].every((x) => STOP.has(x));
+});
+
+t("excluye los meses", () => STOP.has("agosto") && STOP.has("enero"));
+
+t("excluye el publicador", () => STOP.has("mercurio"));
+
+t("excluye terminos de la propia consulta", () => STOP.has("municipio"));
+
+t("NO excluye un termino tematico legitimo", () => {
+  return !STOP.has("congestion") && !STOP.has("alcantarillado");
+});
+
+t("una etiqueta hecha solo de stop-concepts es residuo", () => {
+  return esResiduoPuro(["azuay", "capital", "provincia", "ciudad"], STOP);
+});
+
+t("una etiqueta con terminos reales NO es residuo", () => {
+  return !esResiduoPuro(["congestion", "trafico"], STOP);
+});
+
+bloque("[6d] CASI-DUPLICADOS Y TIPO DE CONTENIDO");
+
+t("dos titulares que solo difieren en la fecha se agrupan", () => {
+  const g = agruparCasiDuplicados([
+    { titulo: "Clima hoy en Cuenca: el pronostico para el 21 de agosto" },
+    { titulo: "Clima hoy en Cuenca: el pronostico para el 22 de agosto" }
+  ]);
+
+  return g.metricas.gruposUnicos === 1;
+});
+
+t("dos titulares distintos NO se agrupan", () => {
+  const g = agruparCasiDuplicados([
+    { titulo: "Congestion en la Avenida de las Americas" },
+    { titulo: "Nueve candidatos inscritos para la Alcaldia" }
+  ]);
+
+  return g.metricas.gruposUnicos === 2;
+});
+
+t("ninguna evidencia se borra al agrupar", () => {
+  const g = agruparCasiDuplicados([
+    { titulo: "Clima hoy en Cuenca: pronostico para el 21 de agosto" },
+    { titulo: "Clima hoy en Cuenca: pronostico para el 22 de agosto" },
+    { titulo: "Otra cosa totalmente distinta aqui" }
+  ]);
+
+  return g.grupos.flatMap((x) => x.miembros).length === 3;
+});
+
+t("Wikipedia se clasifica como referencia", () => {
+  return (
+    clasificarTipoContenido({
+      titulo: "Cuenca (Ecuador) - Wikipedia",
+      enlace: "https://es.wikipedia.org/x"
+    }).tipo === "referencia"
+  );
+});
+
+t("un boletin de clima se clasifica como automatizado", () => {
+  return (
+    clasificarTipoContenido({
+      titulo: "Clima hoy en Cuenca: el pronostico del tiempo",
+      enlace: "https://n.com/a"
+    }).tipo === "automatizado"
+  );
+});
+
+t("una nota de agenda sigue siendo agenda", () => {
+  const c = clasificarTipoContenido({
+    titulo: "Nueve candidatos inscritos para la Alcaldia de Cuenca",
+    enlace: "https://ecuavisa.com/d"
+  });
+
+  return c.tipo === "agenda" && c.entraEnTemas === true;
+});
+
+t("un articulo sobre politica climatica NO es automatizado", () => {
+  return (
+    clasificarTipoContenido({
+      titulo: "El municipio presenta su plan de accion frente al cambio climatico",
+      enlace: "https://elmercurio.com.ec/k"
+    }).tipo === "agenda"
+  );
 });
 
 

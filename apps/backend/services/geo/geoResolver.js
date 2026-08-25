@@ -13,6 +13,7 @@ import {
   PROCEDENCIAS,
   RESOLUCIONES,
   rangoDeResolucion,
+  autorizaAtribucion,
   validarUbicacion
 } from "./geoContracts.js";
 
@@ -421,6 +422,7 @@ export function resolverUbicacion(evidencia = {}, opciones = {}) {
     razones: [],
     toponimosDetectados: [],
     tambienMencionadas: [],
+    mencionesNoCertificadas: [],
     candidatas: []
   });
 
@@ -450,6 +452,7 @@ export function resolverUbicacion(evidencia = {}, opciones = {}) {
         razones: ["ubicacion declarada por la fuente (+100)"],
         toponimosDetectados: [],
         tambienMencionadas: [],
+        mencionesNoCertificadas: [],
         candidatas: []
       };
     }
@@ -527,6 +530,7 @@ export function resolverUbicacion(evidencia = {}, opciones = {}) {
         razones: [`ambito de cobertura de la fuente (+40)`],
         toponimosDetectados: [],
         tambienMencionadas: [],
+        mencionesNoCertificadas: [],
         candidatas: []
       };
     }
@@ -545,10 +549,41 @@ export function resolverUbicacion(evidencia = {}, opciones = {}) {
 
   const descartadas = [];
 
+  /*
+    GATE B. Toponimos reconocidos que NO atribuyen: barrios,
+    sectores, vias e hitos sin fuente oficial.
+
+    Van en su propia lista y no en `descartadas`, porque no se
+    descartaron por sospechosos: se reconocieron y se registro
+    la mencion. Lo que no producen es ubicacion.
+
+    Mezclarlos con los descartes por ambiguedad haria imposible
+    distinguir «no supimos que era» de «supimos que era, y aun
+    asi no ubica».
+  */
+  const mencionesNoCertificadas = [];
+
   ocurrencias.forEach((entrada, id) => {
     const unidad = unidadPorId(id);
 
     if (!unidad) return;
+
+    const permiso = autorizaAtribucion(unidad);
+
+    if (!permiso.autoriza) {
+      mencionesNoCertificadas.push({
+        unidadId: unidad.id,
+        nombre: unidad.nombre,
+        tipo: unidad.tipo || null,
+        resolucion: unidad.resolucion,
+        verificado: unidad.verificado === true,
+        padreFuente: unidad.padreFuente || null,
+        formaCitada: [...entrada.claves].join(", "),
+        motivo: permiso.motivo
+      });
+
+      return;
+    }
 
     const contexto = contextoPresente(
       unidad,
@@ -611,7 +646,8 @@ export function resolverUbicacion(evidencia = {}, opciones = {}) {
         "Se detectaron toponimos, pero todos son ambiguos y ninguno trae el contexto que el catalogo exige para resolverlo."
       ),
       toponimosDetectados: detectados.map((d) => d.clave),
-      candidatas: descartadas
+      candidatas: descartadas,
+      mencionesNoCertificadas
     };
   }
 
@@ -671,7 +707,8 @@ export function resolverUbicacion(evidencia = {}, opciones = {}) {
           nombre: c.unidad.nombre,
           puntuacion: c.puntuacion
         })),
-        candidatas: descartadas
+        candidatas: descartadas,
+      mencionesNoCertificadas
       };
     }
 
@@ -680,7 +717,8 @@ export function resolverUbicacion(evidencia = {}, opciones = {}) {
         `La evidencia nombra ${todas.length} unidades de igual peso (${nombres}) sin ancestro comun en el registro.`
       ),
       toponimosDetectados: detectados.map((d) => d.clave),
-      candidatas: descartadas
+      candidatas: descartadas,
+      mencionesNoCertificadas
     };
   }
 
@@ -726,7 +764,8 @@ export function resolverUbicacion(evidencia = {}, opciones = {}) {
     razones: mejor.razones,
     toponimosDetectados: detectados.map((d) => d.clave),
     tambienMencionadas: otras,
-    candidatas: descartadas
+    candidatas: descartadas,
+    mencionesNoCertificadas
   };
 }
 

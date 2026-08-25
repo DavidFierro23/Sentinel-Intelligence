@@ -62,6 +62,7 @@ export const RESOLUCIONES = Object.freeze({
   CANTON: "canton",
   PARROQUIA: "parroquia",
   SECTOR: "sector",
+  TOPONIMO: "toponimo",
   ZONA_CENSAL: "zona_censal",
   RECINTO: "recinto",
   PUNTO: "punto"
@@ -74,9 +75,10 @@ const RANGO = Object.freeze({
   canton: 3,
   parroquia: 4,
   sector: 5,
-  zona_censal: 6,
-  recinto: 7,
-  punto: 8
+  toponimo: 6,
+  zona_censal: 7,
+  recinto: 8,
+  punto: 9
 });
 
 
@@ -86,10 +88,69 @@ export const ORDEN_RESOLUCIONES = Object.freeze([
   "canton",
   "parroquia",
   "sector",
+  "toponimo",
   "zona_censal",
   "recinto",
   "punto"
 ]);
+
+
+/*
+===========================================================
+AUTORIZACION DE RESOLUCION — GATE B
+===========================================================
+
+GEO-1 dice hasta donde llega el DATO. Esto dice hasta donde
+llega la UNIDAD.
+
+Son dos limites distintos y hacen falta los dos. Una evidencia
+puede nombrar «El Vado» con toda claridad —el dato sostiene la
+mencion— y aun asi no autorizar ninguna atribucion, porque no
+existe fuente que diga en que parroquia esta El Vado.
+
+Sin esta separacion, un gazetteer de barrios se convierte en
+una maquina de fabricar precision: cada barrio reconocido
+produciria un punto en el mapa sostenido unicamente por que
+alguien escribio su nombre en un JSON.
+
+    resolucionMaximaAutorizada: null   la unidad NO atribuye
+    resolucionMaximaAutorizada: "x"    atribuye hasta "x"
+    campo ausente                      atribuye a su propia
+                                       resolucion (comportamiento
+                                       historico de las unidades
+                                       administrativas)
+===========================================================
+*/
+
+export function autorizaAtribucion(unidad) {
+  if (!unidad) return { autoriza: false, hasta: null, motivo: "unidad inexistente" };
+
+  /*
+    Declaracion explicita de que NO atribuye. Es el caso de los
+    toponimos no certificados.
+  */
+  if (
+    Object.hasOwn(unidad, "resolucionMaximaAutorizada") &&
+    unidad.resolucionMaximaAutorizada === null
+  ) {
+    return {
+      autoriza: false,
+      hasta: null,
+      motivo:
+        unidad.verificado === true
+          ? `"${unidad.nombre}" existe oficialmente pero su fuente no sostiene ninguna atribucion territorial.`
+          : `"${unidad.nombre}" es un toponimo NO CERTIFICADO: se registra la mencion, no la ubicacion. Sin fuente oficial no puede atribuir evidencia a ningun territorio.`
+    };
+  }
+
+  const hasta = unidad.resolucionMaximaAutorizada || unidad.resolucion || null;
+
+  if (!hasta) {
+    return { autoriza: false, hasta: null, motivo: "la unidad no declara resolucion" };
+  }
+
+  return { autoriza: true, hasta, motivo: null };
+}
 
 
 export function rangoDeResolucion(resolucion) {
@@ -489,6 +550,7 @@ export default {
   GEO_1,
   rangoDeResolucion,
   esMasFina,
+  autorizaAtribucion,
   procedenciaPorId,
   esProcedenciaValida,
   resolucionMaximaDe,

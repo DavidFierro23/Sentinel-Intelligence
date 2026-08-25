@@ -32,7 +32,15 @@ const RAIZ = dirname(fileURLToPath(import.meta.url));
 
 const FICHEROS = Object.freeze([
   { archivo: "ec-azuay-cuenca.json", obligatorio: true },
-  { archivo: "ec-azuay-cuenca-sectores.json", obligatorio: false }
+  { archivo: "ec-azuay-cuenca-sectores.json", obligatorio: false },
+
+  /*
+    GATE B. Barrios, sectores, vias e hitos que la prensa
+    nombra. Ninguno tiene fuente oficial y ninguno atribuye:
+    entran para que la MENCION sea visible y para que el dia
+    que exista fuente baste con rellenar el fichero.
+  */
+  { archivo: "toponimos-cuenca.json", obligatorio: false }
 ]);
 
 const FICHERO_DENOMINADORES = "ec-azuay-cuenca-denominadores.json";
@@ -278,7 +286,23 @@ export function cargarTerritorios({ forzar = false } = {}) {
           ? u.aliasInequivocos.map((a) => String(a).toLowerCase())
           : [],
         solapa: Array.isArray(u.solapa) ? u.solapa : [],
-        verificado: u.verificado === true
+        verificado: u.verificado === true,
+
+        /*
+          GATE B. Hasta donde puede atribuir ESTA unidad, que no
+          es lo mismo que hasta donde llega el dato (eso es
+          GEO-1). Si el fichero lo declara null, la unidad no
+          atribuye nada: solo registra la mencion.
+
+          Se conserva `undefined` cuando el fichero no lo
+          declara, para que las unidades administrativas sigan
+          comportandose como siempre.
+        */
+        ...(Object.hasOwn(u, "resolucionMaximaAutorizada")
+          ? { resolucionMaximaAutorizada: u.resolucionMaximaAutorizada }
+          : {}),
+
+        padreFuente: u.padreFuente || (u.padre ? "catalogo" : null)
       });
     });
   }

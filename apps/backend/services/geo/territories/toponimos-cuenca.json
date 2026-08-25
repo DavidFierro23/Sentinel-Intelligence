@@ -1,0 +1,171 @@
+{
+  "id": "toponimos-cuenca",
+  "nombre": "Toponimos infra-parroquiales del canton Cuenca",
+  "version": "1.0",
+  "jerarquia": "toponimica",
+
+  "queEsEstoYQUENOES": "Barrios, sectores, vias y hitos que la prensa local nombra. NO es un padron de barrios: es una lista de CANDIDATOS. Ninguna entrada tiene fuente oficial y NINGUNA produce por si sola una atribucion territorial.",
+
+  "reglaCritica": "Un toponimo de este fichero NO autoriza ninguna resolucion geografica. Se registra la MENCION, para que el analista la vea y para que el dia que exista fuente oficial baste con rellenar `fuente`, poner `verificado:true` y declarar `resolucionMaximaAutorizada`. Hasta entonces, si una evidencia solo nombra «El Vado», la evidencia queda sin ubicar igual que antes.",
+
+  "porQueExisteEntonces": [
+    "Hace VISIBLE la mencion: el analista ve «menciona El Vado (no certificado)» en lugar de no ver nada.",
+    "Alimenta el subtema del Topic Engine: «Av. de las Americas» es un subtema legitimo aunque no sea una unidad territorial atribuible.",
+    "Es el punto de inyeccion: cuando el GAD publique la relacion barrio-parroquia, no hay que tocar codigo."
+  ],
+
+  "loQueNoSeHizo": [
+    "No se infirio la parroquia de ningun barrio. `padre` va a null y `padreFuente` a «pendiente».",
+    "No se inventaron coordenadas.",
+    "No se marco ninguna entrada como verificada.",
+    "No se incluyeron barrios de los que no haya constancia clara de que pertenecen a Cuenca."
+  ],
+
+  "fuente": {
+    "oficial": null,
+    "verificado": false,
+    "origen": "mencion_frecuente_en_prensa_local",
+    "pendiente": "Nomenclatura oficial de barrios y sectores del GAD Municipal de Cuenca, con su relacion a parroquia. No localizada en cuencaendatos.cuenca.gob.ec (127 datasets, ninguno de barrios)."
+  },
+
+  "geometria": {
+    "disponible": false,
+    "motivo": "Ninguna entrada tiene geometria. No se digitalizan poligonos ni se inventan coordenadas."
+  },
+
+  "unidades": [
+    {
+      "id": "top-el-vado",
+      "nombre": "El Vado",
+      "resolucion": "toponimo",
+      "tipo": "barrio",
+      "padre": null,
+      "padreFuente": "pendiente",
+      "alias": ["barrio el vado"],
+      "codigoOficial": null,
+      "verificado": false,
+      "resolucionMaximaAutorizada": null,
+      "ambiguo": true,
+      "ambiguedad": "interna",
+      "requiereContexto": ["cuenca"],
+      "notaAmbiguedad": "«vado» es sustantivo comun."
+    },
+    {
+      "id": "top-las-herrerias",
+      "nombre": "Las Herrerías",
+      "resolucion": "toponimo",
+      "tipo": "barrio",
+      "padre": null,
+      "padreFuente": "pendiente",
+      "alias": ["herrerias", "calle de las herrerias"],
+      "codigoOficial": null,
+      "verificado": false,
+      "resolucionMaximaAutorizada": null
+    },
+    {
+      "id": "top-el-ejido",
+      "nombre": "El Ejido",
+      "resolucion": "toponimo",
+      "tipo": "sector",
+      "padre": null,
+      "padreFuente": "pendiente",
+      "alias": ["sector el ejido"],
+      "codigoOficial": null,
+      "verificado": false,
+      "resolucionMaximaAutorizada": null,
+      "ambiguo": true,
+      "ambiguedad": "ambas",
+      "requiereContexto": ["cuenca"],
+      "notaAmbiguedad": "El Ejido es tambien el parque mas conocido de Quito y un municipio de Almeria, Espana."
+    },
+    {
+      "id": "top-el-arenal",
+      "nombre": "El Arenal",
+      "resolucion": "toponimo",
+      "tipo": "sector",
+      "padre": null,
+      "padreFuente": "pendiente",
+      "alias": ["feria libre el arenal", "mercado el arenal"],
+      "codigoOficial": null,
+      "verificado": false,
+      "resolucionMaximaAutorizada": null,
+      "ambiguo": true,
+      "ambiguedad": "externa",
+      "requiereContexto": ["cuenca"]
+    },
+    {
+      "id": "top-puertas-del-sol",
+      "nombre": "Puertas del Sol",
+      "resolucion": "toponimo",
+      "tipo": "sector",
+      "padre": null,
+      "padreFuente": "pendiente",
+      "alias": [],
+      "codigoOficial": null,
+      "verificado": false,
+      "resolucionMaximaAutorizada": null
+    },
+    {
+      "id": "top-av-americas",
+      "nombre": "Avenida de las Américas",
+      "resolucion": "toponimo",
+      "tipo": "via",
+      "padre": null,
+      "padreFuente": "pendiente",
+      "alias": ["av de las americas", "avenida las americas", "av las americas"],
+      "codigoOficial": null,
+      "verificado": false,
+      "resolucionMaximaAutorizada": null,
+      "nota": "Una via ATRAVIESA varias parroquias. Aunque tuviera geometria, no atribuiria la evidencia a una sola unidad."
+    },
+    {
+      "id": "top-av-solano",
+      "nombre": "Avenida Solano",
+      "resolucion": "toponimo",
+      "tipo": "via",
+      "padre": null,
+      "padreFuente": "pendiente",
+      "alias": ["av solano"],
+      "codigoOficial": null,
+      "verificado": false,
+      "resolucionMaximaAutorizada": null
+    },
+    {
+      "id": "top-parque-calderon",
+      "nombre": "Parque Calderón",
+      "resolucion": "toponimo",
+      "tipo": "hito",
+      "padre": null,
+      "padreFuente": "pendiente",
+      "alias": ["parque calderon"],
+      "codigoOficial": null,
+      "verificado": false,
+      "resolucionMaximaAutorizada": null
+    },
+    {
+      "id": "top-terminal-terrestre",
+      "nombre": "Terminal Terrestre",
+      "resolucion": "toponimo",
+      "tipo": "hito",
+      "padre": null,
+      "padreFuente": "pendiente",
+      "alias": ["terminal terrestre de cuenca"],
+      "codigoOficial": null,
+      "verificado": false,
+      "resolucionMaximaAutorizada": null,
+      "ambiguo": true,
+      "ambiguedad": "externa",
+      "requiereContexto": ["cuenca"],
+      "notaAmbiguedad": "Toda ciudad tiene terminal terrestre."
+    }
+  ],
+
+  "comoCertificarUnaEntrada": [
+    "1. Localizar la fuente oficial (ordenanza, catastro o dataset del GAD).",
+    "2. Rellenar `fuente` con institucion, dataset, URL y fecha.",
+    "3. Poner `padre` y `padreFuente` SOLO si la relacion consta en esa fuente.",
+    "4. Poner `verificado: true`.",
+    "5. Declarar `resolucionMaximaAutorizada`: «parroquia» si la fuente sostiene esa atribucion, «toponimo» si solo sostiene el nombre.",
+    "6. Anadir geometria si la fuente la publica. Nunca digitalizarla a mano."
+  ]
+}
