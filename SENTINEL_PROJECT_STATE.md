@@ -3212,6 +3212,226 @@ queda acoplado a la interfaz.
 
 ---
 
+## 18-undevicies. P-CAND-UX-04 y P-CAND-AI-01 (2026-08-25)
+
+Commits `feat(projects): resolve candidate photo from declared public sources`
+y `feat(intelligence): add candidate account intelligence foundation`.
+
+**590 comprobaciones, 0 fallos.** Sin red, sin cuota.
+
+---
+
+### PARTE A · Resolver de fotografia (P-CAND-UX-04)
+
+#### Arquitectura
+
+`services/intelligence/candidatePhotoResolver.js`. Entrada: `candidateId`,
+cuentas del expediente y la foto manual si existe. Salida: `fotoActual`,
+`intentos[]` y `limitaciones[]`.
+
+La prioridad esta **centralizada** en `PRIORIDAD_FUENTES` —
+`manual → instagram → facebook → tiktok → x → youtube → linkedin → web` —
+justo para que ningun componente la reinvente con `if/else`: dos partes de la
+interfaz decidiendo por su cuenta mostrarian fotos distintas del mismo
+candidato.
+
+#### La distincion que lo sostiene
+
+    fotoManualUrl   enlace directo a una imagen que dio el analista
+    fotoSourceUrl   pagina de una cuenta desde la que intentar obtenerla
+
+Una pagina de perfil **nunca** se usa como `src` de un `<img>`: se lee su
+metadata y se usa la imagen que **ella** declara.
+
+#### Metodos de extraccion
+
+Solo metadata publica estandar, en este orden: `og:image:secure_url`,
+`og:image:url`, `og:image`, `twitter:image:src`, `twitter:image`, y `image` de
+un bloque JSON-LD —admitiendo cadena, objeto con `url` o lista—.
+
+No se recorre el DOM buscando «la imagen mas grande»: eso seria adivinar cual
+es el retrato.
+
+#### Validacion: una URL no vale por acabar en .jpg
+
+Se pide la cabecera y se comprueba `Content-Type` `image/*`, que no sea HTML y
+que el tamano sea razonable. Y se descartan por patron los favicon, sprites,
+pixeles de seguimiento y **los logotipos de las plataformas**: aceptar uno
+pondria el logo de Instagram como cara del candidato.
+
+Si una clave da una imagen generica, se sigue probando las demas y el descarte
+se registra.
+
+#### Seguridad y procedencia
+
+Sin login, sin cookies, sin cabecera de autenticacion, con tope de tiempo y
+**tope de cuatro fuentes** por resolucion. Una peticion por fuente: no hay
+scraping masivo. Un `401`, `403` o `429` se declara `BLOQUEADA` y **no se
+intenta entrar de otra forma**.
+
+Cada intento registra plataforma, `sourceUrl`, resultado, motivo, `httpStatus`,
+metadata encontrada e `imageUrl`. Estados: `RESUELTA`, `SIN_METADATA`,
+`BLOQUEADA`, `TIMEOUT`, `NO_IMAGEN`, `IMAGEN_GENERICA`, `ERROR` y
+`NO_INTENTADA`.
+
+**Los fallos no se ocultan.** La interfaz los muestra.
+
+#### La distincion critica
+
+    verifiedImageResource   la URL devuelve una imagen
+    verificadaPorSentinel   Sentinel verifico a quien retrata
+
+La primera se comprueba con una peticion HTTP. La segunda exigiria
+reconocimiento facial, que este modulo **se prohibe**, y por eso es **siempre
+false**. Un test comprueba que no se importa ninguna libreria de vision.
+
+#### Persistencia
+
+La resolucion ocurre solo cuando el analista pulsa «Obtener foto desde
+fuentes». **Nunca en cada render**: una fotografia que se recalcula al pintar
+seria una peticion por pintado. El resultado se persiste con toda su
+procedencia y el historial de la anterior.
+
+---
+
+### PARTE B · Account Intelligence Fase 1 (P-CAND-AI-01)
+
+#### Discovery no es monitoreo
+
+    Discovery              ¿de quien es esta cuenta?
+    Account Intelligence   ¿que ocurre en ella?
+
+La primera ya esta resuelta y su respuesta vive en el inventario consolidado.
+La segunda **no** se responde relanzando Full Discovery: seria repreguntar algo
+que ya sabemos y pagarlo.
+
+#### Modelo de observacion
+
+`accountContracts.js` define `crearObservacion`, `crearPublicacion` y
+`crearSnapshot`. Todos los campos publicos son **opcionales y `null` cuando no
+se obtuvieron**.
+
+> `null` no es cero. Cero seguidores es un dato; no saberlo es otra cosa.
+
+Cada observacion declara `metricasDisponibles` y `metricasNoDisponibles`: sin
+eso, un campo vacio no se distingue de uno que nadie intento leer.
+
+#### Snapshots append-only
+
+Uno por observacion, en su propia entidad del Lake identificada por instante.
+**Nunca se sobrescribe el anterior**: sin la serie no hay 7d, 15d, 30d ni 90d y
+comparar seria inventar.
+
+El snapshot reserva `comparacion` con `snapshotAnterior`, `delta`,
+`publicacionesDelPeriodo` y `temasActivos` — **contrato para Change
+Attribution, que no se implementa**. Existe para no tener que rehacer el modelo
+despues.
+
+#### Actividad
+
+Solo lo derivable de observaciones reales: publicaciones observadas a 7 y 30
+dias, frecuencia y ultima actividad. Sin publicaciones observadas todo queda
+`null` y aparece la advertencia:
+
+> No se observo ninguna publicacion. Esto NO indica que el candidato no
+> publique: indica que las fuentes disponibles no permiten leer sus
+> publicaciones.
+
+**No hay etiquetas alta/media/baja.** `REGLA_FRECUENCIA.etiquetas` es `null` a
+proposito: con las fuentes actuales no se observa el total de publicaciones,
+asi que cualquier etiqueta seria una conjetura con aspecto de dato.
+
+#### Temas propios frente a temas sobre el candidato
+
+    TEMAS_PROPIOS               lo que dicen las cuentas del candidato
+    TEMAS_SOBRE_EL_CANDIDATO    lo que dicen medios y terceros
+
+Se calculan por separado y cada resultado declara su ambito y **que no es**.
+Confundirlos convertiria la agenda de un medio en el discurso del candidato.
+
+Se **reutiliza** `conversation/topicExtractor.js`. No hay Topic Engine
+paralelo, y un test lo comprueba.
+
+#### Metricas no comparables
+
+Una vista de TikTok, una reaccion de Facebook y un repost de X no miden lo
+mismo. Se agrupan **por plataforma** y `METRICAS_NO_COMPARABLES.equivalencias`
+es `null`: mientras no exista una normalizacion documentada, no hay totales
+cruzados. El resumen no expone ningun agregado entre plataformas.
+
+#### Sin puntuacion
+
+`resumen.puntuacion` es `null` y lo dice en palabras: con las fuentes
+disponibles no hay base para comparar candidatos. Un numero por candidato en
+esta fase se leeria como un ranking politico.
+
+#### El limite dominante, medido
+
+De las siete plataformas, **una** permite lectura real hoy: la web propia.
+
+| Plataforma | Capacidad | Metricas obtenibles hoy |
+|---|---|---|
+| Instagram | `API_REQUIRED` | ninguna |
+| Facebook | `API_REQUIRED` | ninguna |
+| X | `API_REQUIRED` | ninguna |
+| TikTok | `API_REQUIRED` | ninguna |
+| YouTube | `API_REQUIRED` | ninguna |
+| LinkedIn | `BLOCKED` | ninguna |
+| **Web oficial** | `PUBLIC_METADATA_ONLY` | titulo, descripcion, imagen |
+
+Account Intelligence Fase 1 registra estructura, traza y snapshots, y **no
+puede leer seguidores, publicaciones ni metricas de ninguna red social**. Esta
+declarado en cada observacion.
+
+`docs/ACCOUNT-PROVIDER-GAPS.md` recoge, plataforma por plataforma, que
+necesitamos, que obtenemos, que falta y que API podria cubrirlo. **Los precios
+figuran como `null`**: no los conozco y estimarlos en un documento de decision
+seria peor que dejar el hueco. Orden sugerido: YouTube Data API primero
+—es el unico acceso gratuito real—, LinkedIn descartado.
+
+#### Interfaz
+
+`Analizar actividad` deja de estar deshabilitado y abre el workspace con ocho
+secciones: Resumen, Cuentas, Actividad, Publicaciones, Temas, Metricas,
+Historico y Limitaciones.
+
+**Abrir el panel NO sale a la red**: describe el estado y los limites. Observar
+es un boton aparte, y solo lo pulsa el analista.
+
+Casi todo esta vacio en esta fase, y esta bien. Lo que no puede pasar es que un
+hueco parezca un dato: cada seccion vacia dice por que lo esta.
+
+---
+
+### Pruebas
+
+| Suite | Comprobaciones |
+|---|---|
+| **fotoResolver** | **28** |
+| **accountIntelligence** | **35** |
+| las catorce anteriores | 527 |
+| **Total** | **590, 0 fallos** |
+
+Sin red: el `fetchImpl` se inyecta y cada caso declara que devuelve cada URL,
+asi que las pruebas son deterministas y no dependen de que una pagina exista
+hoy.
+
+Build correcta. Lint: los 6 preexistentes de BUG-01 y BUG-02.
+
+### Riesgos y limitaciones
+
+- **La limitacion dominante es de acceso, no de codigo.** Sin API, Account
+  Intelligence puede describir y trazar, no medir.
+- La deteccion de imagenes genericas es por patron: un logotipo desconocido
+  podria colarse. El lado seguro seria mas estricto, y entonces rechazaria
+  retratos validos; se eligio el equilibrio y se declara.
+- El resolver hace peticiones HTTP a paginas publicas. No es cuota de
+  proveedor, pero es red: por eso solo se dispara cuando el analista lo pide.
+- Las publicaciones tienen contrato y **ninguna fuente que las entregue**. La
+  lista vacia lo dice.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -3332,7 +3552,13 @@ resueltos y verificados.
 | `site:youtube.com` devuelve videos, no canales | 🟡 **Handle Propagation** pregunta por handle, que apunta a canal. Pendiente prueba real |
 | **P-CAND-UX-03 Flujo y fotografia** | 🟢 **IMPLEMENTADO** (§18-duodevicies). Pendiente prueba visual |
 | **P-CAND-UX-02 Edicion de identidad** | 🟢 **CONFIRMADO CON DATOS REALES** (§18-duodevicies): TikTok y YouTube persistidos como declarados, Facebook con las dos procedencias |
-| Fotografia derivada de cuentas sociales | 🔴 **no obtenible**: no hay API de plataforma y el scraping esta excluido. Declarado en `fotoNoDisponible` |
+| **P-CAND-UX-04 Resolver de fotografia** | 🟢 **IMPLEMENTADO** (§18-undevicies). Pendiente prueba real |
+| **P-CAND-AI-01 Account Intelligence Fase 1** | 🟢 **IMPLEMENTADO** (§18-undevicies): contratos, observacion, snapshots append-only, temas propios, mapa de capacidades y workspace. **Sin puntuacion ni ranking** |
+| **ACCOUNT-PROVIDER-GAPS** | 🟡 **documentado** en `docs/ACCOUNT-PROVIDER-GAPS.md`. Alimenta DATA-PROVIDER-EVAL. Precios `null`: no se estiman |
+| Acceso a metricas de redes sociales | 🔴 **P0 de producto**: de siete plataformas solo la web propia permite lectura. YouTube Data API es el unico acceso gratuito real |
+| Account Intelligence completo (publicaciones, series, momentum) | 🔴 Fase 1 sienta contratos; el motor completo sigue pendiente |
+| Change Attribution | 🔴 contrato reservado en los snapshots, sin implementar |
+| Fotografia derivada de cuentas sociales | 🟡 **resolver implementado**; sigue no obtenible en las seis redes: no hay API y el scraping esta excluido. Original: 🔴 **no obtenible**: no hay API de plataforma y el scraping esta excluido. Declarado en `fotoNoDisponible` |
 | **P-CAND-UX-01 Identidad Asistida por Analista** | 🟢 **IMPLEMENTADO** (§18-sexdecies). Pendiente cargar identidad real desde la interfaz. Nota original: **La prueba del 25-ago lo confirma como necesario**: el analista vio «42 %, 2 cuentas» sin poder ver que Instagram se hallo ayer y hoy no, que 8 de 14 consultas no respondieron, ni por que se rechazo el candidato de TikTok. Todo eso ya esta en la traza |
 | Zona horaria America/Guayaquil en la interfaz | 🔴 en cola |
 | Brave / fallback de proveedores | 🔴 sin credencial: 0 intentos en las dos ultimas ejecuciones |
@@ -3594,6 +3820,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-25 | P-CAND-UX-04 + AI-01 | Resolver de fotografia desde fuentes declaradas: metadata publica estandar, prioridad centralizada, validacion de recurso, descarte de logotipos y genericas, tope de cuatro fuentes, sin login ni cookies. `verifiedImageResource` no implica `verificadaPorSentinel`, que es siempre false. Account Intelligence Fase 1: contratos de cuenta, observacion, publicacion y snapshot append-only; actividad solo derivable de observaciones reales y sin etiquetas sin metodologia; temas propios separados de temas sobre el candidato reutilizando el Topic Engine; metricas agrupadas por plataforma y sin totales cruzados; ninguna puntuacion. Mapa de capacidades real: de siete plataformas solo la web permite lectura. ACCOUNT-PROVIDER-GAPS documentado con precios null. 590 pruebas, 0 fallos. Nueva §18-undevicies. |
 | 2026-08-25 | P-CAND-UX-03 | Causa: al guardar se cerraba el modal pero la ficha quedaba desplegada y el aviso era persistente. Ahora se recarga, se colapsa y se confirma con un aviso que se borra solo. Contrato de fotografia con procedencia, historial acotado y `verificadaPorSentinel` que nunca hereda la corroboracion de la cuenta: son dos afirmaciones distintas. Una URL de cuenta ya no se acepta como imagen —era la causa del icono roto— y `CandidatePhoto` cae a iniciales si la carga falla. La jerarquia esta completa y las seis plataformas sociales quedan declaradas como no obtenibles sin API. Encontrada una URL de cuenta guardada como foto en el expediente real: se diagnostica, no se corrige sin permiso. 527 pruebas, 0 fallos. Nueva §18-duodevicies. |
 | 2026-08-25 | P-CAND-UX-02 | Causa raiz: el formulario estaba montado en la rama de render de la LISTA de proyectos, que retorna antes que la del detalle, asi que al pulsar el boton su JSX no se renderizaba nunca. Defecto introducido por mi en el gate anterior al anclar la insercion sin comprobar la rama. Corregido y convertido en espacio de trabajo por plataforma, con varias cuentas, vista previa de foto y aviso de dominio. Dos defectos mas de la auditoria: retirar BORRABA la cuenta en vez de marcarla REVOCADA con su historia, y la ficha no exponia el id para retirar por identidad exacta. Probado que un PATCH parcial no borra nada y que el candidateId no cambia. 495 pruebas, 0 fallos. Nueva §18-septendecies. |
 | 2026-08-25 | P-CAND-UX-01 | Ficha de identidad implementada. `cuentasReferencia` pasa de campo a coleccion y admite varias cuentas por plataforma; la plataforma se lee del dominio con SD-1A y no de la casilla. Las siete plataformas se muestran siempre, tambien las vacias, con `PENDIENTE` que no afirma ausencia. Declarada por el analista y corroborada por Sentinel se muestran a la vez. Editar identidad sin borrar y recrear, con el id intacto; retirar una cuenta es explicito por id. La metrica pasa a «Solidez del expediente» con aclaracion y escala neutra: BUG-16 mitigado en interfaz, formula sin tocar. Hora local `America/Guayaquil`, persistencia en UTC. BUG-20 mitigado en interfaz y abierto en el modelo. 453 pruebas, 0 fallos. Nueva §18-sexdecies. |

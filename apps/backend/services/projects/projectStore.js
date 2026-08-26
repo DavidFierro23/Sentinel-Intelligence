@@ -2702,6 +2702,85 @@ export async function fichaIdentidad(proyectoId, candidatoId, tipo = "candidato"
 }
 
 
+/*
+===========================================================
+SNAPSHOTS DE ACCOUNT INTELLIGENCE — P-CAND-AI-01
+===========================================================
+
+Uno por observacion, en su propia entidad del Lake. Append-only:
+nunca se sobrescribe el anterior, porque sin la serie no hay 7d,
+15d, 30d ni 90d y comparar seria inventar.
+
+Entidad propia por instante, igual que las ejecuciones de
+investigacion y por el mismo motivo: cada observacion es un hecho
+distinto, no una version del anterior.
+===========================================================
+*/
+const PREFIJO_SNAPSHOT = "snapshot-";
+
+export async function guardarSnapshots(proyectoId, candidatoId, snapshots = []) {
+  const escritos = [];
+
+  for (const snap of snapshots) {
+    const cuando = snap.capturedAt || new Date().toISOString();
+
+    const entidad = `${PREFIJO_SNAPSHOT}${candidatoId}-${snap.platform}-${cuando}`;
+
+    try {
+      const r = await escribirEnLake(
+        {
+          entidad,
+          tipoEntidad: TIPO_EXPEDIENTE,
+          tenantId: TENANT,
+          proyectoId,
+          fuente: SUBMOTOR,
+          linaje: linaje("observar_cuenta"),
+          datos: { ...snap, candidatoId }
+        },
+        {}
+      );
+
+      escritos.push({ entidad, escrito: r?.escrito === true, motivo: r?.motivo || null });
+    } catch (e) {
+      escritos.push({ entidad, escrito: false, motivo: e?.message || "fallo de escritura" });
+    }
+  }
+
+  return { total: snapshots.length, escritos };
+}
+
+
+/*
+  Historial de snapshots de un candidato, del mas reciente al mas
+  antiguo. Es la entrada de cualquier comparacion temporal futura.
+*/
+export async function snapshotsDe(proyectoId, candidatoId) {
+  const entidades = await entidadesDe(proyectoId);
+
+  const prefijo = `${PREFIJO_SNAPSHOT}${candidatoId}-`;
+
+  const suyas = (entidades || []).filter(
+    (e) => typeof e.entidad === "string" && e.entidad.startsWith(prefijo)
+  );
+
+  const snapshots = [];
+
+  for (const { claveEntidad } of suyas) {
+    try {
+      const v = await obtenerVersionEntidad(claveEntidad, {});
+
+      if (v?.registro?.datos) snapshots.push(v.registro.datos);
+    } catch {
+      /* Un snapshot ilegible no invalida la serie. */
+    }
+  }
+
+  return snapshots.sort((a, b) =>
+    String(b.capturedAt || "").localeCompare(String(a.capturedAt || ""))
+  );
+}
+
+
 export async function registrarInvestigacion(
   proyectoId,
   candidatoId,
@@ -3009,6 +3088,8 @@ export default {
   /* P-CAND-UX-01 */
   editarCandidato,
   fichaIdentidad,
+  guardarSnapshots,
+  snapshotsDe,
   inventarioConsolidado,
   expedienteDe,
   PLATAFORMAS_FICHA,

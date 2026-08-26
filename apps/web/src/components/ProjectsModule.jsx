@@ -20,6 +20,7 @@ import {
 
 import CandidateIdentityCard from "./CandidateIdentityCard";
 import CandidateIdentityForm from "./CandidateIdentityForm";
+import AccountIntelligencePanel from "./AccountIntelligencePanel";
 import { METRICA, fechaLocal } from "../services/identidadCandidato";
 
 /*
@@ -593,6 +594,11 @@ export default function ProjectsModule() {
 
   const [editando, setEditando] = useState(false);
 
+  /* Account Intelligence — fase 1. */
+  const [inteligencia, setInteligencia] = useState(null);
+
+  const [fotoIntentos, setFotoIntentos] = useState(null);
+
   /*
     CONFIRMACION EFIMERA. Un aviso que no se va obliga al analista
     a cerrarlo, y con muchos candidatos eso es fricción por cada
@@ -933,6 +939,86 @@ export default function ProjectsModule() {
     await investigar("candidato", candidatoId);
 
     if (fichaAbierta === candidatoId) await abrirFicha(candidatoId);
+  };
+
+  /*
+    -----------------------------------------------------------
+    FOTOGRAFIA DESDE FUENTES DECLARADAS
+    -----------------------------------------------------------
+
+    Solo cuando el analista lo pide. Nunca en cada render: una
+    fotografia que se recalcula al pintar seria una peticion por
+    pintado.
+  */
+  const obtenerFoto = async (candidatoId, forzar = false) => {
+    setOcupado(`foto:${candidatoId}`);
+
+    setFotoIntentos(null);
+
+    try {
+      const j = await pedir(`/${proyecto.id}/candidatos/${candidatoId}/foto`, {
+        forzar
+      });
+
+      setFicha(j.ficha);
+
+      setFotoIntentos(j.intentos || []);
+
+      confirmar(
+        j.resuelta
+          ? `Fotografia obtenida desde ${j.fotoActual?.plataformaId || "la fuente indicada"}.`
+          : "Ninguna fuente declaro una imagen utilizable. Se mantiene el avatar."
+      );
+    } catch (e) {
+      setAviso(e.message);
+    } finally {
+      setOcupado(null);
+    }
+  };
+
+  /*
+    -----------------------------------------------------------
+    ACCOUNT INTELLIGENCE
+    -----------------------------------------------------------
+
+    Abrir el panel NO sale a la red: describe el estado y los
+    limites. Observar si, y solo cuando el analista lo pide.
+  */
+  const abrirInteligencia = async (candidatoId) => {
+    setOcupado(`ai:${candidatoId}`);
+
+    try {
+      const j = await pedir(
+        `/${proyecto.id}/candidatos/${candidatoId}/inteligencia`
+      );
+
+      setInteligencia(j);
+    } catch (e) {
+      setAviso(e.message);
+    } finally {
+      setOcupado(null);
+    }
+  };
+
+  const observarCuentas = async (candidatoId) => {
+    setOcupado(`ai:${candidatoId}`);
+
+    try {
+      const j = await pedir(
+        `/${proyecto.id}/candidatos/${candidatoId}/inteligencia`,
+        {}
+      );
+
+      setInteligencia(j);
+
+      confirmar(
+        `Observacion registrada: ${j.traza?.snapshotsEscritos || 0} snapshot(s).`
+      );
+    } catch (e) {
+      setAviso(e.message);
+    } finally {
+      setOcupado(null);
+    }
   };
 
   const investigar = async (tipo, id) => {
@@ -1683,6 +1769,11 @@ export default function ProjectsModule() {
                     onEditar={() => setEditando(true)}
                     onComprobar={() => comprobarRedes(c.id)}
                     onExpediente={() => investigar("candidato", c.id)}
+                    onObtenerFoto={() => obtenerFoto(c.id)}
+                    onAnalizar={() => abrirInteligencia(c.id)}
+                    fotoIntentos={fotoIntentos}
+                    ocupadoFoto={ocupado === `foto:${c.id}`}
+                    ocupadoAnalisis={ocupado === `ai:${c.id}`}
                   />
                 </div>
               )}
@@ -2160,6 +2251,16 @@ export default function ProjectsModule() {
             {confirmacion}
           </span>
         </div>
+      )}
+
+      {inteligencia && (
+        <AccountIntelligencePanel
+          datos={inteligencia}
+          proyecto={proyecto}
+          ocupado={ocupado === `ai:${inteligencia.candidatoId}`}
+          onObservar={() => observarCuentas(inteligencia.candidatoId)}
+          onCerrar={() => setInteligencia(null)}
+        />
       )}
 
       {editando && ficha && (

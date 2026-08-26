@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "node server.js",
-    "test": "node tests/territorial.test.mjs && node tests/identidad.test.mjs && node tests/referencia.test.mjs && node tests/contexto.test.mjs && node tests/persistencia.test.mjs && node tests/alias.test.mjs && node tests/traza.test.mjs && node tests/ejecucion.test.mjs && node tests/cobertura.test.mjs && node tests/propagacion.test.mjs && node tests/identidadConsolidada.test.mjs && node tests/fichaIdentidad.test.mjs && node tests/edicionIdentidad.test.mjs && node tests/fotoIdentidad.test.mjs"
+    "test": "node tests/territorial.test.mjs && node tests/identidad.test.mjs && node tests/referencia.test.mjs && node tests/contexto.test.mjs && node tests/persistencia.test.mjs && node tests/alias.test.mjs && node tests/traza.test.mjs && node tests/ejecucion.test.mjs && node tests/cobertura.test.mjs && node tests/propagacion.test.mjs && node tests/identidadConsolidada.test.mjs && node tests/fichaIdentidad.test.mjs && node tests/edicionIdentidad.test.mjs && node tests/fotoIdentidad.test.mjs && node tests/fotoResolver.test.mjs && node tests/accountIntelligence.test.mjs"
   },
   "dependencies": {
     "axios": "^1.7.7",

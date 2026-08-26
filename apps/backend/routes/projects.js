@@ -5,6 +5,17 @@ import express from "express";
 import { investigarObjetivo } from "../services/osintEngine.js";
 import { absolutizarAvatares } from "../services/avatar/avatarIntelligenceEngine.js";
 
+/* P-CAND-UX-04 y P-CAND-AI-01 */
+import { resolverFotoDeCandidato } from "../services/intelligence/candidatePhotoResolver.js";
+
+import {
+  observarCuentasDelCandidato,
+  snapshotsDeObservaciones,
+  actividadDePublicaciones,
+  temasDeLasCuentas,
+  resumenDeCuentas
+} from "../services/intelligence/accountIntelligence.js";
+
 import {
   crearProyecto,
   obtenerProyecto,
@@ -15,6 +26,8 @@ import {
   inventarioConsolidado,
   editarCandidato,
   fichaIdentidad,
+  guardarSnapshots,
+  snapshotsDe,
   ESTADOS,
   agregarCandidato,
   obtenerCandidato,
@@ -257,6 +270,225 @@ router.patch("/:proyectoId/candidatos/:candidatoId", async (req, res) => {
     res.json(absolutizarAvatares({ ...r, ficha }, req));
   } catch (e) {
     res.status(500).json({ error: e?.message || "fallo al editar el candidato" });
+  }
+});
+
+
+/*
+-----------------------------------------------------------
+FOTOGRAFIA DESDE FUENTES DECLARADAS — P-CAND-UX-04
+-----------------------------------------------------------
+
+Se resuelve solo cuando el analista lo pide. Nunca en cada
+render: una fotografia que se recalcula al pintar seria una
+peticion por pintado.
+
+Lee metadata publica de la pagina de la cuenta. Sin login, sin
+cookies, sin bypass, con tope de fuentes. Y NO usa la URL de la
+cuenta como imagen: lee lo que la pagina declara.
+-----------------------------------------------------------
+*/
+router.post("/:proyectoId/candidatos/:candidatoId/foto", async (req, res) => {
+  const { proyectoId, candidatoId } = req.params;
+
+  try {
+    const ficha = await fichaIdentidad(proyectoId, candidatoId, "candidato");
+
+    if (!ficha) {
+      return res.status(404).json({ error: `no existe el candidato ${candidatoId}` });
+    }
+
+    const cuentas = ficha.plataformas.flatMap((p) => p.cuentas || []);
+
+    const r = await resolverFotoDeCandidato({
+      candidateId: candidatoId,
+
+      /*
+        Si el analista ya dio un enlace directo, manda el suyo y
+        no se sale a la red. `forzar` permite recalcular desde las
+        fuentes aunque haya una manual.
+      */
+      fotoManualUrl:
+        req.body?.forzar === true
+          ? null
+          : ficha.foto?.utilizable
+            ? ficha.foto.url
+            : null,
+
+      cuentas
+    });
+
+    /*
+      Solo se persiste si se resolvio algo desde una fuente. Los
+      intentos fallidos se devuelven para que la interfaz los
+      muestre, pero no se guarda una foto que no existe.
+    */
+    let guardado = null;
+
+    if (r.fotoActual?.imageUrl && r.fotoActual.sourceType === "cuenta") {
+      guardado = await editarCandidato(proyectoId, candidatoId, {
+        fotoUrl: r.fotoActual.imageUrl,
+        fotoSourceUrl: r.fotoActual.sourceUrl,
+        fotoOrigen: r.fotoActual.origen,
+        fotoProvider: r.fotoActual.provider,
+        fotoDerivadaDeCuenta: true,
+        fotoCuentaId: r.fotoActual.cuentaId,
+        fotoPlataformaId: r.fotoActual.plataformaId,
+        fotoHandle: r.fotoActual.handle
+      });
+    }
+
+    const actualizada = await fichaIdentidad(proyectoId, candidatoId, "candidato");
+
+    res.json(
+      absolutizarAvatares(
+        {
+          resuelta: !!r.fotoActual?.imageUrl,
+          fotoActual: r.fotoActual,
+          intentos: r.intentos,
+          limitaciones: r.limitaciones,
+          persistida: guardado?.editado === true,
+          ficha: actualizada
+        },
+        req
+      )
+    );
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo al resolver la fotografía" });
+  }
+});
+
+
+/*
+-----------------------------------------------------------
+ACCOUNT INTELLIGENCE — FASE 1
+-----------------------------------------------------------
+
+GET  describe el estado SIN salir a la red: capacidad por
+     plataforma, limitaciones y estados vacios honestos.
+
+POST ejecuta la observacion y escribe snapshots. Solo cuando el
+     analista lo pide.
+-----------------------------------------------------------
+*/
+async function componerInteligencia(proyectoId, candidatoId, ejecutar) {
+  const ficha = await fichaIdentidad(proyectoId, candidatoId, "candidato");
+
+  if (!ficha) return null;
+
+  const cuentas = ficha.plataformas.flatMap((p) => p.cuentas || []);
+
+  const r = await observarCuentasDelCandidato({
+    candidateId: candidatoId,
+    projectId: proyectoId,
+    cuentas,
+    ejecutar
+  });
+
+  const historico = await snapshotsDe(proyectoId, candidatoId);
+
+  let snapshots = [];
+
+  if (ejecutar) {
+    snapshots = snapshotsDeObservaciones(r.observaciones, {});
+
+    await guardarSnapshots(proyectoId, candidatoId, snapshots);
+  }
+
+  /*
+    Publicaciones: hoy no hay ninguna fuente que las entregue, asi
+    que la lista esta vacia y se dice por que. No se rellena con
+    evidencias web, que son menciones de terceros y no
+    publicaciones propias.
+  */
+  const publicaciones = [];
+
+  return {
+    candidatoId,
+    nombre: ficha.nombre,
+
+    resumen: resumenDeCuentas(cuentas, r.observaciones),
+
+    cuentas: cuentas.map((c) => ({
+      accountId: c.id,
+      candidateId: candidatoId,
+      projectId: proyectoId,
+      plataformaId: c.plataformaId,
+      url: c.url,
+      handle: c.handle,
+      estadoIdentidad: c.estado,
+      procedencia: {
+        declaradaPorAnalista: c.declaradaPorAnalista === true,
+        descubiertaPorSentinel: c.descubiertaPorSentinel === true,
+        corroboradaPorSentinel: c.corroboradaPorSentinel === true
+      },
+      corroboracion: c.corroboracion || null,
+      firstSeenAt: c.firstSeenAt || null,
+      lastSeenAt: c.lastSeenAt || null,
+      lastCheckedAt: c.lastCheckedAt || null
+    })),
+
+    observaciones: r.observaciones,
+
+    actividad: actividadDePublicaciones(publicaciones),
+
+    publicaciones,
+    notaPublicaciones:
+      "Ninguna fuente disponible entrega publicaciones de estas plataformas sin API. La lista vacia NO significa que el candidato no publique.",
+
+    temas: temasDeLasCuentas(publicaciones),
+
+    historico: {
+      snapshots: historico,
+      total: historico.length,
+      nota:
+        "Los snapshots se acumulan desde la primera ejecucion real. No se reconstruye historia anterior ni se inventan dias."
+    },
+
+    traza: {
+      ejecutado: r.ejecutado,
+      peticionesRealizadas: r.peticionesRealizadas,
+      topePeticiones: r.topePeticiones,
+      snapshotsEscritos: snapshots.length
+    }
+  };
+}
+
+
+router.get("/:proyectoId/candidatos/:candidatoId/inteligencia", async (req, res) => {
+  try {
+    const r = await componerInteligencia(
+      req.params.proyectoId,
+      req.params.candidatoId,
+      false
+    );
+
+    if (!r) {
+      return res.status(404).json({ error: `no existe el candidato ${req.params.candidatoId}` });
+    }
+
+    res.json(r);
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo al leer Account Intelligence" });
+  }
+});
+
+
+router.post("/:proyectoId/candidatos/:candidatoId/inteligencia", async (req, res) => {
+  try {
+    const r = await componerInteligencia(
+      req.params.proyectoId,
+      req.params.candidatoId,
+      true
+    );
+
+    if (!r) {
+      return res.status(404).json({ error: `no existe el candidato ${req.params.candidatoId}` });
+    }
+
+    res.json(r);
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo al observar las cuentas" });
   }
 });
 
