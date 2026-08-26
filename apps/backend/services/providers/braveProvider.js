@@ -200,9 +200,43 @@ export async function buscar(consulta, opciones = {}) {
   });
 
   /*
-    País e idioma: el mercado inicial declarado del proyecto.
+    -----------------------------------------------------------
+    PAÍS: BRAVE NO ADMITE ECUADOR
+    -----------------------------------------------------------
+
+    Medido en la primera consulta real con credencial. Enviar
+    `country=ec` devuelve HTTP 422 y CERO resultados:
+
+        "Input should be 'AR', 'AU', 'AT', 'BE', 'BR', 'CA',
+         'CL', 'DK', 'FI', 'FR', 'DE', 'GR', 'HK', ..."
+
+    EC no está en la lista. No es un problema de mayúsculas ni
+    de formato: Brave sencillamente no ofrece Ecuador como
+    mercado.
+
+    Por eso el parámetro se OMITE por defecto en lugar de
+    enviarse mal. Sin él la búsqueda funciona, pero deja de
+    estar acotada regionalmente, y esa pérdida NO se disimula:
+    viaja en la respuesta como `paisAplicado: null` y en el
+    diagnóstico.
+
+    CONSECUENCIA PARA EL TERRITORIO
+
+    Google News acepta `gl=EC`; Brave no. El ancla territorial
+    de la consulta —«Cuenca Azuay», nunca «Cuenca» a secas—
+    tiene que hacer TODO el trabajo de desambiguación aquí, y
+    el riesgo del homónimo español es mayor con Brave que con
+    Google News. El benchmark tiene que medirlo.
+
+    Un país explícito sí se envía, para mercados que Brave sí
+    cubra. En mayúscula, que es como los valida.
+    -----------------------------------------------------------
   */
-  if (opciones.pais !== null) parametros.set("country", opciones.pais || "ec");
+  const paisPedido = opciones.pais === undefined ? null : opciones.pais;
+
+  const paisAplicado = paisPedido ? String(paisPedido).toUpperCase() : null;
+
+  if (paisAplicado) parametros.set("country", paisAplicado);
 
   if (opciones.idioma !== null) {
     parametros.set("search_lang", opciones.idioma || "es");
@@ -251,10 +285,34 @@ export async function buscar(consulta, opciones = {}) {
     }
 
     if (!respuesta.ok) {
+      /*
+        SE LEE EL CUERPO DEL ERROR.
+
+        Brave devuelve en 4xx un JSON que dice QUÉ parámetro
+        rechazó. Descartarlo dejaba «HTTP 422» como único
+        diagnóstico, y averiguar la causa exigía otra llamada
+        —es decir, gastar cuota para saber por qué falló la
+        anterior—.
+
+        El cuerpo se acota: un mensaje de error no debería ser
+        largo, y si lo es, no conviene volcarlo entero al log.
+      */
+      let causa = null;
+
+      try {
+        const cuerpo = await respuesta.text();
+
+        causa = cuerpo ? cuerpo.slice(0, 300) : null;
+      } catch {
+        /* Sin cuerpo legible: el status sigue siendo la señal. */
+      }
+
       return {
         ...base,
         estado: ESTADOS.ERROR,
-        detalle: `Brave respondió HTTP ${respuesta.status}.`,
+        detalle: `Brave respondió HTTP ${respuesta.status}.${causa ? ` Detalle: ${causa}` : ""}`,
+        codigoHttp: respuesta.status,
+        causa,
         tiempo
       };
     }
@@ -269,6 +327,19 @@ export async function buscar(consulta, opciones = {}) {
       detalle: `${resultados.length} resultados.`,
       resultados,
       total: resultados.length,
+
+      /*
+        Se declara si la búsqueda quedó acotada por país o no.
+        Sin esto, un corpus de Brave y uno de Google News
+        parecerían comparables cuando el segundo sí está
+        acotado a Ecuador y el primero no.
+      */
+      paisAplicado,
+
+      avisoCobertura: paisAplicado
+        ? null
+        : "Búsqueda SIN acotar por país: Brave no ofrece Ecuador entre sus mercados. La desambiguación depende por completo del ancla territorial de la consulta.",
+
       tiempo
     };
   } catch (error) {
