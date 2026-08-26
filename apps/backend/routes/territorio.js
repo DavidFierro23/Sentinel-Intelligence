@@ -70,6 +70,18 @@ import { estadoBenchmark } from "../services/contracts/providerBenchmark.js";
 
 import { estadoAiRouter } from "../services/contracts/aiRouter.js";
 
+/* --- INGEST-REAL-01 --- */
+
+import { evaluarTodasLasVentanas } from "../services/territorial/temporalWindows.js";
+
+import { componerCobertura } from "../services/ingest/coverageObservability.js";
+
+import { estadoViabilidadSocial } from "../services/contracts/socialPlatformFeasibility.js";
+
+import { fichaComparacion } from "../services/contracts/ingestBenchmark.js";
+
+import { estadoScheduler } from "../services/ingest/collectorScheduler.js";
+
 import { listarUnidades } from "../services/geo/territoryRegistry.js";
 
 /*
@@ -618,6 +630,14 @@ router.post("/analisis", async (req, res) => {
 
     let ventanaComparable = compararConVentanaAnterior(snapshot, null);
 
+    /*
+      E1: el estado de las CINCO ventanas, no solo la pedida.
+      La interfaz necesita saber cuales existen para ofrecer
+      solo esas, en lugar de dejar al analista pedir una y
+      recibir «histórico insuficiente».
+    */
+    let ventanasTemporales = null;
+
     if (cuerpo.persistirSnapshot !== false) {
       try {
         const almacen = crearAlmacenFichero();
@@ -633,6 +653,13 @@ router.post("/analisis", async (req, res) => {
         ventanaComparable = compararConVentanaAnterior(snapshot, anterior);
 
         const r = await guardarSnapshot(almacen, snapshot);
+
+        ventanasTemporales = evaluarTodasLasVentanas({
+          snapshots: [...previos, snapshot],
+          territorioId: snapshot.territorio?.unidadId,
+          ahora: instante,
+          actual: snapshot
+        });
 
         persistencia = {
           guardado: true,
@@ -722,8 +749,44 @@ router.post("/analisis", async (req, res) => {
         huella: snapshot.huella,
         window: snapshot.window,
         persistencia,
-        ventanaComparable
+        ventanaComparable,
+        ventanasTemporales
       },
+
+      /*
+        INGEST-REAL-01: que se miro, que no, y que no se puede
+        afirmar por eso. Va con el resto de auditorias porque
+        condiciona como se leen TODAS las demas cifras.
+      */
+      cobertura: componerCobertura({
+        run: {
+          providers: (conversacion?.recoleccion?.trazaMotores || []).map((m) => ({
+            providerId: m.motorId || m.fuente || m.motor,
+            estado: m.estado,
+            rawResults: m.recibidas ?? 0,
+            error: m.detalle || m.error || null,
+            permiteAfirmarAusencia: m.estado === "OK"
+          }))
+        },
+        universo,
+        dedup: {
+          brutas: conversacion.evidencias.length,
+          unicas: conversacion.evidencias.length,
+          duplicadosAbsorbidos: 0
+        },
+        agendas: agendasPorFuente.metricas,
+        territorio: {
+          canton: territorio?.agregado?.metricas?.porResolucion?.canton ?? null,
+          parroquia: territorio?.agregado?.metricas?.porResolucion?.parroquia ?? null,
+          noLocalizado: territorio?.ubicacion?.metricas?.sinUbicar ?? null
+        }
+      }),
+
+      viabilidadSocial: estadoViabilidadSocial(),
+
+      benchmarkIngesta: fichaComparacion(),
+
+      scheduler: estadoScheduler([]),
 
       /* Auditorias declaradas, sin coste ni red. */
       proveedores: matrizProveedores({

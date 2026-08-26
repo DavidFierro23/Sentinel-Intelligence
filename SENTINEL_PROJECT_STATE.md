@@ -1088,7 +1088,192 @@ Todo lo que parece inteligencia —descubrimiento de temas, encuadre, separació
 
 ---
 
-## 13-octies. Roadmap territorial
+## 13-octies. INGEST-REAL-01 — adquisición multifuente (2026-08-25)
+
+✅ Sentinel deja de depender de una sola búsqueda.
+
+### El diagnóstico, medido antes de tocar nada
+
+> La arquitectura analítica estaba más avanzada que la capacidad de adquisición.
+
+| | |
+|---|---|
+| motores declarados | 6 |
+| **motores que aportaron algo** | **1** — Google News RSS |
+| techo bruto | 4 consultas × 8 resultados = **32** |
+| «fuentes» | 7 → **6 emisores + 1 plataforma** |
+| corpus sin emisor identificado | **12 de 30 (40 %)** |
+| agendas a cero | 3 de 5 |
+
+### Lo que ya existía y NO se duplicó
+
+**Brave estaba enteramente implementado** contra su API oficial; solo le faltaba credencial. `rss-parser` ya era dependencia. `nearDuplicate.js` y `normalizarUrl` —con limpieza de UTM— ya existían. Source Universe, snapshots y Knowledge Lake, también.
+
+`googleNewsService.js` lo comparte `osintEngine` (Línea A) y **no se tocó**: su tope de 8 resultados es el techo de 32, y el adapter RSS se construyó aparte en lugar de modificarlo.
+
+### Contrato común de evidencia
+
+Con un proveedor, el formato del proveedor *era* el de la evidencia. Con seis, cada uno trae su vocabulario:
+
+```
+Google News   title, link, contentSnippet, pubDate
+Brave         title, url, description, age
+YouTube       snippet.title, id.videoId, publishedAt
+GDELT         title, url, seendate, domain
+RSS directo   title, link, summary|content, published
+```
+
+Sin contrato común, la deduplicación entre proveedores es imposible: no hay campo sobre el que comparar. `rawMetadataReference` conserva de dónde salió cada campo — la normalización no puede ser un embudo que tira la procedencia.
+
+**Política de almacenamiento** por defecto: `SOLO_REFERENCIA`. Un titular y un enlace son cita; el artículo entero puede no serlo. Si nadie ha comprobado que se puede guardar el texto, no se guarda.
+
+### Deduplicación multifuente — la pieza que no puede fallar
+
+La misma nota puede llegar por cinco proveedores. **Eso no son cinco evidencias**, y no es un detalle de limpieza: sin dedup, cada proveedor añadido **infla** el corpus sin aportar nada y todas las métricas se mueven por razones ajenas al territorio. Peor: las fuentes independientes subirían, porque cinco proveedores parecerían cinco puntos de vista.
+
+| criterio | fuerza |
+|---|---|
+| URL canónica idéntica | certeza |
+| URL normalizada idéntica | certeza práctica |
+| mismo dominio + título ≥ 0.88 | muy probable |
+| **título ≥ 0.88 en dominios distintos** | **sindicación, NO duplicado** |
+
+El cuarto es el delicado. Que El Universo y Expreso publiquen la misma nota de agencia **no** las convierte en la misma evidencia: son dos medios que decidieron publicarla, y esa decisión es información. Se marcan `sindicadas` y se conservan las dos.
+
+> Un duplicado es la misma publicación vista dos veces. Dos medios publicando lo mismo son dos publicaciones.
+
+`providersSeenBy[]` y `sourceObservations[]` no se borran nunca: cinco proveedores trayendo la misma nota es **corroboración**, y es el dato que el benchmark necesita para saber qué aporta cada uno de nuevo.
+
+### Adapters
+
+| adapter | credencial | qué aporta |
+|---|---|---|
+| **RSS directo** | ninguna | el publicador **no se adivina: es el feed**. Resuelve el problema de Google News |
+| **YouTube Data** | `YOUTUBE_API_KEY` | convierte «vino de YouTube» en «lo publicó este canal» |
+| **GDELT DOC 2.0** | ninguna | el único con **archivo histórico** por rango cerrado |
+| **Brave** | `BRAVE_API_KEY` | ya estaba implementado; ahora declarado en la matriz |
+
+**RSS no adivina rutas.** Probar `/rss`, `/feed`, `/rss.xml` es el patrón de peticiones que un servidor lee como escaneo, y produce falsos positivos (muchos sitios devuelven 200 con una página de error). Un feed entra cuando el sitio lo **declara** en `<link rel="alternate">` o cuando lo aporta un analista. Si no hay, el medio queda `SIN_RSS` —que es un hecho, no un fallo— y **no se sustituye por raspado**.
+
+`SIN_RSS` ≠ `INACCESIBLE`: la primera es del medio, la segunda puede ser nuestra.
+
+**YouTube separa plataforma de emisor.** El `sourceId` de un vídeo es `youtube:UC_canal`, no `youtube.com`. Doce vídeos pasan de ser «una fuente» a doce emisores. El país del canal es una **declaración del canal**, no una localización: no autoriza a atribuir territorio. Los suscriptores se leen porque son públicos pero **no clasifican**: no hay umbral defendible de «influencer». No se leen comentarios.
+
+Coste de YouTube: **10.000 unidades/día, una búsqueda cuesta 100**. No es dinero, es presupuesto.
+
+**GDELT se implementó pese a la duda**, por tres razones: la API es pública y sin contrato (deuda baja), sin adapter no hay forma de medir la duda, y devuelve `domain` en cada resultado, así que **mide su propia cobertura local** sin trabajo extra. Si el benchmark demuestra que no cubre Azuay, se desactiva y la ficha queda como prueba de que se comprobó.
+
+> GDELT responde **200 con HTML** cuando la consulta está mal formada. Sin detectarlo, un error de sintaxis se leería como «cero resultados» — la misma confusión que el Search Provider Layer existe para evitar.
+
+### Media Source Registry
+
+`conversation/mediaRegistry.js` es un catálogo semilla y responde «¿qué es elmercurio.com.ec?». Lo que no puede hacer es **acumular**: no guarda qué feeds tiene un medio, ni cuándo se comprobó, ni si el intento falló. Sin eso, cada ejecución redescubre todo desde cero.
+
+**`lastCheckedAt` es la razón de ser del módulo**, y protege una distinción:
+
+```
+lastSeenAt     la última vez que el medio PUBLICÓ
+lastCheckedAt  la última vez que Sentinel MIRÓ
+```
+
+Confundirlas convierte «no hemos mirado» en «no ha publicado».
+
+### Scheduler — contrato, sin proceso continuo
+
+La ingesta continua tiene un modo de fallo caro y silencioso: un job mal configurado gasta cuota de madrugada y nadie se entera hasta que las investigaciones fallan por falta de saldo. Con SerpAPI eso es un **saldo mensual compartido con el Discovery Engine**.
+
+Frecuencia mínima por proveedor, y **se eleva** en lugar de rechazar el job:
+
+| proveedor | mínimo | por qué |
+|---|---|---|
+| RSS directo | 1 h | la prensa local no publica más a menudo |
+| Google News | 3 h | ventana móvil: cada hora devuelve casi lo mismo |
+| GDELT | 6 h | límite de tasa |
+| YouTube · Brave | 12 h | cuota / credencial de pago |
+| **SerpAPI** | **24 h** | saldo mensual compartido |
+
+Un **hueco de ingesta** no es un periodo sin actividad: es un periodo sin observación.
+
+### Coverage observability
+
+> **La ausencia de cobertura tiene que ser visible.**
+
+Tres estados que no son el mismo:
+
+```
+se preguntó y no había  →  ausencia observada     ← el único que autoriza «no hay»
+se preguntó y falló     →  ausencia de lectura
+no se preguntó          →  ausencia de pregunta
+```
+
+Verificado en ejecución real: **«6 de 6 proveedores no respondieron. NO se puede afirmar que algo no exista: solo que no llegó.»** — 7 huecos declarados.
+
+### E1 Temporal Foundation
+
+Dos formas de no poder comparar, y la segunda es la que se pasa por alto:
+
+- `SIN_VENTANA_COMPARABLE` — no existe la ventana anterior
+- **`HISTORICO_INSUFICIENTE`** — existe, pero cubre menos del 80 % del periodo
+
+Si el primer snapshot es de hace tres días y se pide una ventana de 30, hay ventana anterior *técnicamente*, pero cubre el 10 %. Tratarlo como comparación válida es **peor** que no comparar: da un número con aspecto de tendencia calculado sobre casi nada.
+
+Estado real hoy: **5 de 5 ventanas con histórico insuficiente**. El histórico empieza con el primer snapshot y no se reconstruye; un hueco no se interpola, porque interpolar produciría una serie creíble que nadie observó.
+
+**Recencia no es crecimiento.** Que algo se publique hoy no dice que esté creciendo.
+
+### Defecto encontrado en la propia auditoría
+
+La matriz de proveedores deducía la credencial del **estado del registro**. Los proveedores que no pasan por la Search Provider Layer —YouTube entre ellos— tienen `estado: null`, ninguna cadena decía «sin configurar», y la matriz los daba por **integrados sin tener clave**. Exactamente lo que ese módulo existe para impedir.
+
+Corregido: ahora se comprueba el entorno de verdad. Resultado honesto: **5 integrados, 3 bloqueados por credencial**.
+
+Y dos más, encontrados por T31:
+
+- `mediaRegistryCuenca.js` cableaba el territorio en el **nombre del fichero** sin tener una sola línea específica de Cuenca → `mediaSourceRegistry.js`
+- la ficha de GDELT lo cableaba en **nombres de campo** (`coberturaCuenca`, `relevanciaCuenca`) → `coberturaTerritorio`, `relevanciaTerritorial`
+
+### Benchmark antes / después
+
+La línea base **está medida, no estimada**: es el corpus real del 2026-08-25 guardado en `apps/web/tests/payload-real.json`. Un benchmark cuyo punto de partida se recuerda de memoria mide lo que uno quiere que haya mejorado.
+
+La comparación se hace sobre **evidencias únicas** y **emisores identificados**, no sobre volumen bruto: si las 30 nuevas son las mismas 30 vistas por otro proveedor, el corpus no ha crecido.
+
+`tasaDuplicado` va a **subir**, y está bien: significa corroboración.
+
+**Sin ejecutar** — faltan las dos credenciales.
+
+### Seguridad
+
+`.env.example` con **solo nombres**, nunca valores. `.gitignore` llevaba `.env.*`, que también ignoraba la plantilla: se añadió la excepción `!.env.example`.
+
+### Ficheros
+
+| Pieza | Fichero |
+|---|---|
+| Contrato de evidencia | `ingest/evidenceContract.js` |
+| Dedup multifuente | `ingest/crossProviderDedup.js` |
+| Orquestador | `ingest/ingestOrchestrator.js` |
+| Registro de medios | `ingest/mediaSourceRegistry.js` |
+| Scheduler | `ingest/collectorScheduler.js` |
+| Cobertura | `ingest/coverageObservability.js` |
+| Adapters | `ingest/adapters/{rss,youtube,gdelt}Adapter.js` |
+| Ventanas E1 | `territorial/temporalWindows.js` |
+| Benchmark ingesta | `contracts/ingestBenchmark.js` |
+| Viabilidad social | `contracts/socialPlatformFeasibility.js` |
+
+### Pruebas
+
+| Suite | |
+|---|---|
+| `territorial` · `-c2` · `-d` · `-d2` | 160 · 53 · 39 · 92 ✅ |
+| **`ingest-real.test.mjs`** | **93** ✅ |
+| `ssr-render.check.jsx` | 97 ✅ |
+
+**534 comprobaciones.** Ningún adapter toca su API real: los que necesitan respuesta usan `fetch` inyectado con fixture. Cero red, cero cuota.
+
+---
+
+## 13-nonies. Roadmap territorial
 
 Orden oficial:
 
@@ -1100,15 +1285,17 @@ Orden oficial:
 ✅ D    Agenda / Radar UI
 🟡 F1   Mapa verificado — sin zonas analíticas ni MapLibre
 ✅ D2   Open Listening Foundation
-→  E1   Ventanas comparables + Pulse          ← siguiente
-   —    DATA-PROVIDER-EVAL-01                 (en paralelo, exige autorización y presupuesto)
-   —    Topic × Territory
-   —    Origin / Amplification
-   —    Pulse
-   —    Media / Creator Intelligence
-   —    Candidate Overlay
-   —    Correlation
-   —    Sentinel Insight
+✅ INGEST-REAL-01  Adquisición multifuente
+→  1.  Primera prueba real multifuente        ← siguiente, EXIGE CREDENCIALES
+   2.  DATA-PROVIDER-EVAL real
+   3.  Ampliar providers donde el benchmark demuestre valor
+   4.  E1 / Pulse
+   5.  Topic × Territory avanzado
+   6.  Origin / Amplification
+   7.  Media / Creator Intelligence
+   8.  Candidate Overlay
+   9.  Correlation Engine
+  10.  Sentinel Insight
 ```
 
 Evaluaciones registradas: **`DATA-PROVIDER-EVAL-01`** (estructura definida, ninguna ficha ejecutada) · **`AI-ROUTER-EVAL`** (contrato definido, cero adaptadores) · **`AI-EVAL-01`** (pendiente, no iniciada).
@@ -1138,12 +1325,18 @@ Evaluaciones registradas: **`DATA-PROVIDER-EVAL-01`** (estructura definida, ning
 | 15 | **Polígono cantonal oficial de Cuenca** | dibujar el cantón sin derivar | 🟡 el mapa usa una **unión declarada** de las 22 parroquias, marcada como derivada |
 | 16 | **Zonas analíticas en la interfaz** | lectura por zonas | 🟡 motor listo (`analyticalZones.js`), registro **vacío**, sin interfaz — F2 |
 | 17 | **MapLibre, basemap y zoom** | War Room completo (UX-WR-001) | 🟡 F1 usa SVG; el agregado no cambia al migrar |
-| 18 | **`territorial-c2`, `-d` y `-d2` fuera de `npm test`** | ejecución automática de la suite territorial | 🟡 `apps/backend/package.json` lo mantiene **Línea A**; no se modifica desde esta línea |
+| 18 | **`territorial-c2`, `-d`, `-d2` e `ingest-real` fuera de `npm test`** | ejecución automática de la suite territorial | 🟡 `apps/backend/package.json` lo mantiene **Línea A** (modificado sin commitear otra vez en este gate); no se toca desde esta línea |
 | 19 | **Emisores dentro de plataformas sin identificar** | diversidad real, agenda de creadores | 🔴 40 % del corpus llega por YouTube sin saber quién publica — requiere YouTube Data API, en `DATA-PROVIDER-EVAL-01` |
 | 20 | **Agendas ciudadana, institucional y de creadores a cero** | lectura no exclusivamente mediática | 🔴 ninguna consulta trae fuentes comunitarias ni institucionales propias; es carencia de observación, ya declarada en la interfaz |
 | 21 | **RSS directos de medios locales** | diversidad y resolución del publicador | 🟡 la mejora más barata disponible: leer El Mercurio directamente evita rescatar el publicador del sufijo del titular |
 | 22 | **`AI-EVAL-01`** | integrar cualquier modelo de lenguaje | 🔴 no iniciada; hoy Sentinel funciona sin IA y esa es la línea base |
-| 23 | **Snapshots acumulándose desde 2026-08-25** | ventanas comparables (E1) | 🟡 el histórico empieza hoy; Google News no permite recuperar días anteriores |
+| 23 | **Snapshots acumulándose desde 2026-08-25** | ventanas comparables (E1) | 🟡 el histórico empieza hoy; **5 de 5 ventanas con histórico insuficiente** |
+| 24 | **`BRAVE_API_KEY`** | segundo buscador web y su benchmark | 🔴 adapter completo desde antes de D2; solo falta la clave |
+| 25 | **`YOUTUBE_API_KEY`** | identificar los emisores del 40 % del corpus | 🔴 adapter completo; es el hueco más grande que hay hoy |
+| 26 | **Cobertura de GDELT en Azuay** | decidir si el histórico real es viable | 🟡 adapter implementado, cobertura SIN MEDIR; se decide con `fuentesNuevas` |
+| 27 | **Feeds RSS de medios de Cuenca** | diversidad y publicador sin adivinar | 🟡 el adapter lee feeds DECLARADOS; falta recorrer los sitios y registrar cuáles publican |
+| 28 | **Benchmark antes/después sin ejecutar** | demostrar que el stack nuevo mejora | 🔴 bloqueado por las dos credenciales |
+| 29 | **Términos de servicio sin leer** | integrar cualquier plataforma social | 🔴 `legalTermsStatus: NO_LEIDO` en las 5 plataformas del registro |
 
 `POST /api/territorio/recargar` integra 1–4 **sin reiniciar el backend y sin
 cambiar arquitectura**.

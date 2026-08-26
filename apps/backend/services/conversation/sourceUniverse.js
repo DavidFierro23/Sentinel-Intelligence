@@ -62,8 +62,43 @@ export const TIPOS_SOURCE = Object.freeze({
   COMMUNITY: "COMMUNITY",
   ORGANIZATION: "ORGANIZATION",
   CANDIDATE: "CANDIDATE",
+
+  /*
+    PLATFORM es un tipo, no una propiedad, desde INGEST-REAL-01.
+
+    Antes bastaba `esPlataforma: true` sobre un tipo cualquiera.
+    Con seis proveedores hay que poder responder «¿esto es un
+    emisor o el sitio donde el emisor publica?» sin mirar una
+    bandera: youtube.com es una PLATAFORMA, y el canal que hay
+    dentro es un CREATOR o un MEDIA.
+
+    La bandera se conserva porque distingue a las plataformas de
+    todo lo demas en un solo test, pero el tipo es el que manda.
+  */
+  PLATFORM: "PLATFORM",
+
   PUBLIC_WEB: "PUBLIC_WEB",
   OTHER: "OTHER"
+});
+
+
+/*
+-----------------------------------------------------------
+SUBTIPOS DE MEDIA
+
+Un periodico y una radio no se leen igual ni publican igual.
+La distincion la usara Media Intelligence; aqui solo se
+conserva, y `null` es valido: no se adivina.
+-----------------------------------------------------------
+*/
+
+export const SUBTIPOS_MEDIA = Object.freeze({
+  PRENSA: "PRENSA",
+  RADIO: "RADIO",
+  TV: "TV",
+  DIGITAL: "DIGITAL",
+  PODCAST: "PODCAST",
+  OTRO: "OTRO"
 });
 
 
@@ -190,14 +225,30 @@ function tipoDesdeCatalogo(tipoCatalogo) {
 function fichaVacia(id) {
   return {
     id,
+
+    /*
+      `sourceId` estable. Para un dominio es el dominio; para un
+      canal de plataforma es `plataforma:id`. Nunca la URL de un
+      documento concreto: eso cambiaria en cada publicacion.
+    */
+    sourceId: id,
+
     nombre: null,
     tipo: TIPOS_SOURCE.OTHER,
+    subtipo: null,
+
     url: null,
+    website: null,
     dominio: null,
     plataforma: null,
 
+    /* Solo feeds DECLARADOS o aportados. Nunca adivinados. */
+    feedUrls: [],
+    socialUrls: [],
+
     /* Territorio: null mientras no haya razon para afirmarlo. */
     territorio: null,
+    territorioId: null,
     ciudad: null,
     provincia: null,
     pais: null,
@@ -206,16 +257,53 @@ function fichaVacia(id) {
     activa: true,
 
     origen: null,
+    origenDescubrimiento: null,
     descubiertaPor: null,
     verificada: false,
+    verificadaPor: null,
+    verificadaEn: null,
     estado: ESTADOS_SOURCE.DESCUBIERTA,
 
     primeraObservacion: null,
     ultimaObservacion: null,
+
+    /*
+      Distinto de `ultimaObservacion`. Aquella es cuando la
+      fuente publico; esta es cuando Sentinel miro. Sin la
+      segunda, «no hemos mirado» se lee como «no ha publicado».
+    */
+    ultimaComprobacion: null,
+
     frecuenciaObservada: 0,
 
     providers: [],
+
+    /*
+      TODOS los proveedores que la han traido alguna vez, no
+      solo los de esta ejecucion. Es lo que permite decir «esta
+      fuente solo la trae GDELT» sin volver a ejecutarlo todo.
+    */
+    proveedoresHistoricos: [],
+
     esPlataforma: false,
+
+    /*
+      Campos de CREADOR / COMUNIDAD. Opcionales y vacios salvo
+      que la fuente sea una cuenta de plataforma.
+
+      `territoryClaim` es una DECLARACION del propio canal, no
+      una localizacion: nunca autoriza a atribuir territorio ni
+      a inferir residencia de nadie.
+    */
+    handle: null,
+    displayName: null,
+    descripcion: null,
+    territoryClaim: null,
+    verificationStatus: "NO_VERIFICADO",
+
+    robotsMetadata: null,
+    errores: [],
+    metadata: {},
 
     /*
       Licencia y condiciones de uso: `null` mientras no se hayan
@@ -287,6 +375,19 @@ export function registrarFuente(universo, entrada = {}) {
 
   f.plataforma = f.plataforma || nombrePlataforma(f.dominio);
 
+  /*
+    Una plataforma se tipa como PLATFORM salvo que ya se le
+    haya dado otro tipo explicito. Es la correccion del error
+    medido: youtube.com contaba como fuente editorial.
+
+    Ojo: un CANAL de YouTube tiene id `youtube:UCxxxx`, no
+    `youtube.com`, asi que NO cae aqui. El canal es un emisor;
+    la plataforma no.
+  */
+  if (f.esPlataforma && f.tipo === TIPOS_SOURCE.OTHER) {
+    f.tipo = TIPOS_SOURCE.PLATFORM;
+  }
+
   if (entrada.idioma && !f.idioma) f.idioma = entrada.idioma;
 
   if (entrada.territorio && !f.territorio) f.territorio = entrada.territorio;
@@ -331,6 +432,82 @@ export function registrarFuente(universo, entrada = {}) {
     f.providers.push(entrada.provider);
   }
 
+  if (entrada.provider && !f.proveedoresHistoricos.includes(entrada.provider)) {
+    f.proveedoresHistoricos.push(entrada.provider);
+  }
+
+  /* --- campos añadidos en INGEST-REAL-01 --- */
+
+  if (entrada.subtipo && !f.subtipo) f.subtipo = entrada.subtipo;
+
+  if (entrada.website && !f.website) f.website = entrada.website;
+
+  if (entrada.territorioId && !f.territorioId) f.territorioId = entrada.territorioId;
+
+  if (entrada.origenDescubrimiento && !f.origenDescubrimiento) {
+    f.origenDescubrimiento = entrada.origenDescubrimiento;
+  }
+
+  if (entrada.checkedAt) f.ultimaComprobacion = entrada.checkedAt;
+
+  if (entrada.robotsMetadata && !f.robotsMetadata) {
+    f.robotsMetadata = entrada.robotsMetadata;
+  }
+
+  if (entrada.error) {
+    f.errores.push({
+      mensaje: entrada.error,
+      instante: entrada.checkedAt || entrada.instante || null
+    });
+  }
+
+  /* Feeds y cuentas: se acumulan sin duplicar. */
+  (entrada.feedUrls || []).forEach((u) => {
+    const url = typeof u === "string" ? u : u?.url;
+
+    if (url && !f.feedUrls.some((x) => x.url === url)) {
+      f.feedUrls.push({
+        url,
+        origen: typeof u === "string" ? "aportado" : u?.origen || "aportado"
+      });
+    }
+  });
+
+  (entrada.socialUrls || []).forEach((u) => {
+    const url = typeof u === "string" ? u : u?.url;
+
+    if (url && !f.socialUrls.some((x) => x.url === url)) {
+      f.socialUrls.push({
+        url,
+        platform: typeof u === "string" ? null : u?.platform || null,
+
+        /* Aparecer en una búsqueda no verifica una cuenta. */
+        verificada: false
+      });
+    }
+  });
+
+  /* --- creador / comunidad --- */
+
+  if (entrada.handle && !f.handle) f.handle = entrada.handle;
+
+  if (entrada.displayName && !f.displayName) f.displayName = entrada.displayName;
+
+  if (entrada.descripcion && !f.descripcion) f.descripcion = entrada.descripcion;
+
+  /*
+    Declaracion del propio canal. Se guarda con su marca y NO
+    se copia a `territorio`: eso lo convertiria en una
+    ubicacion afirmada, que es justo lo que no es.
+  */
+  if (entrada.territoryClaim && !f.territoryClaim) {
+    f.territoryClaim = {
+      ...entrada.territoryClaim,
+      declarado: true,
+      verificado: false
+    };
+  }
+
   if (entrada.nota && !f.notas.includes(entrada.nota)) f.notas.push(entrada.nota);
 
   /* --- frecuencia y fechas --- */
@@ -360,6 +537,10 @@ export function registrarFuente(universo, entrada = {}) {
     f.verificada = true;
 
     f.estado = ESTADOS_SOURCE.VERIFICADA;
+
+    f.verificadaPor = entrada.verificadaPor || f.verificadaPor;
+
+    f.verificadaEn = entrada.checkedAt || entrada.instante || f.verificadaEn;
   } else if (entrada.estado && entrada.estado !== ESTADOS_SOURCE.VERIFICADA) {
     f.estado = entrada.estado;
   } else if (

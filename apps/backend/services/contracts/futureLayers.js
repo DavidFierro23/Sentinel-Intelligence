@@ -135,6 +135,82 @@ export const DIGITAL_BEHAVIOR = Object.freeze({
 
 
 /*
+-----------------------------------------------------------
+FORMA DE UN REGISTRO DE CONDUCTA DIGITAL — INGEST-REAL-01
+
+El contrato de arriba dice QUE se permite. Esto dice COMO
+tendria que venir cada cifra el dia que exista una fuente.
+
+Se define ahora, sin ninguna fuente conectada, por un motivo
+concreto: cuando llegue el primer proveedor traera SU formato,
+y adaptarlo a un contrato que ya existe es distinto de
+inventarse el contrato para que encaje con lo que ese
+proveedor da. Lo segundo es como se cuela una metrica que no
+se puede defender.
+
+`aggregationLevel` es el campo que decide si el registro entra.
+Sin el, una cifra agregada y una individual son
+indistinguibles, y esta capa se define entera por esa
+diferencia.
+-----------------------------------------------------------
+*/
+
+export function registroConductaDigital(datos = {}) {
+  const faltan = [];
+
+  ["provider", "metric", "value", "aggregationLevel", "timeWindow"].forEach((c) => {
+    if (datos[c] === undefined || datos[c] === null) faltan.push(c);
+  });
+
+  return {
+    /* --- que se mide --- */
+    deviceCategory: datos.deviceCategory ?? null,
+    operatingSystem: datos.operatingSystem ?? null,
+    platform: datos.platform ?? null,
+
+    metric: datos.metric ?? null,
+    value: datos.value ?? null,
+
+    /* --- cuando y donde --- */
+    timeWindow: datos.timeWindow ?? null,
+
+    /*
+      Hereda GEO-1: una metrica de provincia NO baja a canton.
+      El precedente esta medido —134 % y 238 % de penetracion—
+      y la regla no admite excepcion por comodidad.
+    */
+    territoryResolution: datos.territoryResolution ?? null,
+
+    /* --- de donde sale --- */
+    provider: datos.provider ?? null,
+    aggregationLevel: datos.aggregationLevel ?? null,
+
+    privacyStatus:
+      datos.privacyStatus ??
+      "AGREGADO — sin identificadores individuales ni posibilidad de aislar a una persona",
+
+    provenance: datos.provenance ?? null,
+
+    verified: false,
+
+    /* --- admision --- */
+    admisible: faltan.length === 0,
+
+    motivoNoAdmisible: faltan.length
+      ? `Faltan campos obligatorios: ${faltan.join(", ")}. Una cifra sin nivel de agregación declarado no se distingue de un dato individual, y esta capa se define por esa diferencia.`
+      : null,
+
+    prohibicionesVigentes: [
+      "No se recoge IP individual.",
+      "No se infiere domicilio.",
+      "No hay seguimiento individual.",
+      "No se infiere Android/iOS desde publicaciones: que una nota salga en una app no dice desde qué teléfono la leyó nadie."
+    ]
+  };
+}
+
+
+/*
 ===========================================================
 2. DATA-PROVIDER-EVAL-01 — evaluacion de proveedores
 ===========================================================

@@ -1,6 +1,13 @@
 node_modules/
 .env
 .env.*
+
+# La PLANTILLA sí se versiona: solo contiene nombres de
+# variable, nunca valores. Es lo que permite que alguien
+# levante el proyecto sabiendo qué claves hacen falta.
+!.env.example
+!**/.env.example
+
 dist/
 dist-ssr/
 build/

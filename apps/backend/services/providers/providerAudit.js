@@ -55,6 +55,8 @@ contratado. Nada de estimaciones.
 const CONOCIMIENTO = Object.freeze({
   serpapi_google: {
     tipo: "API oficial de terceros sobre resultados de Google",
+    requiereCredencial: true,
+    variablesEntorno: ["SERPAPI_KEY", "SERPAPI_API_KEY"],
     cuotaDeclarada: "Plan Starter: 1.000 búsquedas/mes, saldo compartido con Discovery Engine",
     costoPorConsulta: null,
     motivoCosto:
@@ -69,6 +71,8 @@ const CONOCIMIENTO = Object.freeze({
 
   brave_web: {
     tipo: "API oficial",
+    requiereCredencial: true,
+    variablesEntorno: ["BRAVE_API_KEY"],
     cuotaDeclarada: null,
     costoPorConsulta: null,
     motivoCosto: "Sin credencial contratada. No hay plan del que leer coste.",
@@ -117,6 +121,56 @@ const CONOCIMIENTO = Object.freeze({
     trazabilidad: "El publicador rescatado por nombre se marca como tal."
   },
 
+  youtube_data: {
+    tipo: "API oficial de plataforma",
+    requiereCredencial: true,
+    variablesEntorno: ["YOUTUBE_API_KEY", "YOUTUBE_DATA_API_KEY"],
+    cuotaDeclarada:
+      "10.000 unidades/día en el nivel gratuito. Una búsqueda cuesta 100: son 100 búsquedas diarias.",
+    costoPorConsulta: 0,
+    motivoCosto:
+      "El nivel gratuito no se factura. El límite es de cuota, no de dinero. Superarlo exige solicitar aumento y ahí sí puede haber coste: no consta y no se estima.",
+    coberturaDeclarada: ["video"],
+    limitaciones: [
+      "Sin YOUTUBE_API_KEY no se invoca.",
+      "El país del canal es DECLARADO por el canal, no comprobado.",
+      "No se leen comentarios: son datos de personas individuales.",
+      "Los suscriptores se leen porque son públicos, pero NO clasifican a nadie."
+    ],
+    trazabilidad:
+      "Cada vídeo conserva channelId y channelTitle: el emisor deja de ser «YouTube» y pasa a ser el canal."
+  },
+
+  gdelt_doc: {
+    tipo: "API pública de índice de noticias",
+    cuotaDeclarada: "Sin cuota contractual. Límite de tasa no documentado públicamente.",
+    costoPorConsulta: 0,
+    motivoCosto: "API pública sin contrato.",
+    coberturaDeclarada: ["noticias", "histórico"],
+    limitaciones: [
+      "NO devuelve extracto: solo titular, dominio, idioma y fecha.",
+      "`sourcecountry` es el país del MEDIO, no del hecho.",
+      "Responde 200 con HTML cuando la consulta está mal formada.",
+      "Cobertura de prensa local de Azuay SIN MEDIR. Es la incógnita que decide si sirve."
+    ],
+    trazabilidad: "Devuelve el dominio del medio directamente, sin rescatarlo del titular."
+  },
+
+  rss_directo: {
+    tipo: "Feeds públicos del propio medio",
+    cuotaDeclarada: "Sin cuota. Feeds públicos.",
+    costoPorConsulta: 0,
+    motivoCosto: "Sin contrato ni credencial.",
+    coberturaDeclarada: ["noticias"],
+    limitaciones: [
+      "Solo lee feeds DECLARADOS por el sitio. No adivina rutas: probar /rss o /feed es un patrón de escaneo con falsos positivos.",
+      "Un medio sin feed queda SIN_RSS y no se sustituye por raspado.",
+      "La ventana la decide el medio: entre 10 y 40 entradas recientes, no un archivo."
+    ],
+    trazabilidad:
+      "El publicador no se adivina: es el feed. Resuelve el problema de Google News, que oculta al medio tras news.google.com."
+  },
+
   knowledge_lake: {
     tipo: "Almacén propio append-only",
     cuotaDeclarada: "Sin cuota. Datos propios.",
@@ -144,6 +198,30 @@ ejecutaron nada — que es justo lo contrario de lo que paso.
 */
 
 const FUERA_DEL_REGISTRO = Object.freeze([
+  {
+    id: "rss_directo",
+    nombre: "RSS directo del medio",
+    tipo: "noticias",
+    implementado: true,
+    enUso: false,
+    prioridad: 0
+  },
+  {
+    id: "youtube_data",
+    nombre: "YouTube Data API v3",
+    tipo: "video",
+    implementado: true,
+    enUso: false,
+    prioridad: 4
+  },
+  {
+    id: "gdelt_doc",
+    nombre: "GDELT DOC 2.0",
+    tipo: "noticias",
+    implementado: true,
+    enUso: false,
+    prioridad: 5
+  },
   {
     id: "google_news_rss",
     nombre: "Google News (RSS)",
@@ -213,10 +291,30 @@ export function matrizProveedores({ trazaEjecucion = null } = {}) {
     const observado = porMotor.get(p.id) || null;
 
     /*
-      `credencial` se deriva del estado, que es lo unico
-      comprobable sin leer el entorno desde aqui.
+      CREDENCIAL: se comprueba de verdad, no se deduce del
+      estado del registro.
+
+      Deducirla del estado fallaba en silencio para los
+      proveedores que no pasan por la Search Provider Layer
+      —YouTube entre ellos—: su `estado` es null, ninguna
+      cadena decia «sin configurar» y la matriz los daba por
+      integrados. Un proveedor sin clave presentado como
+      integrado es exactamente lo que este modulo existe para
+      impedir.
     */
-    const sinCredencial = /sin configurar/i.test(String(p.estado || ""));
+    const requiere = c.requiereCredencial === true;
+
+    const tieneClave = requiere
+      ? (c.variablesEntorno || []).some((v) => {
+          const valor = process.env[v];
+
+          return Boolean(valor && String(valor).trim());
+        })
+      : false;
+
+    const sinCredencial = requiere
+      ? !tieneClave
+      : /sin configurar/i.test(String(p.estado || ""));
 
     return {
       provider: p.id,
@@ -231,7 +329,15 @@ export function matrizProveedores({ trazaEjecucion = null } = {}) {
       */
       enUso: trazaEjecucion ? Boolean(observado && observado.nuevas > 0) : null,
 
-      credencial: p.implementado ? (sinCredencial ? "ausente" : "presente") : "no aplica",
+      requiereCredencial: requiere,
+
+      credencial: !p.implementado
+        ? "no aplica"
+        : requiere
+          ? tieneClave
+            ? "presente"
+            : "ausente"
+          : "no requiere",
 
       cuota: c.cuotaDeclarada ?? null,
 
@@ -265,7 +371,16 @@ export function matrizProveedores({ trazaEjecucion = null } = {}) {
     };
   });
 
-  const integrados = filas.filter((f) => f.implementado && f.credencial !== "ausente");
+  /*
+    INTEGRADO = implementado Y con lo que necesita para
+    ejecutarse. Un proveedor que no requiere credencial esta
+    integrado; uno que la requiere y no la tiene, no.
+  */
+  const integrados = filas.filter(
+    (f) => f.implementado && f.credencial !== "ausente"
+  );
+
+  const bloqueadosPorCredencial = filas.filter((f) => f.credencial === "ausente");
 
   const aportaron = filas.filter((f) => f.enUso === true);
 
@@ -276,6 +391,11 @@ export function matrizProveedores({ trazaEjecucion = null } = {}) {
       declarados: filas.length,
       implementados: filas.filter((f) => f.implementado).length,
       integrados: integrados.length,
+
+      bloqueadosPorCredencial: bloqueadosPorCredencial.map((f) => ({
+        provider: f.provider,
+        variable: (CONOCIMIENTO[f.provider]?.variablesEntorno || [])[0] || null
+      })),
       aportaronEvidencia: trazaEjecucion ? aportaron.length : null,
       sinCostoConocido: filas.filter((f) => !f.costoConocido).length
     },

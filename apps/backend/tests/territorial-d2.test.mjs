@@ -1241,8 +1241,14 @@ t("el universo distingue emisores de plataformas", () => {
 });
 
 t("los tipos declarados existen y se usan", () => {
+  /*
+    Nueve desde INGEST-REAL-01: PLATFORM dejó de ser una
+    bandera y pasó a ser un tipo. La bandera se conserva, pero
+    lo que decide si algo es un emisor es el tipo.
+  */
   return (
-    Object.keys(TIPOS_SOURCE).length === 8 &&
+    Object.keys(TIPOS_SOURCE).length === 9 &&
+    TIPOS_SOURCE.PLATFORM === "PLATFORM" &&
     listarFuentes(UNIVERSO).some((f) => f.tipo === TIPOS_SOURCE.MEDIA)
   );
 });
