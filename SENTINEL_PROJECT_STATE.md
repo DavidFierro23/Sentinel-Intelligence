@@ -4162,6 +4162,268 @@ que ningun modulo del gate menciona a un candidato concreto.
 
 ---
 
+## 18-unvicies. P-CAND-02 Cross-Link Evidence (2026-08-26)
+
+Commit `feat(intelligence): cross-link evidence and real observation readiness`.
+
+**766 comprobaciones, 18 suites, 0 fallos.** Sin red y sin cuota.
+
+Candidate Intelligence V1 dejo un hueco declarado: `enlacesCruzados` llegaba
+vacio, asi que una cuenta declarada por el analista se quedaba en `DECLARADA`
+para siempre. Este gate lo cierra.
+
+---
+
+### CONFLICTO DE ARQUITECTURA RESUELTO
+
+La auditoria previa encontro trabajo ajeno —entonces sin commitear, integrado
+despues en `86a2c3d`— que se solapaba con tres puntos de este gate:
+
+| Fichero ajeno | Solapamiento | Decision |
+|---|---|---|
+| `ingest/adapters/youtubeAdapter.js` | adaptador de YouTube Data API v3 **completo** | NO se escribe otro |
+| `ingest/evidenceContract.js` | `evidenceId`, `canonicalUrl`, `provenance` | NO se duplica; se referencia |
+| `ingest/crossProviderDedup.js` | deduplicacion multifuente | NO se duplica |
+| `.env.example` | `YOUTUBE_API_KEY` ya documentada | NO se toca |
+
+Escribir un segundo adaptador de YouTube habria sido exactamente lo que el gate
+prohibe. Pero cuando se decidio la arquitectura ese fichero **no estaba en
+git**: importarlo de forma rigida habria dejado Candidate Intelligence
+dependiendo de algo que funcionaba en esta maquina y se romperia en cualquier
+otra. Al cerrar el gate ya esta integrado, pero la decision se mantiene: un
+puerto no cuesta nada y sobrevive a que esa rama cambie de forma.
+
+La solucion es un **puerto**, no un adaptador: `platformAdapterPort.js` declara
+lo que se NECESITA, resuelve en caliente lo que HAY y declara la ausencia en
+lugar de romper. Es la misma disciplina que ya gobierna las credenciales.
+
+---
+
+### 1 · Cross-Link Evidence
+
+`services/intelligence/crossLinkEvidence.js`.
+
+    pagina que Sentinel YA puede leer
+      → enlace publico saliente
+        → cuenta social identificada por SD-1A
+          → evidencia independiente del nombre
+            → Account Resolution
+
+El valor de un enlace cruzado no esta en el parecido: esta en que **alguien
+distinto de nosotros publico la asociacion**.
+
+#### La cadena de confianza, dicha en voz alta
+
+Cuando la pagina de origen es la web que el analista declaro:
+
+    analista → web → cuenta
+
+El analista aporta la **semilla**; la web aporta la **evidencia**. El enlace no
+lo escribio el analista, y por eso cuenta. Pero si la web declarada fuera la
+equivocada, todo lo que cuelgue de ella hereda el error — asi que la cadena
+entera se guarda en `cadenaDeConfianza` y se puede inspeccionar.
+
+Eso es **distinto** de que el analista declare la cuenta directamente: eso no
+es evidencia de nada y sigue sin corroborar.
+
+#### Contra la circularidad
+
+`ACCOUNT_TO_ACCOUNT` exige `origenCorroborado: true`. Si no, dos cuentas que se
+enlazan entre si se ascenderian mutuamente sin que nadie externo hubiera dicho
+nada.
+
+#### Hallazgo: los enlaces del mismo dominio son navegacion
+
+Medido al escribir las pruebas. Leyendo una pagina de Facebook, el enlace
+relativo `/contacto` se resuelve a `facebook.com/contacto` y SD-1A lo reconoce
+—con razon— como una cuenta con handle «contacto».
+
+Aceptarlo habria fabricado **una cuenta corroborada por cada elemento del
+menu**: `/contacto`, `/privacy`, `/help`. Y como llegarian con senal
+independiente, habrian ascendido solas.
+
+Un enlace del mismo dominio que la pagina de origen no se distingue de la
+navegacion del sitio, asi que no cuenta. Se descarta y **se declara** en
+`descartadosPorMismoDominio`: un recorte silencioso aqui se leeria como «la
+pagina no enlazaba nada».
+
+---
+
+### 2 · Direccionalidad
+
+    WEB_TO_ACCOUNT                  → senal `web_declarada`
+    ACCOUNT_TO_ACCOUNT              → senal `enlace_cruzado`
+    EXTERNAL_REFERENCE_TO_ACCOUNT   → senal `referencia_independiente`
+
+Tres direcciones que no valen lo mismo. La direccion viaja en la senal y en su
+`relationId`, y solo la segunda exige origen corroborado.
+
+---
+
+### 3 · Deduplicacion e historico
+
+`relationId` es la identidad **estable** de la relacion: la misma pagina
+enlazando la misma cuenta es la misma relacion, la vuelvas a observar cien
+veces.
+
+| Campo | Comportamiento |
+|---|---|
+| `firstObservedAt` | **inmutable** |
+| `lastObservedAt` | avanza |
+| `observationCount` | se incrementa |
+| `evidenceIds` | se acumulan |
+
+Probado: cien observaciones del mismo enlace producen **25 puntos de solidez, no
+100**. Si cada observacion contara, la corroboracion se inflaria sola volviendo
+a mirar la misma pagina.
+
+Una relacion que esta vez no se vio **no se borra**: entra en `noReobservadas`,
+igual que las cuentas no reencontradas.
+
+---
+
+### 4 · Evidence-first
+
+`services/intelligence/evidenceFirst.js`.
+
+    insight → metric → evidenceId → source → observedAt → canonicalUrl
+
+`crearAfirmacion` **rechaza** lo que no cumpla la cadena y enumera lo que falta,
+en lugar de publicar la afirmacion con un hueco. Sin `canonicalUrl` no hay boton
+«Ver evidencia», y eso es correcto: un boton que no lleva a ninguna parte es
+peor que no ofrecerlo.
+
+Los cuatro tipos de metrica —`absolutePerformance`, `relativePerformance`,
+`velocity`, `amplification`— estan **declarados con su metodologia y sus
+requisitos**, y los cuatro en `disponible: false`.
+
+**No existe etiqueta «viral».** No hay umbral defendible: la misma cifra es
+enorme para un candidato local y ordinaria para una cuenta nacional, y el numero
+por si solo no distingue una publicacion que funciono de una que se promociono
+con dinero. La palabra en un `insight` **invalida la afirmacion**, no se limpia.
+
+---
+
+### 5 · Publicaciones y metricas como snapshots
+
+`services/intelligence/publicationObservation.js`.
+
+    100k visualizaciones ayer
+    150k visualizaciones hoy
+
+no es un campo que paso de 100k a 150k. Son **dos observaciones**, y las dos se
+guardan. Sustituir la primera destruye lo unico que hacia falta para saber que
+crecio: el punto anterior.
+
+Cada metrica declara `value`, `observedAt`, `provider`, `source` y
+`availability`. Cinco estados de disponibilidad, y uno importa especialmente:
+`OCULTO_POR_LA_CUENTA` **no es** lo mismo que no tener el dato — existe y esta
+deliberadamente cerrado.
+
+`null` no es cero, y **cero si es un dato**: se marca `DISPONIBLE`.
+
+`firstObservedAt` de la publicacion es inmutable; `publishedAt` es otra cosa y
+se guarda aparte. `serieDeMetrica` no calcula velocidad con un solo punto.
+
+---
+
+### 6 · Preparacion para observacion real — YouTube
+
+`platformAdapterPort.js` declara las cuatro capacidades que Candidate
+Intelligence necesita y comprueba cuales cumple realmente el adaptador
+disponible, mirando si la funcion existe.
+
+Estado medido hoy:
+
+| Capacidad | Cumple |
+|---|---|
+| metadatos de cuenta | si (`resolverCanales`) |
+| estadisticas de cuenta | si (`part=snippet,statistics`) |
+| listado de publicaciones | si (`buscar`) |
+| **estadisticas por publicacion** | **NO** |
+
+El adaptador declara `ENDPOINT_VIDEOS` pero **no expone ninguna funcion que lo
+use**. En la API de YouTube las cifras por video salen de
+`videos.list?part=statistics`, que es una llamada distinta de la busqueda:
+`search` no devuelve estadisticas.
+
+Consecuencia: **incluso con la credencial puesta**, el rendimiento por
+publicacion no es obtenible hasta que ese adaptador exponga esa funcion. Se
+declara `CAPACIDAD_INCOMPLETA` en lugar de fallar en silencio.
+
+Cuota y coste se leen del propio adaptador (`CUOTA_DIARIA_GRATUITA`,
+`COSTE_UNIDADES`) y **no se copian a mano ni se estiman**: si no los declarara,
+quedarian en `null`.
+
+Comprobar la preparacion **no consume cuota**: solo mira si el adaptador existe
+y si la variable de entorno esta definida.
+
+---
+
+### 7 · Integracion y verificacion end-to-end
+
+Medido con el compositor real, sin red:
+
+| | antes | despues de UNA senal |
+|---|---|---|
+| estado de la cuenta | `DECLARADA` | **`CORROBORADA`** |
+| solidez de atribucion | 0 | **25** |
+| solidez de identidad | 25 | **43** |
+
+Y la declaracion del analista sigue registrada como `declaracion_del_analista
+(no corrobora)` al lado de `web_declarada (independiente)`. Las dos cosas son
+verdad y se ven las dos.
+
+---
+
+### 8 · Interfaz
+
+Sin rediseno. Se anade solo lo necesario:
+
+- las senales de cross-link de cada cuenta, con direccion, origen,
+  `firstObservedAt`, `lastObservedAt` y numero de observaciones;
+- boton **«Ver evidencia»** que solo se dibuja si hay URL canonica;
+- estado de las cuatro metricas de rendimiento con lo que le falta a cada una;
+- preparacion por plataforma, con la variable de entorno que hace falta;
+- snapshots de metricas por publicacion, cada observacion con su instante.
+
+---
+
+### Pruebas
+
+| Suite | Comprobaciones |
+|---|---|
+| **crossLinkEvidence** | **77** |
+| las diecisiete anteriores | 689 |
+| **Total** | **766, 0 fallos** |
+
+Sin red: el `fetchImpl` se inyecta. Cubre los quince casos exigidos, mas
+anticircularidad, enlaces del mismo dominio, aislamiento entre **dos proyectos
+con un candidato del mismo nombre** y ausencia de credenciales en el codigo
+—buscando la FORMA de una clave, no una clave concreta—.
+
+### Riesgos y limitaciones
+
+- **La semilla sigue siendo del analista.** Si la web declarada es la
+  equivocada, las cuentas que enlace heredan el error. La cadena se guarda
+  entera para poder auditarlo, pero el riesgo no desaparece.
+- **Los enlaces del mismo dominio se descartan en bloque.** Un candidato con
+  dos cuentas legitimas en la misma plataforma enlazadas entre si no obtendra
+  corroboracion por esa via. Es el lado conservador a proposito: no se puede
+  distinguir de la navegacion.
+- **`EXTERNAL_REFERENCE_TO_ACCOUNT` no tiene todavia quien lo alimente.** La
+  direccion existe y esta probada, pero ninguna ruta la genera: haria falta leer
+  paginas de medios del corpus.
+- **El adaptador de YouTube es trabajo de otra linea.** Ya esta integrado
+  (`86a2c3d`), asi que el puerto lo resuelve. Si esa rama cambiara su superficie
+  —renombrar `buscar` o `resolverCanales`—, el puerto lo detectaria como
+  `CAPACIDAD_INCOMPLETA` en lugar de romperse, pero la capacidad se perderia
+  hasta ajustarlo.
+- Sin `YOUTUBE_API_KEY` no hay ninguna metrica real. Y con ella, faltara todavia
+  la funcion de estadisticas por video.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -4281,7 +4543,14 @@ resueltos y verificados.
 | **OBSERVED-PRESENCE-01** | 🟢 **ARQUITECTURA CONGELADA**: la presencia observada no es intencion de voto ni apoyo |
 | Indice compuesto de presencia digital | 🔴 **NO DISPONIBLE a proposito**. Faltan metodologia, normalizacion, deduplicacion total, ventanas comparables y cobertura. No se publicara antes |
 | Corpus de evidencias de los candidatos ya existentes | 🔴 arranca vacio: las investigaciones anteriores guardaron recuentos, no piezas. Se llena desde la siguiente investigacion real |
-| Enlaces cruzados como senal independiente | 🔴 requiere leer los enlaces salientes de las paginas legibles durante la observacion |
+| Enlaces cruzados como senal independiente | 🟢 **IMPLEMENTADO** (§18-unvicies): tres direcciones, deduplicacion por identidad de relacion, `firstObservedAt` inmutable y anticircularidad. Verificado end-to-end: una cuenta DECLARADA pasa a CORROBORADA con una sola senal real |
+| **P-CAND-02 Cross-Link Evidence** | 🟢 **IMPLEMENTADO** (§18-unvicies) |
+| **Contrato evidence-first** | 🟢 **IMPLEMENTADO**: `insight → metric → evidenceId → source → observedAt → canonicalUrl`. Una afirmacion sin la cadena completa no se publica |
+| Metricas de rendimiento (absolute, relative, velocity, amplification) | 🔴 **contratos definidos, ninguna disponible**. Cada una declara su metodologia y sus requisitos. NO existe etiqueta «viral» |
+| **YOUTUBE_API_KEY** | 🔴 **ACCION REQUERIDA DE DAVID**. Sin ella no hay ninguna metrica real. Ver §18-unvicies punto 6 |
+| Estadisticas por publicacion de YouTube | 🔴 el adaptador de la linea de ingesta declara `ENDPOINT_VIDEOS` pero no expone funcion que lo use: `videos.list?part=statistics` es una llamada distinta de `search`. **Incluso con credencial, el rendimiento por publicacion no es obtenible hasta que exista** |
+| `EXTERNAL_REFERENCE_TO_ACCOUNT` sin alimentador | 🔴 la direccion existe y esta probada; ninguna ruta la genera todavia |
+| Enlaces del mismo dominio como corroboracion | 🟡 **descartados a proposito**: no se distinguen de la navegacion del sitio. Dos cuentas legitimas de la misma plataforma enlazadas entre si no corroboran por esa via |
 | Media Intelligence | 🟡 **contrato definido** (`CONTRATO_MEDIA_RELATION`), `disponibleHoy: false`. El modulo pertenece a otra linea |
 | Vinculo candidato x territorio | 🟡 **contrato definido**; no vinculara nada hasta que las evidencias lleguen con contrato de GEO-1 |
 | Huella digital volatil segun la respuesta del proveedor | 🟢 **BUG-16 CORREGIDO EN EL MODELO** (§18-vicies): solidez v2 sobre el inventario consolidado, separada de la reencontrabilidad. Probado que la cifra no cambia cuando un buscador falla. La formula v1 sigue alimentando la tarjeta compacta. Original: 🟡 **mitigado en la interfaz** (§18-sexdecies): renombrada «Solidez del expediente», con aclaracion y escala neutra. La formula y la volatilidad siguen. Original: **BUG-16**: 22 % → 53 % en el mismo dia, +17 por un buscador que contesto. Riesgo de lectura politica |
@@ -4391,6 +4660,33 @@ Decisión: clave `tenantId::proyectoId::tipoEntidad::entidad`.
 Motivo: el aislamiento entre proyectos debe ser estructural, no un filtro que
 alguien pueda olvidar.
 Estado: Vigente. Commit: `d964999`.
+
+**ADR-021 — La corroboracion exige evidencia externa, nunca parecido**
+Decision: una cuenta asciende solo con una senal independiente del nombre.
+Coincidencia de nombre, coincidencia de handle y declaracion del analista
+aportan 0. Un enlace cruzado corrobora porque alguien distinto de Sentinel
+publico la asociacion.
+Motivo: mil formas de comprobar que el nombre coincide siguen sin decir de
+quien es la cuenta. Y si la declaracion del analista contara, Sentinel se
+estaria confirmando a si mismo.
+Estado: Vigente. Gate: P-CAND-02 (§18-unvicies).
+
+**ADR-022 — Las metricas son snapshots, no campos**
+Decision: cada observacion de una metrica se anade a una serie con su
+`observedAt`, `provider`, `source` y `availability`. Ninguna sustituye a otra.
+`firstObservedAt` es inmutable.
+Motivo: sustituir 100k por 150k destruye el punto anterior, que es lo unico que
+permitia saber que crecio.
+Estado: Vigente. Gate: P-CAND-02 (§18-unvicies).
+
+**ADR-023 — Puerto de adaptadores en lugar de adaptador propio**
+Decision: Candidate Intelligence declara las capacidades que necesita y resuelve
+el adaptador en caliente. Ausencia y capacidad incompleta son resultados, no
+excepciones.
+Motivo: la linea de ingesta ya tiene un adaptador de YouTube completo. Escribir
+otro habria duplicado un motor; importarlo de forma rigida habria atado
+Candidate Intelligence a un fichero que no esta en git.
+Estado: Vigente. Gate: P-CAND-02 (§18-unvicies).
 
 **ADR-018 — CANDIDATE-LONGITUDINAL-01: las observaciones se agregan**
 Decision: cada candidato mantiene series append-only —snapshots de cuenta,
@@ -4581,6 +4877,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-26 | P-CAND-02 Cross-Link | Se cierra el hueco declarado de V1: `enlacesCruzados` ya no llega vacio. Tres direcciones —WEB_TO_ACCOUNT, ACCOUNT_TO_ACCOUNT, EXTERNAL_REFERENCE_TO_ACCOUNT— con senal de resolucion distinta cada una, deduplicacion por `relationId` estable y `firstObservedAt` inmutable: cien observaciones del mismo enlace dan 25 puntos de solidez, no 100. Anticircularidad: una cuenta sin corroborar no puede corroborar a otra. Hallazgo de las pruebas: los enlaces relativos de una pagina social se resuelven a perfiles falsos —`facebook.com/contacto`— y habrian fabricado una cuenta corroborada por cada elemento del menu; se descartan por mismo dominio y se declara el descarte. Contrato evidence-first que RECHAZA afirmaciones sin cadena completa hasta la evidencia primaria; cuatro tipos de metrica declarados y ninguno disponible; ninguna etiqueta «viral», y la palabra invalida la afirmacion. Metricas como snapshots: 100k ayer y 150k hoy son dos observaciones. Puerto de adaptadores en lugar de duplicar el adaptador de YouTube que ya existe en la linea de ingesta; se detecta que le falta `videos.list?part=statistics`, asi que el rendimiento por publicacion no sera obtenible ni con credencial. Verificado end-to-end sin red: DECLARADA/0 pasa a CORROBORADA/25 y la solidez de identidad de 25 a 43. 766 pruebas, 0 fallos. Nueva §18-unvicies. |
 | 2026-08-25 | Candidate Intelligence V1 | Sentinel pasa de investigar un candidato a mantener un expediente longitudinal. Dos principios congelados: CANDIDATE-LONGITUDINAL-01 (las observaciones se agregan, no reemplazan) y OBSERVED-PRESENCE-01 (la presencia observada no es intencion de voto ni apoyo). Account Resolution con ocho estados y senales independientes frente a senales que dependen del nombre: una cuenta no pasa a corroborada por parecido de nombre ni por declaracion del analista. Ventanas 7d/30d/90d/campana con «historico insuficiente» en lugar de tendencias de un punto. Snapshots de identidad y corpus de evidencias append-only: el expediente guardaba recuentos y ahora guarda piezas, que es lo que permite deduplicar. Amplificacion separa presencia propia de ganada y da tres cifras distintas —piezas, hechos, fuentes—: diez cabeceras replicando una nota son un hecho. Cuatro planos de conversacion con `personas: null`. Contratos de Media y Territorio definidos y declarados no disponibles; territorio solo acepta lo que GEO-1 autoriza y bloquea IP, dispositivo y usuario por nombre. Presencia digital observada con seis dimensiones y indice compuesto NO DISPONIBLE. BUG-16 corregido en el modelo: solidez v2 sobre el inventario consolidado, probada identica antes y despues de un fallo de buscador, con la reencontrabilidad al lado y nunca restada. Workspace de diez secciones; ficha compacta intacta. 689 pruebas, 0 fallos. Nueva §18-vicies. |
 | 2026-08-25 | P-CAND-UX-04 + AI-01 | Resolver de fotografia desde fuentes declaradas: metadata publica estandar, prioridad centralizada, validacion de recurso, descarte de logotipos y genericas, tope de cuatro fuentes, sin login ni cookies. `verifiedImageResource` no implica `verificadaPorSentinel`, que es siempre false. Account Intelligence Fase 1: contratos de cuenta, observacion, publicacion y snapshot append-only; actividad solo derivable de observaciones reales y sin etiquetas sin metodologia; temas propios separados de temas sobre el candidato reutilizando el Topic Engine; metricas agrupadas por plataforma y sin totales cruzados; ninguna puntuacion. Mapa de capacidades real: de siete plataformas solo la web permite lectura. ACCOUNT-PROVIDER-GAPS documentado con precios null. 590 pruebas, 0 fallos. Nueva §18-undevicies. |
 | 2026-08-25 | P-CAND-UX-03 | Causa: al guardar se cerraba el modal pero la ficha quedaba desplegada y el aviso era persistente. Ahora se recarga, se colapsa y se confirma con un aviso que se borra solo. Contrato de fotografia con procedencia, historial acotado y `verificadaPorSentinel` que nunca hereda la corroboracion de la cuenta: son dos afirmaciones distintas. Una URL de cuenta ya no se acepta como imagen —era la causa del icono roto— y `CandidatePhoto` cae a iniciales si la carga falla. La jerarquia esta completa y las seis plataformas sociales quedan declaradas como no obtenibles sin API. Encontrada una URL de cuenta guardada como foto en el expediente real: se diagnostica, no se corrige sin permiso. 527 pruebas, 0 fallos. Nueva §18-duodevicies. |

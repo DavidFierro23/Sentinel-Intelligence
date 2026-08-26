@@ -41,6 +41,19 @@ import { presenciaDigitalObservada } from "../services/intelligence/digitalPrese
 
 import { solidezDelExpediente } from "../services/intelligence/expedienteSolidez.js";
 
+/* P-CAND-02 */
+import {
+  observarEnlacesSalientes,
+  enlacesParaResolucion,
+  DIRECCIONES
+} from "../services/intelligence/crossLinkEvidence.js";
+
+import { estadoDeMetricas } from "../services/intelligence/evidenceFirst.js";
+
+import { resumenDePublicaciones } from "../services/intelligence/publicationObservation.js";
+
+import { preparacionParaObservacionReal } from "../services/intelligence/platformAdapterPort.js";
+
 import {
   crearProyecto,
   obtenerProyecto,
@@ -56,6 +69,9 @@ import {
   guardarSnapshotDeIdentidad,
   snapshotsDeIdentidadDe,
   evidenciasDe,
+  guardarSenalesCrossLink,
+  senalesCrossLinkDe,
+  publicacionesDe,
   ESTADOS,
   agregarCandidato,
   obtenerCandidato,
@@ -414,11 +430,11 @@ async function componerInteligencia(proyectoId, candidatoId, ejecutar) {
     y con que se sostiene. Ninguna pasa a corroborada por
     parecerse el nombre.
 
-    `enlacesCruzados` llega VACIO hoy y eso es un limite, no un
-    olvido: para saber que la web declarada enlaza a una cuenta
-    hay que leer esa web, y este panel no sale a la red al
-    abrirse. La senal se calculara cuando la observacion recoja
-    los enlaces salientes de las paginas que si puede leer.
+    P-CAND-02 CIERRA EL HUECO DE V1: `enlacesCruzados` ya no
+    llega vacio. Sale de las senales de cross-link persistidas,
+    que son observaciones reales de paginas que Sentinel puede
+    leer. Se leen del Lake, no de la red: abrir el panel sigue
+    sin salir a internet.
     ---------------------------------------------------------
   */
   const anclas = [
@@ -426,12 +442,14 @@ async function componerInteligencia(proyectoId, candidatoId, ejecutar) {
     ...(ficha.aliases || []).map((a) => a?.valor || a)
   ].filter(Boolean);
 
+  const crossLinks = await senalesCrossLinkDe(proyectoId, candidatoId);
+
   const resolucion = resolverCuentasDelCandidato({
     candidateId: candidatoId,
     projectId: proyectoId,
     cuentas,
     anclasIdentidad: anclas,
-    enlacesCruzados: []
+    enlacesCruzados: enlacesParaResolucion(crossLinks.senales)
   });
 
   /*
@@ -510,11 +528,19 @@ async function componerInteligencia(proyectoId, candidatoId, ejecutar) {
   });
 
   /*
-    Publicaciones propias: hoy no hay ninguna fuente que las
-    entregue. La lista vacia se declara y NO se rellena con
-    evidencias web, que son menciones de terceros.
+    ---------------------------------------------------------
+    PUBLICACIONES PROPIAS
+    ---------------------------------------------------------
+
+    Ya NO son una lista vacia por decreto: se leen de la serie
+    persistida. Sigue estando vacia mientras ninguna fuente las
+    entregue —eso depende de la credencial y del adaptador—,
+    pero el modelo ya las sostiene con sus metricas como
+    snapshots.
   */
-  const publicaciones = [];
+  const serieDePublicaciones = await publicacionesDe(proyectoId, candidatoId);
+
+  const publicaciones = serieDePublicaciones.publicaciones;
 
   return {
     candidatoId,
@@ -544,8 +570,39 @@ async function componerInteligencia(proyectoId, candidatoId, ejecutar) {
     actividad: actividadDePublicaciones(publicaciones),
 
     publicaciones,
-    notaPublicaciones:
-      "Ninguna fuente disponible entrega publicaciones de estas plataformas sin API. La lista vacia NO significa que el candidato no publique.",
+    notaPublicaciones: publicaciones.length
+      ? serieDePublicaciones.nota
+      : "Ninguna fuente disponible entrega publicaciones de estas plataformas sin API. La lista vacia NO significa que el candidato no publique.",
+
+    resumenPublicaciones: resumenDePublicaciones(publicaciones),
+
+    /* ---- CROSS-LINK EVIDENCE (P-CAND-02) ---- */
+    crossLinks: {
+      senales: crossLinks.senales,
+      total: crossLinks.total,
+      lotes: crossLinks.lotes,
+      ultimosIntentos: crossLinks.ultimosIntentos,
+      nota: crossLinks.nota,
+
+      porDireccion: crossLinks.senales.reduce((acc, s) => {
+        acc[s.direccion] = (acc[s.direccion] || 0) + 1;
+
+        return acc;
+      }, {}),
+
+      /*
+        Cuantas senales independientes aporta REALMENTE al
+        resolvedor. Es la cifra que explica por que una cuenta
+        ascendio o por que sigue sin ascender.
+      */
+      aportanCorroboracion: enlacesParaResolucion(crossLinks.senales).length
+    },
+
+    /* ---- EVIDENCE-FIRST (P-CAND-02) ---- */
+    metricas: estadoDeMetricas(),
+
+    /* ---- PREPARACION PARA OBSERVACION REAL ---- */
+    preparacion: await preparacionParaObservacionReal(["youtube"]),
 
     temas: temasDeLasCuentas(publicaciones),
 
@@ -647,6 +704,116 @@ router.get("/:proyectoId/candidatos/:candidatoId/inteligencia", async (req, res)
     res.json(r);
   } catch (e) {
     res.status(500).json({ error: e?.message || "fallo al leer Account Intelligence" });
+  }
+});
+
+
+/*
+-----------------------------------------------------------
+CROSS-LINK EVIDENCE — OBSERVAR ENLACES SALIENTES
+-----------------------------------------------------------
+
+Lee las paginas que Sentinel YA puede leer y busca enlaces a
+cuentas sociales. Es la unica forma de conseguir una senal
+independiente del nombre sin comprar acceso a nada.
+
+Solo cuando el analista lo pide. Sin login, sin cookies, tope
+de paginas, una peticion por pagina.
+-----------------------------------------------------------
+*/
+router.post("/:proyectoId/candidatos/:candidatoId/enlaces", async (req, res) => {
+  const { proyectoId, candidatoId } = req.params;
+
+  try {
+    const ficha = await fichaIdentidad(proyectoId, candidatoId, "candidato");
+
+    if (!ficha) {
+      return res.status(404).json({ error: `no existe el candidato ${candidatoId}` });
+    }
+
+    const cuentas = ficha.plataformas.flatMap((p) => p.cuentas || []);
+
+    /*
+      QUE PAGINAS SE LEEN.
+
+      Las webs del expediente, como WEB_TO_ACCOUNT. Y las
+      cuentas ya corroboradas cuya plataforma admite lectura,
+      como ACCOUNT_TO_ACCOUNT — solo esas: una cuenta sin
+      corroborar no puede corroborar a otra.
+    */
+    const fuentes = cuentas
+      .filter((c) => c.plataformaId === "web")
+      .map((c) => ({
+        url: c.url,
+        plataformaId: "web",
+        sourceType: "web_del_expediente",
+        direccion: DIRECCIONES.WEB_TO_ACCOUNT,
+        declaradaPorAnalista: c.declaradaPorAnalista === true
+      }));
+
+    cuentas
+      .filter((c) => c.plataformaId !== "web" && c.corroboradaPorSentinel === true)
+      .forEach((c) =>
+        fuentes.push({
+          url: c.url,
+          plataformaId: c.plataformaId,
+          sourceType: "cuenta_corroborada",
+          direccion: DIRECCIONES.ACCOUNT_TO_ACCOUNT,
+          origenCorroborado: true,
+          declaradaPorAnalista: c.declaradaPorAnalista === true
+        })
+      );
+
+    const r = await observarEnlacesSalientes({
+      candidateId: candidatoId,
+      projectId: proyectoId,
+      fuentes,
+      cuentasConocidas: cuentas,
+      ejecutar: req.body?.ejecutar !== false
+    });
+
+    let guardado = null;
+
+    if (r.ejecutado) {
+      guardado = await guardarSenalesCrossLink(
+        proyectoId,
+        candidatoId,
+        r.senales,
+        { intentos: r.intentos }
+      );
+    }
+
+    /* Estado ya fusionado, para que la interfaz no lo recalcule. */
+    const acumulado = await senalesCrossLinkDe(proyectoId, candidatoId);
+
+    res.json({
+      candidatoId,
+      ejecutado: r.ejecutado,
+      fuentesConsideradas: fuentes.length,
+      paginasLeidas: r.paginasLeidas,
+      topePaginas: r.topePaginas,
+
+      senalesNuevas: r.senales.length,
+      intentos: r.intentos,
+
+      persistido: guardado?.escrito === true,
+
+      acumulado: {
+        total: acumulado.total,
+        lotes: acumulado.lotes,
+        senales: acumulado.senales,
+        aportanCorroboracion: enlacesParaResolucion(acumulado.senales).length
+      },
+
+      regla: r.regla,
+      prohibido: r.prohibido,
+
+      nota: fuentes.length
+        ? null
+        : "No hay ninguna pagina legible en el expediente. Hace falta al menos una web declarada o una cuenta ya corroborada en una plataforma que admita lectura publica."
+    });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo al observar los enlaces" });
   }
 });
 

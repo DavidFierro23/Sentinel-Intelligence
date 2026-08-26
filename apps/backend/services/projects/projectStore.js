@@ -18,6 +18,16 @@ import {
 import { clasificarUrlSocial } from "../social/discovery/socialUrlClassifier.js";
 
 /*
+  Reglas de fusion de las series longitudinales. Se importan en
+  lugar de reescribirse aqui: dos reglas de fusion distintas
+  para el mismo dato acabarian discrepando, y la que gobierna es
+  la del contrato.
+*/
+import { fusionarSenales } from "../intelligence/crossLinkEvidence.js";
+
+import { fusionarPublicacion } from "../intelligence/publicationObservation.js";
+
+/*
 ===========================================================
 ALMACÉN DE PROYECTOS Y EXPEDIENTES — ARQ-INV-002
 ===========================================================
@@ -2943,9 +2953,190 @@ export async function evidenciasDe(proyectoId, candidatoId) {
 
 
 /*
+===========================================================
+SENALES DE CROSS-LINK — P-CAND-02
+===========================================================
+
+Un lote por ejecucion de observacion de enlaces. Append-only,
+como todo lo demas: la relacion «esta pagina enlaza esta cuenta»
+es un hecho fechado, y saber CUANDO se vio por primera vez es
+justo lo que un campo sobrescrito borraria.
+
+`senalesCrossLinkDe` funde los lotes conservando
+`firstObservedAt` y acumulando `observationCount` y
+`evidenceIds`. La fusion vive en `crossLinkEvidence`; aqui solo
+se leen los lotes y se delega, para no tener dos reglas de
+fusion distintas.
+===========================================================
+*/
+const PREFIJO_CROSSLINK = "crosslink-";
+
+export async function guardarSenalesCrossLink(
+  proyectoId,
+  candidatoId,
+  senales = [],
+  contexto = {}
+) {
+  const cuando = contexto.observadoEn || new Date().toISOString();
+
+  const entidad = `${PREFIJO_CROSSLINK}${candidatoId}-${cuando}`;
+
+  try {
+    const r = await escribirEnLake(
+      {
+        entidad,
+        tipoEntidad: TIPO_EXPEDIENTE,
+        tenantId: TENANT,
+        proyectoId,
+        fuente: SUBMOTOR,
+        linaje: linaje("observar_enlaces_salientes"),
+        datos: {
+          candidatoId,
+          observadaEn: cuando,
+          total: senales.length,
+          intentos: contexto.intentos || [],
+          senales
+        }
+      },
+      {}
+    );
+
+    return { entidad, escrito: r?.escrito === true, total: senales.length };
+  } catch (e) {
+    return { entidad, escrito: false, motivo: e?.message || "fallo de escritura" };
+  }
+}
+
+
+export async function senalesCrossLinkDe(proyectoId, candidatoId) {
+  const lotes = await leerSerie(
+    proyectoId,
+    `${PREFIJO_CROSSLINK}${candidatoId}-`
+  );
+
+  /* Del mas antiguo al mas nuevo: la primera vista gana. */
+  const cronologico = [...lotes].reverse();
+
+  let acumuladas = [];
+
+  for (const lote of cronologico) {
+    const r = fusionarSenales(acumuladas, lote.senales || []);
+
+    acumuladas = r.senales;
+  }
+
+  return {
+    senales: acumuladas,
+    total: acumuladas.length,
+    lotes: lotes.length,
+
+    ultimosIntentos: lotes[0]?.intentos || [],
+
+    nota: lotes.length
+      ? "Senales fusionadas por identidad de relacion. `firstObservedAt` es la primera vez que Sentinel vio el enlace y no se reescribe."
+      : "Todavia no se ha observado ningun enlace saliente. Se acumulan desde la primera observacion."
+  };
+}
+
+
+/*
+===========================================================
+PUBLICACIONES OBSERVADAS — P-CAND-02
+===========================================================
+
+Un lote por observacion. Las metricas son SNAPSHOTS: al leer se
+funden las publicaciones por `publicationId` acumulando la serie
+completa de metricas en lugar de quedarse con la ultima.
+
+    100k ayer y 150k hoy son dos observaciones, no un campo
+    que cambio de valor.
+===========================================================
+*/
+const PREFIJO_PUBLICACION = "publicaciones-";
+
+export async function guardarPublicaciones(
+  proyectoId,
+  candidatoId,
+  publicaciones = [],
+  contexto = {}
+) {
+  const cuando = contexto.observadoEn || new Date().toISOString();
+
+  const entidad = `${PREFIJO_PUBLICACION}${candidatoId}-${cuando}`;
+
+  try {
+    const r = await escribirEnLake(
+      {
+        entidad,
+        tipoEntidad: TIPO_EXPEDIENTE,
+        tenantId: TENANT,
+        proyectoId,
+        fuente: SUBMOTOR,
+        linaje: linaje("observar_publicaciones"),
+        datos: {
+          candidatoId,
+          observadaEn: cuando,
+          provider: contexto.provider || null,
+          total: publicaciones.length,
+          publicaciones
+        }
+      },
+      {}
+    );
+
+    return { entidad, escrito: r?.escrito === true, total: publicaciones.length };
+  } catch (e) {
+    return { entidad, escrito: false, motivo: e?.message || "fallo de escritura" };
+  }
+}
+
+
+export async function publicacionesDe(proyectoId, candidatoId) {
+  const lotes = await leerSerie(
+    proyectoId,
+    `${PREFIJO_PUBLICACION}${candidatoId}-`
+  );
+
+  const porId = new Map();
+
+  /* Del mas antiguo al mas nuevo, para que la fusion acumule. */
+  [...lotes].reverse().forEach((lote) => {
+    (lote.publicaciones || []).forEach((p) => {
+      if (!p?.publicationId) return;
+
+      const previa = porId.get(p.publicationId) || null;
+
+      porId.set(
+        p.publicationId,
+        previa ? fusionarPublicacion(previa, p) : { ...p }
+      );
+    });
+  });
+
+  const publicaciones = [...porId.values()];
+
+  return {
+    publicaciones,
+    total: publicaciones.length,
+    lotes: lotes.length,
+
+    snapshotsDeMetricas: publicaciones.reduce(
+      (s, p) => s + (p.metricas || []).length,
+      0
+    ),
+
+    nota: lotes.length
+      ? "Las metricas son snapshots acumulados: ninguna observacion sustituye a la anterior."
+      : "Todavia no hay ninguna publicacion observada. La lista vacia NO significa que el candidato no publique."
+  };
+}
+
+
+/*
   Lectura de una serie append-only, de la mas reciente a la mas
-  antigua. Comun a snapshots de cuenta, de identidad y a los
-  lotes de evidencias: tres series con la misma mecanica.
+  antigua. Comun a snapshots de cuenta, de identidad, a los
+  lotes de evidencias, a las senales de cross-link y a las
+  publicaciones: cinco series con la misma mecanica.
 */
 async function leerSerie(proyectoId, prefijo) {
   const entidades = await entidadesDe(proyectoId);
@@ -3327,6 +3518,12 @@ export default {
   snapshotsDeIdentidadDe,
   guardarEvidencias,
   evidenciasDe,
+
+  /* P-CAND-02 — cross-link y publicaciones */
+  guardarSenalesCrossLink,
+  senalesCrossLinkDe,
+  guardarPublicaciones,
+  publicacionesDe,
 
   inventarioConsolidado,
   expedienteDe,

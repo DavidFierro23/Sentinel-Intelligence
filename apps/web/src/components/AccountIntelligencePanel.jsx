@@ -11,7 +11,8 @@ import {
   Newspaper,
   Share2,
   FileText,
-  Clock
+  Clock,
+  ExternalLink
 } from "lucide-react";
 
 import { fechaLocal } from "../services/identidadCandidato";
@@ -172,6 +173,94 @@ function Aviso({ texto, icono: Icono = AlertTriangle, color = "#F59E0B" }) {
     >
       <Icono size={13} style={{ flexShrink: 0, marginTop: "2px" }} />
       <span>{texto}</span>
+    </div>
+  );
+}
+
+
+/*
+  El boton que hace verificable una afirmacion. Si no hay URL
+  canonica no se dibuja: un «Ver evidencia» que no lleva a
+  ninguna parte es peor que no ofrecerlo.
+*/
+function VerEvidencia({ url, etiqueta = "Ver evidencia" }) {
+  if (!url) return null;
+
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "5px",
+        color: "var(--sentinel-cyan)",
+        border: "1px solid var(--sentinel-cyan)",
+        borderRadius: "var(--radio-pill)",
+        padding: "2px 9px",
+        fontSize: "9.5px",
+        textDecoration: "none",
+        whiteSpace: "nowrap"
+      }}
+    >
+      <ExternalLink size={10} /> {etiqueta}
+    </a>
+  );
+}
+
+
+/*
+  Las senales de cross-link de UNA cuenta. Es lo que explica por
+  que ascendio: quien publico el enlace, cuando se vio por
+  primera vez y cuantas veces se ha vuelto a ver.
+*/
+function CrossLinks({ senales, proyecto }) {
+  if (!senales?.length) return null;
+
+  return (
+    <div style={{ marginTop: "9px" }}>
+      <div style={{ ...rotulo, marginBottom: "4px" }}>
+        Enlaces cruzados observados
+      </div>
+
+      {senales.map((s) => (
+        <div
+          key={s.relationId}
+          style={{
+            display: "flex",
+            gap: "8px",
+            alignItems: "baseline",
+            flexWrap: "wrap",
+            marginTop: "5px"
+          }}
+        >
+          <Link2 size={11} color="#22C55E" style={{ flexShrink: 0 }} />
+
+          <span style={pill("#22C55E")}>{s.direccion}</span>
+
+          <span style={{ ...tenue, flex: "1 1 240px", wordBreak: "break-all" }}>
+            {s.sourceUrl}
+          </span>
+
+          <span style={tenue}>
+            {s.firstObservedAt
+              ? `1.ª vez ${fechaLocal(s.firstObservedAt, proyecto)}`
+              : "sin primera observación"}
+            {s.lastObservedAt && s.lastObservedAt !== s.firstObservedAt
+              ? ` · última ${fechaLocal(s.lastObservedAt, proyecto)}`
+              : ""}
+            {s.observationCount > 1 ? ` · ${s.observationCount} observaciones` : ""}
+          </span>
+
+          <VerEvidencia url={s.sourceUrl} etiqueta="Ver origen" />
+        </div>
+      ))}
+
+      <div style={{ ...tenue, marginTop: "6px" }}>
+        Una relación vista varias veces sigue siendo UNA señal: el recuento
+        son observaciones, no corroboraciones.
+      </div>
     </div>
   );
 }
@@ -612,6 +701,77 @@ export default function AccountIntelligencePanel({
                   />
                 ))}
 
+              {datos.crossLinks && (
+                <div style={caja}>
+                  <div style={rotulo}>Evidencia de enlace cruzado</div>
+
+                  <div style={parrafo}>
+                    {datos.crossLinks.total} relación(es) observada(s) ·{" "}
+                    {datos.crossLinks.aportanCorroboracion} aporta(n)
+                    corroboración independiente
+                  </div>
+
+                  {Object.entries(datos.crossLinks.porDireccion || {}).map(
+                    ([k, v]) => (
+                      <div key={k} style={{ ...tenue, marginTop: "5px" }}>
+                        {v} × {k}
+                      </div>
+                    )
+                  )}
+
+                  <div style={{ ...tenue, marginTop: "7px" }}>
+                    {datos.crossLinks.nota}
+                  </div>
+
+                  {(datos.crossLinks.ultimosIntentos || []).length > 0 && (
+                    <div style={{ marginTop: "9px" }}>
+                      <div style={{ ...rotulo, marginBottom: "4px" }}>
+                        Última observación de enlaces
+                      </div>
+
+                      {datos.crossLinks.ultimosIntentos.map((i, n) => (
+                        <div
+                          key={`${i.sourceUrl}-${n}`}
+                          style={{
+                            display: "flex",
+                            gap: "8px",
+                            alignItems: "baseline",
+                            flexWrap: "wrap",
+                            marginTop: "4px"
+                          }}
+                        >
+                          <span
+                            style={pill(
+                              i.estado === "OBSERVADA"
+                                ? "#22C55E"
+                                : i.estado === "ERROR" || i.estado === "BLOQUEADA"
+                                  ? "#EF4444"
+                                  : "#F59E0B"
+                            )}
+                          >
+                            {i.estado}
+                          </span>
+
+                          <span
+                            style={{ ...tenue, flex: "1 1 200px", wordBreak: "break-all" }}
+                          >
+                            {i.sourceUrl}
+                          </span>
+
+                          <span style={tenue}>
+                            {i.cuentasEnlazadas != null
+                              ? `${i.cuentasEnlazadas} cuenta(s)`
+                              : ""}
+                            {i.motivo ? ` · ${i.motivo}` : ""}
+                            {i.notaMismoDominio ? ` · ${i.notaMismoDominio}` : ""}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div style={caja}>
                 <div style={rotulo}>Regla de corroboración</div>
                 <div style={parrafo}>{resolucion?.regla}</div>
@@ -721,6 +881,17 @@ export default function AccountIntelligencePanel({
                         </div>
                       )}
 
+                      {/*
+                        LOS ENLACES CRUZADOS DE ESTA CUENTA.
+                        Es la evidencia concreta que la sostiene.
+                      */}
+                      <CrossLinks
+                        senales={(datos.crossLinks?.senales || []).filter(
+                          (s) => s.accountId === c.accountId
+                        )}
+                        proyecto={proyecto}
+                      />
+
                       {c.observacion?.nota && (
                         <div
                           style={{
@@ -807,6 +978,118 @@ export default function AccountIntelligencePanel({
                   </div>
                 </div>
               ))}
+
+              {/*
+                ESTADO DE LAS METRICAS DE RENDIMIENTO. Ninguna
+                disponible, y cada una dice que le falta. No hay
+                etiqueta «viral» en ninguna parte.
+              */}
+              {datos.metricas && (
+                <div style={caja}>
+                  <div style={rotulo}>
+                    Métricas de rendimiento — {datos.metricas.disponibles} de{" "}
+                    {datos.metricas.total} disponibles
+                  </div>
+
+                  {(datos.metricas.tipos || []).map((m) => (
+                    <div key={m.id} style={{ marginTop: "8px" }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: "8px",
+                          alignItems: "baseline",
+                          flexWrap: "wrap"
+                        }}
+                      >
+                        <span
+                          style={pill(
+                            m.disponible ? "#22C55E" : "var(--sentinel-texto-tenue)"
+                          )}
+                        >
+                          {m.disponible ? "disponible" : "no disponible"}
+                        </span>
+
+                        <strong style={{ color: "#FFFFFF", fontSize: "11.5px" }}>
+                          {m.nombre}
+                        </strong>
+                      </div>
+
+                      <div style={{ ...tenue, marginTop: "4px" }}>
+                        {m.metodologia}
+                      </div>
+
+                      {!m.disponible && (
+                        <div style={{ ...tenue, marginTop: "3px", color: "#F59E0B" }}>
+                          falta: {m.motivoNoDisponible}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  <div style={{ ...tenue, marginTop: "9px" }}>
+                    {datos.metricas.nota}
+                  </div>
+                </div>
+              )}
+
+              {/*
+                PREPARACION PARA OBSERVACION REAL. Lo que hace
+                falta de una persona, dicho donde se ve.
+              */}
+              {datos.preparacion && (
+                <div style={caja}>
+                  <div style={rotulo}>Preparación para observación real</div>
+
+                  {(datos.preparacion.plataformas || []).map((p) => (
+                    <div
+                      key={p.plataformaId}
+                      style={{
+                        display: "flex",
+                        gap: "8px",
+                        alignItems: "baseline",
+                        flexWrap: "wrap",
+                        marginTop: "6px"
+                      }}
+                    >
+                      <span
+                        style={pill(
+                          p.estado === "LISTO"
+                            ? "#22C55E"
+                            : p.estado === "SIN_CREDENCIAL"
+                              ? "#F59E0B"
+                              : "var(--sentinel-texto-tenue)"
+                        )}
+                      >
+                        {p.estado}
+                      </span>
+
+                      <strong style={{ color: "#FFFFFF", fontSize: "11.5px" }}>
+                        {p.plataforma}
+                      </strong>
+
+                      <span style={{ ...tenue, flex: "1 1 200px" }}>
+                        {p.motivo}
+                      </span>
+                    </div>
+                  ))}
+
+                  {(datos.preparacion.accionRequerida || []).map((x) => (
+                    <div
+                      key={x.variable}
+                      style={{ ...tenue, marginTop: "8px", color: "#F59E0B" }}
+                    >
+                      Requiere configurar <strong>{x.variable}</strong>
+                      {x.cuotaDeclarada
+                        ? ` · cuota declarada por el adaptador: ${x.cuotaDeclarada} unidades/día`
+                        : ""}
+                    </div>
+                  ))}
+
+                  <div style={{ ...tenue, marginTop: "8px" }}>
+                    {datos.preparacion.nota}
+                  </div>
+                </div>
+              )}
 
               {/* CAPACIDAD REAL POR PLATAFORMA. */}
               <Aviso texto={r.metricasNoComparables} />
@@ -1419,6 +1702,70 @@ export default function AccountIntelligencePanel({
                     declarada por la fuente {p.fechaDeclaradaPorLaFuente || "sin fecha"}
                     {p.nota ? ` · ${p.nota}` : ""}
                   </div>
+                </div>
+              ))}
+
+              {/*
+                SNAPSHOTS DE METRICAS. Cada observacion se
+                conserva: 100k ayer y 150k hoy son dos puntos.
+              */}
+              {(datos.publicaciones || []).map((p) => (
+                <div key={p.publicationId} style={caja}>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "8px",
+                      alignItems: "baseline",
+                      flexWrap: "wrap"
+                    }}
+                  >
+                    <strong style={{ color: "#FFFFFF", fontSize: "11.5px" }}>
+                      {p.title || p.canonicalUrl}
+                    </strong>
+
+                    <VerEvidencia url={p.canonicalUrl} />
+                  </div>
+
+                  <div style={{ ...tenue, marginTop: "5px" }}>
+                    publicada{" "}
+                    {p.publishedAt ? fechaLocal(p.publishedAt, proyecto) : "sin fecha"}
+                    {" · "}observada por 1.ª vez{" "}
+                    {fechaLocal(p.firstObservedAt, proyecto)}
+                    {p.observationCount > 1
+                      ? ` · ${p.observationCount} observaciones`
+                      : ""}
+                  </div>
+
+                  {(p.metricas || []).map((m, n) => (
+                    <div
+                      key={`${m.metrica}-${m.observedAt}-${n}`}
+                      style={{
+                        display: "flex",
+                        gap: "8px",
+                        alignItems: "baseline",
+                        flexWrap: "wrap",
+                        marginTop: "4px"
+                      }}
+                    >
+                      <span style={tenue}>{m.nombre}</span>
+
+                      <span
+                        style={{
+                          color:
+                            m.value == null ? "var(--sentinel-texto-tenue)" : "#FFFFFF",
+                          fontSize: "11px",
+                          fontFamily: "monospace"
+                        }}
+                      >
+                        {m.value == null ? "sin dato" : m.value}
+                      </span>
+
+                      <span style={tenue}>
+                        {fechaLocal(m.observedAt, proyecto)} · {m.availability}
+                        {m.motivo ? ` · ${m.motivo}` : ""}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               ))}
 
