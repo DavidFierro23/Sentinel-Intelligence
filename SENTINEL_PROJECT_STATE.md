@@ -3672,6 +3672,303 @@ Build correcta. Lint: los 6 preexistentes de BUG-01 y BUG-02.
 
 ---
 
+## 18-vicies. Candidate Intelligence V1 (2026-08-25)
+
+Commit `feat(intelligence): candidate longitudinal intelligence v1`.
+
+**689 comprobaciones, 17 suites, 0 fallos.** Sin red y sin cuota.
+
+Sentinel deja de «investigar un candidato» y empieza a **mantener un
+expediente longitudinal** durante toda la campana.
+
+---
+
+### ARQUITECTURA CONGELADA
+
+#### CANDIDATE-LONGITUDINAL-01
+
+> Todo candidato incorporado a un proyecto de Sentinel mantiene un expediente
+> longitudinal. Las nuevas observaciones se agregan; no reemplazan
+> silenciosamente observaciones historicas.
+
+Sin esto no se puede responder a ninguna pregunta sobre el pasado —que cuentas
+habia en una fecha, que aparecio, que cambio entre dos ventanas— y son
+exactamente las preguntas que hace un analista de campana. Una escritura
+destructiva las borra todas de golpe.
+
+#### OBSERVED-PRESENCE-01
+
+> La presencia digital observada representa actividad encontrada dentro del
+> universo de fuentes observado por Sentinel. No representa intencion de voto,
+> apoyo ciudadano ni poblacion total.
+
+El universo de fuentes son los proveedores de busqueda disponibles y las
+paginas publicas legibles. No es aleatorio, no es representativo y no es una
+muestra de nada.
+
+---
+
+### 1 · Account Resolution
+
+`services/intelligence/accountResolution.js`.
+
+Un candidato puede tener **varias cuentas en la misma plataforma** —perfil
+personal y cuenta de campana— y ahi tambien se cuelan homonimos. La pregunta
+«es del candidato?» no se responde con un booleano.
+
+Ocho estados: `DECLARADA`, `DESCUBIERTA`, `CANDIDATA`, `CORROBORADA`,
+`CONSOLIDADA`, `NO_REENCONTRADA`, `DUDOSA`, `DESCARTADA`. Conviven con
+`ESTADOS_IDENTIDAD`; `ESTADO_EQUIVALENTE` traduce en una sola direccion y no
+reescribe el expediente.
+
+#### La regla
+
+> Una cuenta DESCUBIERTA no pasa a CORROBORADA por parecerse el nombre.
+
+El nombre es lo que hace que la miremos, no lo que la confirma. Se distinguen
+senales **independientes** de las que dependen del nombre:
+
+| Independientes | No corroboran |
+|---|---|
+| enlace cruzado desde cuenta consolidada | coincidencia de nombre |
+| publicada en la web declarada | coincidencia de handle |
+| biografia publica que identifica mas que el nombre | declaracion del analista |
+| referencia externa independiente | |
+| varios proveedores **por vias distintas** | |
+
+Se pueden acumular mil senales dependientes y seguir sin poder corroborar. Es
+deliberado: mil formas de comprobar que el nombre coincide siguen sin decir de
+quien es la cuenta. La declaracion del analista no corrobora porque si contara,
+Sentinel se estaria confirmando a si mismo.
+
+`solidezDeAtribucion` da 25 puntos por senal independiente **distinta**, tope
+100. Se publica solo porque es explicable: de cada punto se puede decir de
+donde sale.
+
+`accountId` es `plataforma:handle` normalizado — la misma forma que ya usaba la
+ficha, a proposito: cambiarla habria roto las referencias existentes.
+
+---
+
+### 2 · Historico y ventanas
+
+`services/intelligence/candidateTimeline.js`.
+
+Cuatro ventanas: **7d, 30d, 90d y campana completa**. Tres estados:
+`COMPARABLE`, `HISTORICO_INSUFICIENTE`, `SIN_OBSERVACIONES`.
+
+Con una sola observacion no se dibuja tendencia: **una tendencia de un punto es
+una opinion con forma de linea**. Y un delta cuya metrica falta en un extremo
+es `null`, porque restar de un `null` produciria un numero inventado.
+
+`crearSnapshotDeIdentidad` fotografia el inventario en un instante;
+`compararInventarios` dice que aparecio y que no consta. El campo se llama
+**`ausentesDelInventario`, no «desaparecidas»**: una cuenta que no aparece en la
+foto nueva puede seguir existiendo perfectamente. Una baja es una decision y se
+registra como `DESCARTADA`.
+
+#### La distincion temporal
+
+    firstObservedBySentinel     cuando lo vimos NOSOTROS
+    fechaDeclaradaPorLaFuente   cuando dice la fuente que ocurrio
+
+Si en octubre recuperamos una nota de agosto, Sentinel **no** observo nada en
+agosto: observo en octubre una pieza fechada en agosto. Escribir la segunda
+fecha en el primer campo produciria un expediente que afirma una vigilancia que
+no existio.
+
+---
+
+### 3 · Corpus de evidencias append-only
+
+El expediente guardaba el **recuento** de evidencias, no las evidencias. Con un
+recuento no se puede deduplicar, ni agrupar replicas, ni saber que medio
+publico que — que son justo las preguntas de Amplificacion.
+
+`guardarEvidencias` escribe un lote por ejecucion en su propia entidad del
+Lake, **fuera de la guarda `sinCambios`** y por la misma razon que la ejecucion:
+lo que se guarda es un hecho fechado, no una version del expediente. Un lote
+identico al de ayer sigue siendo la observacion de hoy.
+
+`evidenciasDe` funde por URL conservando la **primera** vez que la vimos y
+contando `vecesObservada`. Tope de 120 por lote, con el recorte declarado.
+
+---
+
+### 4 · Amplificacion
+
+`services/intelligence/candidateAmplification.js`.
+
+    PRESENCIA PROPIA    lo publican sus cuentas
+    PRESENCIA GANADA    lo publican terceros
+
+Diez cabeceras publicando la misma nota de agencia son **10 piezas, 1 hecho, N
+fuentes**. Tres cifras, y solo la tercera se parece a lo que la gente imagina
+cuando oye «diez medios hablaron del candidato». Se dan las tres por separado.
+
+La agrupacion **reutiliza** `conversation/nearDuplicate.js` y la clasificacion
+de fuentes `conversation/mediaRegistry.js`. No hay detectores paralelos.
+
+Una URL es propia si coinciden dominio **y** handle en la ruta: otro perfil del
+mismo dominio no es propio. Sin URL, la pieza queda `PLANO_INDETERMINADO` y no
+se cuenta como ganada.
+
+Cuatro planos de conversacion: candidato, medios, otros actores y conversacion
+publica observable. Todos exponen `piezasObservadas` y **`personas: null`**. De
+N publicaciones no se deduce N ciudadanos: una persona puede publicar cien
+veces y cien cuentas pueden ser una sola operacion.
+
+---
+
+### 5 · Relaciones, Media y Territorio
+
+`services/intelligence/candidateRelations.js`. Tres puentes definidos, no
+completados.
+
+Nueve tipos de relacion, todos **verbos observables**. Cada arista lleva
+`evidenceIds` —sin evidencia no hay arista— y la advertencia:
+
+> Una relacion digital observada no es una relacion personal ni politica. Un
+> medio que publica sobre un candidato no es su aliado, y dos personas que
+> aparecen en la misma nota no tienen por que conocerse.
+
+`confidence` es `null` y se explica por que: la arista consta o no consta, no
+hay nada que estimar.
+
+`CONTRATO_MEDIA_RELATION` fija que debera devolver Media Intelligence —piezas
+ya deduplicadas, `evidenceIds` verificables, diversidad en dominios— y declara
+`disponibleHoy: false`. `validarPayloadDeMedios` rechaza lo que no cumpla.
+
+Territorio: lo que se ubica es una **pieza**, nunca una persona. Se consume
+GEO-1 y se rechaza lo que no autorice: metodo fuera del catalogo, `no_resoluble`
+o unidad sin `autorizaAtribucion`. `METODOS_PROHIBIDOS` bloquea por nombre
+`ip`, `dispositivo`, `usuario`, geolocalizacion de perfil e inferencia por
+seguidores.
+
+---
+
+### 6 · Presencia digital observada
+
+`services/intelligence/digitalPresence.js`. Seis dimensiones, cada una con su
+metodologia escrita al lado: actividad propia, amplificacion externa, cobertura
+mediatica, conversacion publica, diversidad de fuentes y persistencia temporal.
+
+**El indice compuesto es `NO_DISPONIBLE` y su valor `null`**, con los cinco
+requisitos que faltan enumerados: metodologia documentada, normalizacion entre
+plataformas, deduplicacion de todo el corpus, ventanas comparables y cobertura
+suficiente. Con cualquiera de ellos sin resolver el numero diria mas del estado
+de nuestras fuentes que del candidato — y, como parece un dato, nadie lo leeria
+asi.
+
+Etiqueta de interfaz: **PRESENCIA DIGITAL OBSERVADA**. Vocabulario prohibido en
+el motor: influencia electoral, apoyo, popularidad, intencion de voto,
+liderazgo digital.
+
+---
+
+### 7 · Solidez del expediente — formula v2 (BUG-16)
+
+`services/intelligence/expedienteSolidez.js`.
+
+#### El defecto, medido
+
+`indiceHuellaDigital` se calcula sobre `cuentasObjetivo`: las cuentas atribuidas
+**en esa ejecucion**. Sus cuatro componentes dependen de esa lista. Cuando un
+buscador no devolvio una cuenta ya consolidada, la cuenta salio de la lista y la
+cifra cayo: el mismo expediente marco 53 y luego 42. No habia cambiado la
+identidad del candidato; habia cambiado lo que un buscador devolvio ese dia.
+
+> absence of evidence != evidence of absence
+
+#### La separacion
+
+    SOLIDEZ DE IDENTIDAD      sobre el INVENTARIO CONSOLIDADO,
+                              que no pierde cuentas
+    REENCONTRABILIDAD ACTUAL  cuanto de eso volvimos a ver
+
+| Componente de la solidez | Puntos |
+|---|---|
+| Cobertura de plataformas | 35 |
+| Corroboracion independiente | 35 |
+| Procedencia documentada | 15 |
+| Persistencia historica | 15 |
+
+Ningun componente mira la ultima ejecucion, y cada uno lo declara con
+`dependeDeLaUltimaEjecucion: false`. La reencontrabilidad **no se resta**: se
+muestra al lado, con su advertencia de que mide a nuestros proveedores y no al
+candidato.
+
+Probado con la misma identidad antes y despues de un fallo de buscador: la
+solidez es identica, la reencontrabilidad baja de 100 a 50.
+
+La formula v1 sigue viva en `executiveProfile.js` y alimenta la tarjeta
+compacta: no se toco para no alterar lo que ya funciona. La v2 se expone en el
+workspace, que es donde se explica.
+
+---
+
+### 8 · Interfaz
+
+`AccountIntelligencePanel` pasa a diez secciones: **Resumen, Identidad,
+Actividad, Amplificacion, Medios, Temas, Relaciones, Territorio, Historico,
+Evidencias**. La ficha compacta del candidato **sigue compacta**: todo lo
+profundo vive en el workspace.
+
+Abrir el panel **no sale a la red**. Observar es un boton aparte y solo lo pulsa
+el analista.
+
+En Identidad, cada cuenta muestra su estado de resolucion, su solidez y **cada
+senal con su independencia a la vista** —«independiente» o «no corrobora»—, que
+es lo que distingue una atribucion sostenida de un parecido de nombre.
+
+---
+
+### Migracion y compatibilidad
+
+Nada se reescribe. Todo es aditivo:
+
+- Las tres series nuevas viven en entidades propias del Lake; los expedientes
+  existentes no se tocan.
+- Los candidatos anteriores conservan identidad, cuentas, foto, expediente,
+  investigaciones y procedencia.
+- Sin `firstSeenAt`, la persistencia historica no se penaliza a ciegas: se
+  declara `historiaIncompleta`.
+- Sin corpus, cada seccion dice que el corpus se acumula desde la primera
+  investigacion posterior a este contrato. Las anteriores solo guardaron
+  recuentos, y eso no se puede reconstruir.
+
+### Pruebas
+
+| Suite | Comprobaciones |
+|---|---|
+| **candidateIntelligence** | **99** |
+| las dieciseis anteriores | 590 |
+| **Total** | **689, 0 fallos** |
+
+Doce fixtures sinteticos y **dos candidatos ficticios independientes**. Se
+comprueba explicitamente que una nueva investigacion no borra historia, que la
+solidez no cae por un fallo de buscador, que diez copias no son diez senales y
+que ningun modulo del gate menciona a un candidato concreto.
+
+### Riesgos y limitaciones
+
+- **Los enlaces cruzados llegan vacios hoy.** Para saber que la web declarada
+  enlaza a una cuenta hay que leer esa web, y el panel no sale a la red al
+  abrirse. Es la senal independiente que mas facil seria conseguir a
+  continuacion.
+- **El corpus arranca vacio para los candidatos existentes.** Las
+  investigaciones anteriores guardaron recuentos, no piezas. Hasta la siguiente
+  investigacion real, Amplificacion, Medios y Relaciones estaran vacios y lo
+  dicen.
+- El catalogo de medios es semilla: lo que no reconoce queda `desconocido` en
+  lugar de clasificarse por conjetura.
+- Territorio no vinculara nada hasta que las evidencias lleguen con contrato de
+  GEO-1. Fabricar un canton plausible seria inventar cobertura territorial.
+- Sigue en pie el limite dominante: seis de siete plataformas no se pueden
+  leer sin API.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -3786,7 +4083,15 @@ resueltos y verificados.
 | Estado de investigacion en la interfaz | 🟢 **BUG-11 CERRADO**, confirmado en prueba real |
 | La guarda `sinCambios` descartaba la traza en reejecuciones | 🟢 **BUG-13 CONFIRMADO EN PRUEBA REAL** (§18-nonies) |
 | La traza lee un campo inexistente y etiqueta mal una plataforma | 🟢 **BUG-15 CONFIRMADO EN PRODUCCION** (§18-undecies) |
-| Huella digital volatil segun la respuesta del proveedor | 🟡 **BUG-16 mitigado en la interfaz** (§18-sexdecies): renombrada «Solidez del expediente», con aclaracion y escala neutra. La formula y la volatilidad siguen. Original: **BUG-16**: 22 % → 53 % en el mismo dia, +17 por un buscador que contesto. Riesgo de lectura politica |
+| **Candidate Intelligence V1** | 🟢 **IMPLEMENTADO** (§18-vicies): Account Resolution, series longitudinales, amplificacion con deduplicacion, contratos de Media y Territorio, presencia observada sin indice y solidez v2 |
+| **CANDIDATE-LONGITUDINAL-01** | 🟢 **ARQUITECTURA CONGELADA**: las observaciones se agregan, no reemplazan |
+| **OBSERVED-PRESENCE-01** | 🟢 **ARQUITECTURA CONGELADA**: la presencia observada no es intencion de voto ni apoyo |
+| Indice compuesto de presencia digital | 🔴 **NO DISPONIBLE a proposito**. Faltan metodologia, normalizacion, deduplicacion total, ventanas comparables y cobertura. No se publicara antes |
+| Corpus de evidencias de los candidatos ya existentes | 🔴 arranca vacio: las investigaciones anteriores guardaron recuentos, no piezas. Se llena desde la siguiente investigacion real |
+| Enlaces cruzados como senal independiente | 🔴 requiere leer los enlaces salientes de las paginas legibles durante la observacion |
+| Media Intelligence | 🟡 **contrato definido** (`CONTRATO_MEDIA_RELATION`), `disponibleHoy: false`. El modulo pertenece a otra linea |
+| Vinculo candidato x territorio | 🟡 **contrato definido**; no vinculara nada hasta que las evidencias lleguen con contrato de GEO-1 |
+| Huella digital volatil segun la respuesta del proveedor | 🟢 **BUG-16 CORREGIDO EN EL MODELO** (§18-vicies): solidez v2 sobre el inventario consolidado, separada de la reencontrabilidad. Probado que la cifra no cambia cuando un buscador falla. La formula v1 sigue alimentando la tarjeta compacta. Original: 🟡 **mitigado en la interfaz** (§18-sexdecies): renombrada «Solidez del expediente», con aclaracion y escala neutra. La formula y la volatilidad siguen. Original: **BUG-16**: 22 % → 53 % en el mismo dia, +17 por un buscador que contesto. Riesgo de lectura politica |
 | TikTok recibe una sola consulta, sin pasada de reserva | 🔴 la propagada existio pero con el handle equivocado y dio Error. Ver BUG-17 y BUG-18 |
 | Profile-first: propietario legible en ruta de contenido | 🟢 **CONFIRMADO EN PRODUCCION** (§18-terdecies): `@segundo.cabrera82` entro como candidato y el clasificador lo rechazo |
 | `site:youtube.com` devuelve videos, no canales | 🟡 **Handle Propagation** pregunta por handle, que apunta a canal. Pendiente prueba real |
@@ -3893,6 +4198,29 @@ Decisión: clave `tenantId::proyectoId::tipoEntidad::entidad`.
 Motivo: el aislamiento entre proyectos debe ser estructural, no un filtro que
 alguien pueda olvidar.
 Estado: Vigente. Commit: `d964999`.
+
+**ADR-018 — CANDIDATE-LONGITUDINAL-01: las observaciones se agregan**
+Decision: cada candidato mantiene series append-only —snapshots de cuenta,
+snapshots de identidad y lotes de evidencias— en entidades propias del Lake.
+Motivo: las preguntas de un analista de campana son sobre el pasado, y una
+escritura destructiva las borra todas de golpe.
+Estado: Vigente, congelada. Gate: Candidate Intelligence V1 (§18-vicies).
+
+**ADR-019 — OBSERVED-PRESENCE-01: presencia observada, no apoyo**
+Decision: las dimensiones observables se publican; el indice compuesto queda
+`NO_DISPONIBLE` con sus requisitos enumerados. Etiqueta de interfaz
+«PRESENCIA DIGITAL OBSERVADA».
+Motivo: un numero unico por candidato se leeria como un ranking electoral, y
+hoy mediria el estado de nuestras fuentes y no al candidato.
+Estado: Vigente, congelada. Gate: Candidate Intelligence V1 (§18-vicies).
+
+**ADR-020 — La solidez del expediente no depende de la ultima ejecucion**
+Decision: solidez de identidad sobre el inventario consolidado, separada de la
+reencontrabilidad actual. Nunca se multiplican ni se restan.
+Motivo: penalizar el expediente porque un buscador no respondio convierte la
+metrica en un termometro del proveedor. Absence of evidence != evidence of
+absence.
+Estado: Vigente. Gate: Candidate Intelligence V1 (§18-vicies).
 
 **ADR-003 — La cuenta semilla la aporta el analista y no se asciende**
 Decisión: `cuenta_referencia` con `origen: analista` y
@@ -4060,6 +4388,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-25 | Candidate Intelligence V1 | Sentinel pasa de investigar un candidato a mantener un expediente longitudinal. Dos principios congelados: CANDIDATE-LONGITUDINAL-01 (las observaciones se agregan, no reemplazan) y OBSERVED-PRESENCE-01 (la presencia observada no es intencion de voto ni apoyo). Account Resolution con ocho estados y senales independientes frente a senales que dependen del nombre: una cuenta no pasa a corroborada por parecido de nombre ni por declaracion del analista. Ventanas 7d/30d/90d/campana con «historico insuficiente» en lugar de tendencias de un punto. Snapshots de identidad y corpus de evidencias append-only: el expediente guardaba recuentos y ahora guarda piezas, que es lo que permite deduplicar. Amplificacion separa presencia propia de ganada y da tres cifras distintas —piezas, hechos, fuentes—: diez cabeceras replicando una nota son un hecho. Cuatro planos de conversacion con `personas: null`. Contratos de Media y Territorio definidos y declarados no disponibles; territorio solo acepta lo que GEO-1 autoriza y bloquea IP, dispositivo y usuario por nombre. Presencia digital observada con seis dimensiones y indice compuesto NO DISPONIBLE. BUG-16 corregido en el modelo: solidez v2 sobre el inventario consolidado, probada identica antes y despues de un fallo de buscador, con la reencontrabilidad al lado y nunca restada. Workspace de diez secciones; ficha compacta intacta. 689 pruebas, 0 fallos. Nueva §18-vicies. |
 | 2026-08-25 | P-CAND-UX-04 + AI-01 | Resolver de fotografia desde fuentes declaradas: metadata publica estandar, prioridad centralizada, validacion de recurso, descarte de logotipos y genericas, tope de cuatro fuentes, sin login ni cookies. `verifiedImageResource` no implica `verificadaPorSentinel`, que es siempre false. Account Intelligence Fase 1: contratos de cuenta, observacion, publicacion y snapshot append-only; actividad solo derivable de observaciones reales y sin etiquetas sin metodologia; temas propios separados de temas sobre el candidato reutilizando el Topic Engine; metricas agrupadas por plataforma y sin totales cruzados; ninguna puntuacion. Mapa de capacidades real: de siete plataformas solo la web permite lectura. ACCOUNT-PROVIDER-GAPS documentado con precios null. 590 pruebas, 0 fallos. Nueva §18-undevicies. |
 | 2026-08-25 | P-CAND-UX-03 | Causa: al guardar se cerraba el modal pero la ficha quedaba desplegada y el aviso era persistente. Ahora se recarga, se colapsa y se confirma con un aviso que se borra solo. Contrato de fotografia con procedencia, historial acotado y `verificadaPorSentinel` que nunca hereda la corroboracion de la cuenta: son dos afirmaciones distintas. Una URL de cuenta ya no se acepta como imagen —era la causa del icono roto— y `CandidatePhoto` cae a iniciales si la carga falla. La jerarquia esta completa y las seis plataformas sociales quedan declaradas como no obtenibles sin API. Encontrada una URL de cuenta guardada como foto en el expediente real: se diagnostica, no se corrige sin permiso. 527 pruebas, 0 fallos. Nueva §18-duodevicies. |
 | 2026-08-25 | P-CAND-UX-02 | Causa raiz: el formulario estaba montado en la rama de render de la LISTA de proyectos, que retorna antes que la del detalle, asi que al pulsar el boton su JSX no se renderizaba nunca. Defecto introducido por mi en el gate anterior al anclar la insercion sin comprobar la rama. Corregido y convertido en espacio de trabajo por plataforma, con varias cuentas, vista previa de foto y aviso de dominio. Dos defectos mas de la auditoria: retirar BORRABA la cuenta en vez de marcarla REVOCADA con su historia, y la ficha no exponia el id para retirar por identidad exacta. Probado que un PATCH parcial no borra nada y que el candidateId no cambia. 495 pruebas, 0 fallos. Nueva §18-septendecies. |

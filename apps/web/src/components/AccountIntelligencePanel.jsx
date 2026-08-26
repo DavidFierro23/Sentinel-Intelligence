@@ -5,33 +5,42 @@ import {
   RefreshCw,
   Loader2,
   AlertTriangle,
-  Info
+  Info,
+  Link2,
+  MapPin,
+  Newspaper,
+  Share2,
+  FileText,
+  Clock
 } from "lucide-react";
 
 import { fechaLocal } from "../services/identidadCandidato";
 
 /*
 ===========================================================
-ACCOUNT INTELLIGENCE — FASE 1 (P-CAND-AI-01)
+CANDIDATE INTELLIGENCE — V1
 ===========================================================
 
 Una cuenta consolidada deja de ser solo identidad y pasa a ser
-objeto de observacion.
+objeto de observacion longitudinal.
 
 LO QUE ESTA PANTALLA SE PROHIBE
 
     NO puntuacion por candidato.
     NO ranking.
+    NO indice compuesto de presencia.
     NO «actividad baja» sin metodologia.
+    NO llamar personas a las publicaciones.
     NO decir «el candidato no publica» cuando lo que ocurrio es
        que no pudimos leer sus publicaciones.
+    NO presentar una relacion digital observada como una
+       relacion politica real.
 
 ESTADOS VACIOS HONESTOS
 
 Casi todo va a estar vacio en esta fase, y esta bien: lo que NO
 se puede hacer es que un hueco parezca un dato. Cada seccion
-vacia dice por que lo esta, y cada plataforma declara su
-capacidad real.
+vacia dice por que lo esta.
 
     SIN_DATOS_PUBLICOS   se consulto y no habia metadata util
     PROVIDER_LIMITED     haria falta una API que no tenemos
@@ -49,6 +58,18 @@ const TONOS = {
   ERROR: "#EF4444"
 };
 
+/* Estados de Account Resolution. */
+const TONO_RESOLUCION = {
+  CONSOLIDADA: "#22C55E",
+  CORROBORADA: "#22C55E",
+  DECLARADA: "#0B5FFF",
+  CANDIDATA: "#F59E0B",
+  DESCUBIERTA: "var(--sentinel-texto-tenue)",
+  NO_REENCONTRADA: "#F59E0B",
+  DUDOSA: "#EF4444",
+  DESCARTADA: "var(--sentinel-texto-tenue)"
+};
+
 const CAPACIDAD_TEXTO = {
   ADAPTER_AVAILABLE: "adaptador propio disponible",
   PUBLIC_METADATA_ONLY: "solo metadata pública",
@@ -58,15 +79,21 @@ const CAPACIDAD_TEXTO = {
   UNSUPPORTED: "no contemplado"
 };
 
+/*
+  Diez secciones. La ficha compacta del candidato sigue siendo
+  compacta: todo lo profundo vive aqui.
+*/
 const SECCIONES = [
   "Resumen",
-  "Cuentas",
+  "Identidad",
   "Actividad",
-  "Publicaciones",
+  "Amplificación",
+  "Medios",
   "Temas",
-  "Métricas",
+  "Relaciones",
+  "Territorio",
   "Histórico",
-  "Limitaciones"
+  "Evidencias"
 ];
 
 const caja = {
@@ -91,6 +118,18 @@ const rotulo = {
   marginBottom: "6px"
 };
 
+const parrafo = {
+  color: "var(--sentinel-texto-suave)",
+  fontSize: "11px",
+  lineHeight: 1.75
+};
+
+const tenue = {
+  color: "var(--sentinel-texto-tenue)",
+  fontSize: "10px",
+  lineHeight: 1.7
+};
+
 
 /*
   Un hueco que explica por que esta vacio. Es la pieza que evita
@@ -110,6 +149,28 @@ function Vacio({ texto }) {
       }}
     >
       <Info size={13} style={{ flexShrink: 0, marginTop: "2px" }} />
+      <span>{texto}</span>
+    </div>
+  );
+}
+
+
+/* Una advertencia que hay que leer antes de mirar la cifra. */
+function Aviso({ texto, icono: Icono = AlertTriangle, color = "#F59E0B" }) {
+  return (
+    <div
+      style={{
+        ...caja,
+        borderColor: color,
+        color,
+        fontSize: "10.5px",
+        lineHeight: 1.75,
+        display: "flex",
+        gap: "9px",
+        alignItems: "flex-start"
+      }}
+    >
+      <Icono size={13} style={{ flexShrink: 0, marginTop: "2px" }} />
       <span>{texto}</span>
     </div>
   );
@@ -152,6 +213,89 @@ function Dato({ etiqueta, valor, nota }) {
 }
 
 
+/*
+  Una barra explicable: el valor y de que se compone. Sin los
+  componentes seria un numero sin defensa.
+*/
+function Medida({ titulo, valor, maximo = 100, componentes, formula, nota }) {
+  return (
+    <div style={caja}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "baseline",
+          gap: "10px"
+        }}
+      >
+        <div style={rotulo}>{titulo}</div>
+
+        <div
+          style={{
+            color: valor == null ? "var(--sentinel-texto-tenue)" : "#FFFFFF",
+            fontSize: "15px",
+            fontFamily: "monospace"
+          }}
+        >
+          {valor == null ? "sin dato" : `${valor}/${maximo}`}
+        </div>
+      </div>
+
+      {valor != null && (
+        <div
+          style={{
+            height: "4px",
+            background: "var(--sentinel-borde)",
+            borderRadius: "2px",
+            overflow: "hidden",
+            margin: "8px 0"
+          }}
+        >
+          <div
+            style={{
+              width: `${Math.min(100, (valor / maximo) * 100)}%`,
+              height: "100%",
+              background: "var(--sentinel-cyan)"
+            }}
+          />
+        </div>
+      )}
+
+      {(componentes || []).map((c) => (
+        <div
+          key={c.id}
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: "10px",
+            marginTop: "5px"
+          }}
+        >
+          <span style={{ ...tenue, flex: 1 }}>
+            {c.nombre} — {c.detalle}
+          </span>
+
+          <span
+            style={{
+              color: "var(--sentinel-texto)",
+              fontSize: "10px",
+              fontFamily: "monospace",
+              whiteSpace: "nowrap"
+            }}
+          >
+            {c.valor}/{c.maximo}
+          </span>
+        </div>
+      ))}
+
+      {formula && <div style={{ ...tenue, marginTop: "9px" }}>{formula}</div>}
+
+      {nota && <div style={{ ...tenue, marginTop: "7px" }}>{nota}</div>}
+    </div>
+  );
+}
+
+
 export default function AccountIntelligencePanel({
   datos,
   proyecto,
@@ -165,6 +309,14 @@ export default function AccountIntelligencePanel({
 
   const r = datos.resumen || {};
 
+  const resolucion = datos.resolucion || null;
+
+  const solidez = datos.solidez || null;
+
+  const amplificacion = datos.amplificacion || null;
+
+  const presencia = datos.presencia || null;
+
   const rejilla = {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))",
@@ -175,7 +327,7 @@ export default function AccountIntelligencePanel({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Account Intelligence"
+      aria-label="Candidate Intelligence"
       style={{
         position: "fixed",
         inset: 0,
@@ -191,7 +343,7 @@ export default function AccountIntelligencePanel({
       <div
         className="sentinel-fade"
         style={{
-          width: "min(980px, 100%)",
+          width: "min(1040px, 100%)",
           background: "var(--sentinel-primary)",
           border: "1px solid var(--sentinel-borde-vivo)",
           borderRadius: "var(--radio-l)",
@@ -229,10 +381,10 @@ export default function AccountIntelligencePanel({
                 <Activity size={17} color="var(--sentinel-cyan)" />
 
                 <h2 style={{ margin: 0, color: "#FFFFFF", fontSize: "16px" }}>
-                  Account Intelligence
+                  Candidate Intelligence
                 </h2>
 
-                <span style={pill("var(--sentinel-cyan)")}>fase 1</span>
+                <span style={pill("var(--sentinel-cyan)")}>v1</span>
               </div>
 
               <div style={{ color: "#FFFFFF", fontSize: "13px", marginTop: "7px" }}>
@@ -313,10 +465,22 @@ export default function AccountIntelligencePanel({
         {/* ---- CUERPO ---- */}
 
         <div style={{ padding: "18px 22px", overflowY: "auto", flex: 1 }}>
+          {/* =============== RESUMEN =============== */}
+
           {seccion === "Resumen" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
               <div style={rejilla}>
                 <Dato etiqueta="Cuentas en el expediente" valor={r.cuentasTotales} />
+                <Dato
+                  etiqueta="Corroboradas"
+                  valor={resolucion?.resumen?.corroboradas}
+                  nota="Con al menos una señal independiente del nombre."
+                />
+                <Dato
+                  etiqueta="Sin señal independiente"
+                  valor={resolucion?.resumen?.sinSenalIndependiente}
+                  nota="El nombre coincide, y eso no corrobora."
+                />
                 <Dato
                   etiqueta="Monitorizables hoy"
                   valor={r.cuentasMonitorizables}
@@ -331,39 +495,140 @@ export default function AccountIntelligencePanel({
                       : null
                   }
                 />
-                <Dato
-                  etiqueta="Publicaciones observadas"
-                  valor={datos.actividad?.publicacionesObservadas ?? 0}
-                  nota={datos.notaPublicaciones}
-                />
-                <Dato
-                  etiqueta="Temas propios detectados"
-                  valor={datos.temas?.temas?.length ?? 0}
-                />
               </div>
 
-              {r.proveedores?.length > 0 && (
-                <div style={caja}>
-                  <div style={rotulo}>Proveedores utilizados</div>
-                  <div style={{ color: "var(--sentinel-texto)", fontSize: "11.5px" }}>
-                    {r.proveedores.join(" · ")}
+              {/*
+                PRESENCIA DIGITAL OBSERVADA. El indice compuesto se
+                muestra NO DISPONIBLE a proposito: es lo que
+                impide que alguien lea la pantalla como un ranking.
+              */}
+              {presencia && (
+                <>
+                  <div style={caja}>
+                    <div style={rotulo}>{presencia.etiqueta}</div>
+
+                    <div
+                      style={{
+                        color: "var(--sentinel-texto-tenue)",
+                        fontSize: "20px",
+                        fontFamily: "monospace"
+                      }}
+                    >
+                      NO DISPONIBLE
+                    </div>
+
+                    <div style={{ ...tenue, marginTop: "7px" }}>
+                      {presencia.indice?.motivo}
+                    </div>
+
+                    <div style={{ ...tenue, marginTop: "9px" }}>
+                      Falta:{" "}
+                      {(presencia.indice?.requisitos || [])
+                        .filter((x) => !x.cumplido)
+                        .map((x) => x.id)
+                        .join(" · ")}
+                    </div>
                   </div>
+
+                  <div style={rejilla}>
+                    {(presencia.dimensiones || []).map((d) => (
+                      <Dato
+                        key={d.id}
+                        etiqueta={d.nombre}
+                        valor={d.valor}
+                        nota={d.motivoNoDisponible || `${d.unidad} · ${d.metodologia}`}
+                      />
+                    ))}
+                  </div>
+
+                  <Aviso
+                    texto={`${presencia.declaracion?.texto} ${presencia.declaracion?.universo}`}
+                  />
+                </>
+              )}
+
+              {/*
+                LIMITACIONES. En el resumen, no escondidas en una
+                pestaña: son parte del resultado.
+              */}
+              {(r.limitaciones || []).length > 0 && (
+                <div style={caja}>
+                  <div style={rotulo}>Limitaciones registradas</div>
+
+                  {(r.limitaciones || []).map((l) => (
+                    <div key={l} style={{ ...tenue, marginTop: "5px" }}>
+                      · {l}
+                    </div>
+                  ))}
                 </div>
               )}
+
+              <div style={tenue}>
+                Ningún estado de esta pantalla afirma que el candidato no
+                publique o no tenga presencia: describen lo que Sentinel pudo o
+                no pudo observar con las fuentes disponibles.
+              </div>
             </div>
           )}
 
-          {seccion === "Cuentas" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
-              {datos.cuentas.length === 0 ? (
+          {/* =============== IDENTIDAD =============== */}
+
+          {seccion === "Identidad" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {/*
+                LAS DOS METRICAS, SEPARADAS. La segunda mide a
+                nuestros proveedores y por eso NO se resta de la
+                primera.
+              */}
+              {solidez && (
+                <>
+                  <Medida
+                    titulo="Solidez del expediente (identidad)"
+                    valor={solidez.identidad?.valor}
+                    componentes={solidez.identidad?.componentes}
+                    formula={solidez.identidad?.formula}
+                    nota={(solidez.identidad?.noEs || []).join(" ")}
+                  />
+
+                  <Medida
+                    titulo="Reencontrabilidad en la última verificación"
+                    valor={solidez.reencontrabilidad?.valor}
+                    formula={solidez.reencontrabilidad?.formula}
+                    nota={
+                      solidez.reencontrabilidad?.advertencia ||
+                      solidez.reencontrabilidad?.motivo
+                    }
+                  />
+
+                  <div style={tenue}>{solidez.relacion}</div>
+                </>
+              )}
+
+              {resolucion?.resumen?.multiplesPorPlataforma?.length > 0 &&
+                resolucion.resumen.multiplesPorPlataforma.map((m) => (
+                  <Aviso
+                    key={m.plataformaId}
+                    texto={`${m.plataformaId}: ${m.cuentas.length} cuentas. ${m.nota}`}
+                  />
+                ))}
+
+              <div style={caja}>
+                <div style={rotulo}>Regla de corroboración</div>
+                <div style={parrafo}>{resolucion?.regla}</div>
+                <div style={{ ...tenue, marginTop: "7px" }}>
+                  Prohibido: {(resolucion?.prohibido || []).join(" · ")}
+                </div>
+              </div>
+
+              {(datos.cuentas || []).length === 0 ? (
                 <Vacio texto="Este candidato no tiene ninguna cuenta en el expediente. Cárgalas desde «Editar identidad» y vuelve aquí." />
               ) : (
-                datos.cuentas.map((c) => {
+                (datos.cuentas || []).map((c) => {
                   const obs = (datos.observaciones || []).find(
                     (o) => o.accountId === c.accountId
                   );
 
-                  const estado = obs?.estado || "NO_EJECUTADA";
+                  const estadoObs = obs?.estado || "NO_EJECUTADA";
 
                   return (
                     <div key={c.accountId} style={caja}>
@@ -376,36 +641,111 @@ export default function AccountIntelligencePanel({
                         }}
                       >
                         <strong style={{ color: "#FFFFFF", fontSize: "12.5px" }}>
-                          {c.plataformaId} {c.handle ? `@${c.handle}` : ""}
+                          {c.plataforma || c.plataformaId}{" "}
+                          {c.handle ? `@${c.handle}` : ""}
                         </strong>
 
-                        <span style={pill(TONOS[estado])}>{estado}</span>
+                        <span
+                          style={pill(
+                            TONO_RESOLUCION[c.estado] || "var(--sentinel-texto-tenue)"
+                          )}
+                        >
+                          {c.estado}
+                        </span>
 
-                        {c.procedencia?.corroboradaPorSentinel && (
-                          <span style={pill("#22C55E")}>corroborada</span>
-                        )}
+                        <span style={pill(TONOS[estadoObs])}>{estadoObs}</span>
 
                         {c.procedencia?.declaradaPorAnalista && (
                           <span style={pill("#0B5FFF")}>declarada</span>
                         )}
+
+                        <span
+                          style={{
+                            marginLeft: "auto",
+                            color: "var(--sentinel-texto)",
+                            fontSize: "10.5px",
+                            fontFamily: "monospace"
+                          }}
+                        >
+                          {c.solidez?.valor ?? 0}/100
+                        </span>
                       </div>
 
-                      <div
-                        style={{
-                          color: "var(--sentinel-texto-suave)",
-                          fontSize: "10px",
-                          marginTop: "6px",
-                          lineHeight: 1.7
-                        }}
-                      >
-                        {obs?.motivo || obs?.limitaciones?.[0] || "sin observación todavía"}
+                      {/* POR QUE ese estado. */}
+                      <div style={{ ...tenue, marginTop: "7px" }}>
+                        {(c.razones || []).join(" · ")}
+                      </div>
 
-                        {obs?.metricasNoDisponibles?.length > 0 && (
-                          <>
-                            <br />
-                            no obtenible hoy: {obs.metricasNoDisponibles.join(", ")}
-                          </>
-                        )}
+                      {/*
+                        LAS SENALES, con su independencia a la
+                        vista: es lo que distingue una atribucion
+                        sostenida de un parecido de nombre.
+                      */}
+                      {(c.senales || []).length > 0 && (
+                        <div style={{ marginTop: "8px" }}>
+                          {c.senales.map((s) => (
+                            <div
+                              key={s.id}
+                              style={{
+                                display: "flex",
+                                gap: "8px",
+                                alignItems: "baseline",
+                                flexWrap: "wrap",
+                                marginTop: "4px"
+                              }}
+                            >
+                              <span
+                                style={pill(
+                                  s.independiente
+                                    ? "#22C55E"
+                                    : "var(--sentinel-texto-tenue)"
+                                )}
+                              >
+                                {s.independiente ? "independiente" : "no corrobora"}
+                              </span>
+
+                              <span
+                                style={{
+                                  color: "var(--sentinel-texto)",
+                                  fontSize: "10px"
+                                }}
+                              >
+                                {s.nombre}
+                              </span>
+
+                              <span style={{ ...tenue, flex: "1 1 180px" }}>
+                                {s.detalle || s.explicacion}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {c.observacion?.nota && (
+                        <div
+                          style={{
+                            ...tenue,
+                            marginTop: "8px",
+                            color: "#F59E0B"
+                          }}
+                        >
+                          {c.observacion.nota}
+                        </div>
+                      )}
+
+                      <div style={{ ...tenue, marginTop: "8px" }}>
+                        {c.firstSeenAt
+                          ? `primera observación ${fechaLocal(c.firstSeenAt, proyecto)}`
+                          : "sin primera observación registrada"}
+                        {c.lastSeenAt
+                          ? ` · última vista ${fechaLocal(c.lastSeenAt, proyecto)}`
+                          : ""}
+                        {c.lastCheckedAt
+                          ? ` · última verificación ${fechaLocal(c.lastCheckedAt, proyecto)}`
+                          : ""}
+                        {c.historiaIncompleta
+                          ? " · historia incompleta: el expediente es anterior al contrato longitudinal"
+                          : ""}
                       </div>
                     </div>
                   );
@@ -413,6 +753,8 @@ export default function AccountIntelligencePanel({
               )}
             </div>
           )}
+
+          {/* =============== ACTIVIDAD =============== */}
 
           {seccion === "Actividad" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
@@ -443,95 +785,31 @@ export default function AccountIntelligencePanel({
               {datos.actividad?.advertencia && (
                 <Vacio texto={datos.actividad.advertencia} />
               )}
-            </div>
-          )}
 
-          {seccion === "Publicaciones" && (
-            <>
-              {datos.publicaciones?.length === 0 ? (
-                <Vacio texto={datos.notaPublicaciones} />
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
-                  {datos.publicaciones.map((p) => (
-                    <div key={p.postId} style={caja}>
-                      <div style={{ color: "#FFFFFF", fontSize: "12px" }}>
-                        {p.title || p.text?.slice(0, 120) || p.url}
-                      </div>
-                      <div
-                        style={{
-                          color: "var(--sentinel-texto-tenue)",
-                          fontSize: "10px",
-                          marginTop: "5px"
-                        }}
-                      >
-                        {p.platform} ·{" "}
-                        {p.publishedAt ? fechaLocal(p.publishedAt, proyecto) : "sin fecha"}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-
-          {seccion === "Temas" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {/* Publicaciones propias. */}
               <div style={caja}>
-                <div style={rotulo}>{datos.temas?.ambito}</div>
-                <div
-                  style={{
-                    color: "var(--sentinel-texto-suave)",
-                    fontSize: "11px",
-                    lineHeight: 1.75
-                  }}
-                >
-                  {datos.temas?.definicion}
-                  <br />
-                  <em style={{ fontStyle: "normal", color: "var(--sentinel-texto-tenue)" }}>
-                    {datos.temas?.noEs}
-                  </em>
+                <div style={rotulo}>Publicaciones propias observadas</div>
+                <div style={parrafo}>
+                  {datos.publicaciones?.length
+                    ? `${datos.publicaciones.length} publicación(es).`
+                    : datos.notaPublicaciones}
                 </div>
               </div>
 
-              {datos.temas?.temas?.length ? (
-                datos.temas.temas.map((t) => (
-                  <div key={t.id} style={caja}>
-                    <strong style={{ color: "#FFFFFF", fontSize: "12px" }}>
-                      {t.nombre}
-                    </strong>
-                    <div
-                      style={{
-                        color: "var(--sentinel-texto-tenue)",
-                        fontSize: "10px",
-                        marginTop: "4px"
-                      }}
-                    >
-                      {t.evidencias} publicación(es) · {(t.terminos || []).join(", ")}
-                    </div>
+              {(datos.publicaciones || []).map((p) => (
+                <div key={p.postId} style={caja}>
+                  <div style={{ color: "#FFFFFF", fontSize: "12px" }}>
+                    {p.title || p.text?.slice(0, 120) || p.url}
                   </div>
-                ))
-              ) : (
-                <Vacio texto={datos.temas?.advertencia || "Sin temas propios."} />
-              )}
-            </div>
-          )}
+                  <div style={{ ...tenue, marginTop: "5px" }}>
+                    {p.platform} ·{" "}
+                    {p.publishedAt ? fechaLocal(p.publishedAt, proyecto) : "sin fecha"}
+                  </div>
+                </div>
+              ))}
 
-          {seccion === "Métricas" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-              <div
-                style={{
-                  ...caja,
-                  borderColor: "#F59E0B",
-                  color: "#F59E0B",
-                  fontSize: "10.5px",
-                  lineHeight: 1.75,
-                  display: "flex",
-                  gap: "9px"
-                }}
-              >
-                <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: "2px" }} />
-                <span>{r.metricasNoComparables}</span>
-              </div>
+              {/* CAPACIDAD REAL POR PLATAFORMA. */}
+              <Aviso texto={r.metricasNoComparables} />
 
               {(r.plataformas || []).map((p) => (
                 <div key={p.plataformaId} style={caja}>
@@ -551,21 +829,12 @@ export default function AccountIntelligencePanel({
                       {p.estado || "sin cuenta"}
                     </span>
 
-                    <span
-                      style={{ color: "var(--sentinel-texto-tenue)", fontSize: "9.5px" }}
-                    >
+                    <span style={{ ...tenue, fontSize: "9.5px" }}>
                       {CAPACIDAD_TEXTO[p.capacidad] || p.capacidad}
                     </span>
                   </div>
 
-                  <div
-                    style={{
-                      color: "var(--sentinel-texto-suave)",
-                      fontSize: "10px",
-                      marginTop: "6px",
-                      lineHeight: 1.7
-                    }}
-                  >
+                  <div style={{ ...tenue, marginTop: "6px" }}>
                     {p.nota || p.motivoCapacidad}
 
                     {p.metricasNecesarias?.length > 0 && (
@@ -587,23 +856,481 @@ export default function AccountIntelligencePanel({
             </div>
           )}
 
-          {seccion === "Histórico" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
+          {/* =============== AMPLIFICACIÓN =============== */}
+
+          {seccion === "Amplificación" && amplificacion && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {/*
+                LAS TRES CIFRAS, SEPARADAS. Diez portales copiando
+                una nota son diez piezas, un hecho y N fuentes: no
+                diez señales.
+              */}
+              <div style={rejilla}>
+                <Dato
+                  etiqueta="Presencia propia"
+                  valor={amplificacion.propia?.piezas}
+                  nota={amplificacion.propia?.definicion}
+                />
+                <Dato
+                  etiqueta="Piezas de terceros"
+                  valor={amplificacion.ganada?.piezas}
+                  nota="Lo que se encontró."
+                />
+                <Dato
+                  etiqueta="Hechos distintos"
+                  valor={amplificacion.ganada?.hechosDistintos}
+                  nota="Cuántas cosas distintas se dijeron, ya deduplicadas."
+                />
+                <Dato
+                  etiqueta="Fuentes distintas"
+                  valor={amplificacion.ganada?.fuentesDistintas}
+                  nota="Cuántos actores lo dijeron."
+                />
+                <Dato
+                  etiqueta="Piezas que son réplica"
+                  valor={amplificacion.ganada?.piezasQueSonReplica}
+                />
+                <Dato
+                  etiqueta="Personas"
+                  valor={null}
+                  nota={amplificacion.notaPersonas}
+                />
+              </div>
+
               <div style={caja}>
-                <div style={rotulo}>Snapshots acumulados</div>
-                <div
-                  style={{
-                    color: "var(--sentinel-texto-suave)",
-                    fontSize: "11px",
-                    lineHeight: 1.75
-                  }}
-                >
-                  {datos.historico?.nota}
+                <div style={rotulo}>Interpretación</div>
+                <div style={parrafo}>{amplificacion.ganada?.interpretacion}</div>
+              </div>
+
+              {amplificacion.propia?.advertencia && (
+                <Vacio texto={amplificacion.propia.advertencia} />
+              )}
+
+              {amplificacion.corpus?.nota && (
+                <Vacio texto={amplificacion.corpus.nota} />
+              )}
+
+              {/* Grupos de réplica, con sus títulos. */}
+              {(amplificacion.ganada?.replicas || []).map((rep, i) => (
+                <div key={`${rep.representante}-${i}`} style={caja}>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "9px",
+                      alignItems: "center",
+                      flexWrap: "wrap"
+                    }}
+                  >
+                    <Share2 size={12} color="#F59E0B" />
+
+                    <strong style={{ color: "#FFFFFF", fontSize: "11.5px" }}>
+                      {rep.representante}
+                    </strong>
+
+                    <span style={pill("#F59E0B")}>{rep.piezas} piezas · 1 hecho</span>
+                  </div>
+
+                  <div style={{ ...tenue, marginTop: "6px" }}>{rep.nota}</div>
+                </div>
+              ))}
+
+              {/* Los cuatro planos de conversación. */}
+              {datos.conversacion && (
+                <>
+                  <div style={caja}>
+                    <div style={rotulo}>Conversación pública relacionada</div>
+
+                    {(datos.conversacion.planos || []).map((p) => (
+                      <div
+                        key={p.clave}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: "10px",
+                          marginTop: "7px"
+                        }}
+                      >
+                        <span style={{ ...tenue, flex: 1 }}>
+                          <strong style={{ color: "var(--sentinel-texto)" }}>
+                            {p.nombre}
+                          </strong>
+                          <br />
+                          {p.definicion}
+                        </span>
+
+                        <span
+                          style={{
+                            color: "#FFFFFF",
+                            fontSize: "13px",
+                            fontFamily: "monospace"
+                          }}
+                        >
+                          {p.piezasObservadas}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <Aviso texto={datos.conversacion.prohibicion} />
+                </>
+              )}
+            </div>
+          )}
+
+          {/* =============== MEDIOS =============== */}
+
+          {seccion === "Medios" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <div style={rejilla}>
+                <Dato
+                  etiqueta="Dominios distintos"
+                  valor={datos.medios?.dominiosDistintos}
+                  nota="La diversidad se mide en dominios, no en piezas."
+                />
+                <Dato etiqueta="Locales" valor={datos.medios?.locales} />
+                <Dato etiqueta="Nacionales" valor={datos.medios?.nacionales} />
+                <Dato
+                  etiqueta="Fuera del catálogo"
+                  valor={datos.medios?.desconocidos}
+                  nota="No se les asigna tipo por conjetura."
+                />
+              </div>
+
+              {(datos.medios?.detalle || []).length === 0 ? (
+                <Vacio texto="Todavía no hay ningún medio en el corpus de este candidato. El corpus lo escriben las investigaciones: se acumula desde la primera posterior a este contrato." />
+              ) : (
+                (datos.medios.detalle || []).map((m) => (
+                  <div key={m.dominio} style={caja}>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "9px",
+                        alignItems: "center",
+                        flexWrap: "wrap"
+                      }}
+                    >
+                      <Newspaper size={12} color="var(--sentinel-cyan)" />
+
+                      <strong style={{ color: "#FFFFFF", fontSize: "11.5px" }}>
+                        {m.nombre || m.dominio}
+                      </strong>
+
+                      <span style={pill("var(--sentinel-texto-tenue)")}>{m.tipo}</span>
+
+                      <span
+                        style={{
+                          marginLeft: "auto",
+                          color: "var(--sentinel-texto)",
+                          fontSize: "10.5px",
+                          fontFamily: "monospace"
+                        }}
+                      >
+                        {m.evidencias} pieza(s)
+                      </span>
+                    </div>
+
+                    <div style={{ ...tenue, marginTop: "6px" }}>
+                      {m.dominio}
+                      {m.primeraFecha ? ` · desde ${m.primeraFecha}` : ""}
+                      {m.ultimaFecha ? ` · hasta ${m.ultimaFecha}` : ""}
+                    </div>
+                  </div>
+                ))
+              )}
+
+              {(datos.medios?.loQueNoSabemos || []).map((x) => (
+                <div key={x} style={tenue}>
+                  · {x}
+                </div>
+              ))}
+
+              {/* El contrato con Media Intelligence, declarado. */}
+              {datos.medios?.contrato && (
+                <div style={caja}>
+                  <div style={rotulo}>
+                    Contrato con Media Intelligence — {datos.medios.contrato.estado}
+                  </div>
+
+                  <div style={parrafo}>{datos.medios.contrato.motivo}</div>
+
+                  <div style={{ ...tenue, marginTop: "8px" }}>
+                    Debe devolver:{" "}
+                    {(datos.medios.contrato.debeDevolverMediaIntelligence || []).join(
+                      " · "
+                    )}
+                  </div>
+
+                  {(datos.medios.contrato.reglas || []).map((x) => (
+                    <div key={x} style={{ ...tenue, marginTop: "5px" }}>
+                      · {x}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* =============== TEMAS =============== */}
+
+          {seccion === "Temas" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <div style={caja}>
+                <div style={rotulo}>{datos.temas?.ambito}</div>
+                <div style={parrafo}>
+                  {datos.temas?.definicion}
+                  <br />
+                  <em
+                    style={{
+                      fontStyle: "normal",
+                      color: "var(--sentinel-texto-tenue)"
+                    }}
+                  >
+                    {datos.temas?.noEs}
+                  </em>
                 </div>
               </div>
 
+              {datos.temas?.temas?.length ? (
+                datos.temas.temas.map((t) => (
+                  <div key={t.id} style={caja}>
+                    <strong style={{ color: "#FFFFFF", fontSize: "12px" }}>
+                      {t.nombre}
+                    </strong>
+                    <div style={{ ...tenue, marginTop: "4px" }}>
+                      {t.evidencias} publicación(es) · {(t.terminos || []).join(", ")}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <Vacio texto={datos.temas?.advertencia || "Sin temas propios."} />
+              )}
+            </div>
+          )}
+
+          {/* =============== RELACIONES =============== */}
+
+          {seccion === "Relaciones" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {/*
+                LA ADVERTENCIA VA PRIMERA. Un grafo de relaciones
+                sin ella se lee como un mapa de alianzas.
+              */}
+              <Aviso
+                icono={Link2}
+                texto={`${datos.relaciones?.advertencia?.titulo}. ${datos.relaciones?.advertencia?.texto}`}
+              />
+
+              <div style={rejilla}>
+                <Dato
+                  etiqueta="Relaciones observadas"
+                  valor={datos.relaciones?.total}
+                />
+                {Object.entries(datos.relaciones?.porTipo || {}).map(([k, v]) => (
+                  <Dato key={k} etiqueta={k} valor={v} />
+                ))}
+              </div>
+
+              {(datos.relaciones?.relaciones || []).length === 0 ? (
+                <Vacio
+                  texto={
+                    datos.relaciones?.nota ||
+                    "Sin relaciones observables todavía."
+                  }
+                />
+              ) : (
+                (datos.relaciones.relaciones || []).slice(0, 40).map((x) => (
+                  <div key={x.relationId} style={caja}>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "9px",
+                        alignItems: "baseline",
+                        flexWrap: "wrap"
+                      }}
+                    >
+                      <span style={pill("var(--sentinel-cyan)")}>{x.tipo}</span>
+
+                      <span
+                        style={{ color: "#FFFFFF", fontSize: "11.5px" }}
+                      >
+                        {x.source}
+                      </span>
+
+                      <span style={tenue}>→ {x.target}</span>
+
+                      {x.timestamp && (
+                        <span style={{ ...tenue, marginLeft: "auto" }}>
+                          {x.timestamp}
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={{ ...tenue, marginTop: "6px" }}>
+                      confianza: {x.confidence == null ? "sin dato" : x.confidence} ·{" "}
+                      {x.explicacionConfidence}
+                    </div>
+                  </div>
+                ))
+              )}
+
+              {(datos.relaciones?.noImplementado || []).length > 0 && (
+                <div style={caja}>
+                  <div style={rotulo}>No observable todavía</div>
+
+                  {datos.relaciones.noImplementado.map((x) => (
+                    <div key={x} style={{ ...tenue, marginTop: "5px" }}>
+                      · {x}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* =============== TERRITORIO =============== */}
+
+          {seccion === "Territorio" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <div style={rejilla}>
+                <Dato
+                  etiqueta="Piezas ubicadas"
+                  valor={datos.territorio?.total}
+                  nota="Se ubica la pieza, nunca a la persona."
+                />
+                <Dato
+                  etiqueta="Rechazadas por GEO-1"
+                  valor={datos.territorio?.rechazados}
+                />
+              </div>
+
+              <Vacio texto={datos.territorio?.nota} />
+
+              {Object.entries(datos.territorio?.motivosDeRechazo || {}).length > 0 && (
+                <div style={caja}>
+                  <div style={rotulo}>Motivos de rechazo</div>
+
+                  {Object.entries(datos.territorio.motivosDeRechazo).map(([k, v]) => (
+                    <div key={k} style={{ ...tenue, marginTop: "5px" }}>
+                      {v} × {k}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {(datos.territorio?.vinculos || []).map((v) => (
+                <div key={v.evidenceId} style={caja}>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "9px",
+                      alignItems: "center",
+                      flexWrap: "wrap"
+                    }}
+                  >
+                    <MapPin size={12} color="var(--sentinel-cyan)" />
+
+                    <strong style={{ color: "#FFFFFF", fontSize: "11.5px" }}>
+                      {v.territoryId}
+                    </strong>
+
+                    <span style={pill("var(--sentinel-texto-tenue)")}>
+                      {v.geoResolution}
+                    </span>
+                  </div>
+
+                  <div style={{ ...tenue, marginTop: "6px" }}>
+                    método {v.provenance?.metodo} · {v.nota}
+                  </div>
+                </div>
+              ))}
+
+              <div style={caja}>
+                <div style={rotulo}>Métodos prohibidos por diseño</div>
+                <div style={tenue}>
+                  {(datos.territorio?.metodosProhibidos || []).join(" · ")}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* =============== HISTÓRICO =============== */}
+
+          {seccion === "Histórico" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <div style={caja}>
+                <div style={rotulo}>Serie de observaciones</div>
+                <div style={parrafo}>{datos.historico?.nota}</div>
+              </div>
+
+              {/* LAS CUATRO VENTANAS. */}
+              {(datos.historico?.ventanas || []).map((v) => (
+                <div key={v.id} style={caja}>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "9px",
+                      alignItems: "center",
+                      flexWrap: "wrap"
+                    }}
+                  >
+                    <Clock size={12} color="var(--sentinel-cyan)" />
+
+                    <strong style={{ color: "#FFFFFF", fontSize: "11.5px" }}>
+                      {v.nombre}
+                    </strong>
+
+                    <span
+                      style={pill(
+                        v.comparable ? "#22C55E" : "var(--sentinel-texto-tenue)"
+                      )}
+                    >
+                      {v.estado}
+                    </span>
+
+                    <span style={{ ...tenue, marginLeft: "auto" }}>
+                      {v.observaciones} observación(es)
+                    </span>
+                  </div>
+
+                  <div style={{ ...tenue, marginTop: "6px" }}>
+                    {v.motivo || v.delta?.nota}
+                  </div>
+                </div>
+              ))}
+
+              {/* CAMBIO DE INVENTARIO. */}
+              {datos.historico?.identidad?.ultimoCambio ? (
+                <div style={caja}>
+                  <div style={rotulo}>Cambios en el inventario de cuentas</div>
+
+                  <div style={parrafo}>
+                    aparecidas:{" "}
+                    {datos.historico.identidad.ultimoCambio.aparecidas.length} ·
+                    permanecen:{" "}
+                    {datos.historico.identidad.ultimoCambio.permanecen.length} ·
+                    ausentes del inventario:{" "}
+                    {
+                      datos.historico.identidad.ultimoCambio.ausentesDelInventario
+                        .length
+                    }
+                  </div>
+
+                  <div style={{ ...tenue, marginTop: "7px" }}>
+                    {datos.historico.identidad.ultimoCambio.nota}
+                  </div>
+                </div>
+              ) : (
+                <Vacio
+                  texto={
+                    datos.historico?.identidad?.nota ||
+                    "Todavía no hay dos fotos del inventario que comparar."
+                  }
+                />
+              )}
+
+              {/* SNAPSHOTS DE CUENTA. */}
               {datos.historico?.total ? (
-                datos.historico.snapshots.map((sn) => (
+                (datos.historico.snapshots || []).slice(0, 40).map((sn) => (
                   <div key={sn.snapshotId} style={caja}>
                     <div
                       style={{
@@ -621,9 +1348,7 @@ export default function AccountIntelligencePanel({
                         {sn.estado}
                       </span>
 
-                      <span
-                        style={{ color: "var(--sentinel-texto-tenue)", fontSize: "10px" }}
-                      >
+                      <span style={{ ...tenue, fontSize: "10px" }}>
                         {fechaLocal(sn.capturedAt, proyecto)}
                       </span>
                     </div>
@@ -635,38 +1360,89 @@ export default function AccountIntelligencePanel({
             </div>
           )}
 
-          {seccion === "Limitaciones" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
-              {(r.limitaciones || []).length === 0 ? (
-                <Vacio texto="Sin limitaciones registradas todavía: aparecerán al ejecutar la primera observación." />
-              ) : (
-                (r.limitaciones || []).map((l) => (
+          {/* =============== EVIDENCIAS =============== */}
+
+          {seccion === "Evidencias" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <div style={rejilla}>
+                <Dato etiqueta="Piezas en el corpus" valor={datos.evidencias?.total} />
+                <Dato
+                  etiqueta="Lotes acumulados"
+                  valor={datos.historico?.corpus?.lotes}
+                  nota="Uno por investigación: no se sobrescriben."
+                />
+                <Dato
+                  etiqueta="Recortadas por tope"
+                  valor={datos.historico?.corpus?.truncadas}
+                />
+              </div>
+
+              <div style={caja}>
+                <div style={rotulo}>Procedencia temporal</div>
+                <div style={parrafo}>
+                  «Observada por Sentinel» es cuándo la vimos nosotros.
+                  «Recuperada» significa que la pieza es anterior a nuestra
+                  primera mirada: Sentinel no estaba observando cuando se
+                  publicó.
+                </div>
+              </div>
+
+              {(datos.historico?.corpus?.muestraDeProcedencia || []).map((p) => (
+                <div key={p.url} style={caja}>
                   <div
-                    key={l}
                     style={{
-                      ...caja,
-                      color: "var(--sentinel-texto-suave)",
-                      fontSize: "11px",
-                      lineHeight: 1.7
+                      display: "flex",
+                      gap: "9px",
+                      alignItems: "baseline",
+                      flexWrap: "wrap"
                     }}
                   >
-                    {l}
+                    <FileText size={12} color="var(--sentinel-cyan)" />
+
+                    <span
+                      style={pill(
+                        p.procedencia === "OBSERVADA_POR_SENTINEL"
+                          ? "#22C55E"
+                          : "#F59E0B"
+                      )}
+                    >
+                      {p.procedencia}
+                    </span>
+
+                    <span style={{ ...tenue, flex: "1 1 220px", wordBreak: "break-all" }}>
+                      {p.url}
+                    </span>
+                  </div>
+
+                  <div style={{ ...tenue, marginTop: "6px" }}>
+                    observada {fechaLocal(p.firstObservedBySentinel, proyecto)} ·
+                    declarada por la fuente {p.fechaDeclaradaPorLaFuente || "sin fecha"}
+                    {p.nota ? ` · ${p.nota}` : ""}
+                  </div>
+                </div>
+              ))}
+
+              {(datos.evidencias?.muestra || []).length === 0 ? (
+                <Vacio texto={datos.evidencias?.nota} />
+              ) : (
+                (datos.evidencias.muestra || []).map((e) => (
+                  <div key={e.url || e.id} style={caja}>
+                    <div style={{ color: "#FFFFFF", fontSize: "11.5px" }}>
+                      {e.titulo || e.url}
+                    </div>
+
+                    <div style={{ ...tenue, marginTop: "5px", wordBreak: "break-all" }}>
+                      {e.url}
+                    </div>
+
+                    <div style={{ ...tenue, marginTop: "5px" }}>
+                      {e.fecha ? `fuente: ${e.fecha}` : "sin fecha de la fuente"} ·
+                      observada {fechaLocal(e.observadaEn, proyecto)}
+                      {e.vecesObservada > 1 ? ` · vista ${e.vecesObservada} veces` : ""}
+                    </div>
                   </div>
                 ))
               )}
-
-              <div
-                style={{
-                  color: "var(--sentinel-texto-tenue)",
-                  fontSize: "10px",
-                  marginTop: "6px",
-                  lineHeight: 1.7
-                }}
-              >
-                Ningún estado de esta pantalla afirma que el candidato no
-                publique o no tenga presencia: describen lo que Sentinel pudo o
-                no pudo observar con las fuentes disponibles.
-              </div>
             </div>
           )}
         </div>
@@ -683,7 +1459,7 @@ export default function AccountIntelligencePanel({
           }}
         >
           {datos.traza?.ejecutado
-            ? `Observación ejecutada · ${datos.traza.peticionesRealizadas} de ${datos.traza.topePeticiones} peticiones · ${datos.traza.snapshotsEscritos} snapshot(s) escritos`
+            ? `Observación ejecutada · ${datos.traza.peticionesRealizadas} de ${datos.traza.topePeticiones} peticiones · ${datos.traza.snapshotsEscritos} snapshot(s) de cuenta · ${datos.traza.snapshotDeIdentidadEscrito ? "1" : "0"} snapshot de identidad`
             : "Estado leído sin salir a la red. Pulsa «Observar cuentas» para consultar las plataformas que lo permitan."}
         </div>
       </div>

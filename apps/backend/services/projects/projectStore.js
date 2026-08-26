@@ -2755,28 +2755,221 @@ export async function guardarSnapshots(proyectoId, candidatoId, snapshots = []) 
   antiguo. Es la entrada de cualquier comparacion temporal futura.
 */
 export async function snapshotsDe(proyectoId, candidatoId) {
-  const entidades = await entidadesDe(proyectoId);
+  return leerSerie(proyectoId, `${PREFIJO_SNAPSHOT}${candidatoId}-`);
+}
 
-  const prefijo = `${PREFIJO_SNAPSHOT}${candidatoId}-`;
+
+/*
+===========================================================
+SNAPSHOTS DE IDENTIDAD — CANDIDATE-LONGITUDINAL-01
+===========================================================
+
+La foto del inventario de cuentas en un instante. Sin ella no se
+puede responder a «que cuentas tenia Sentinel atribuidas el 12
+de septiembre», que es una pregunta sobre el pasado y por tanto
+imposible de responder con una escritura destructiva.
+
+Entidad propia por instante, como los snapshots de cuenta y por
+el mismo motivo.
+===========================================================
+*/
+const PREFIJO_IDENTIDAD = "identidad-";
+
+export async function guardarSnapshotDeIdentidad(
+  proyectoId,
+  candidatoId,
+  snapshot
+) {
+  const cuando = snapshot?.capturedAt || new Date().toISOString();
+
+  const entidad = `${PREFIJO_IDENTIDAD}${candidatoId}-${cuando}`;
+
+  try {
+    const r = await escribirEnLake(
+      {
+        entidad,
+        tipoEntidad: TIPO_EXPEDIENTE,
+        tenantId: TENANT,
+        proyectoId,
+        fuente: SUBMOTOR,
+        linaje: linaje("snapshot_identidad"),
+        datos: { ...snapshot, candidatoId }
+      },
+      {}
+    );
+
+    return { entidad, escrito: r?.escrito === true, motivo: r?.motivo || null };
+  } catch (e) {
+    return {
+      entidad,
+      escrito: false,
+      motivo: e?.message || "fallo de escritura"
+    };
+  }
+}
+
+
+export async function snapshotsDeIdentidadDe(proyectoId, candidatoId) {
+  return leerSerie(proyectoId, `${PREFIJO_IDENTIDAD}${candidatoId}-`);
+}
+
+
+/*
+===========================================================
+CORPUS DE EVIDENCIAS — append-only por ejecucion
+===========================================================
+
+El expediente guardaba el RECUENTO de evidencias, no las
+evidencias. Con un recuento no se puede deduplicar, ni agrupar
+replicas, ni saber que medio publico que: son justo las
+preguntas de Amplificacion.
+
+Se guardan por ejecucion, en su propia entidad. Al leerlas se
+funden por URL y se conserva la PRIMERA vez que Sentinel las
+vio, que es un dato distinto de la fecha que declara la fuente.
+===========================================================
+*/
+const PREFIJO_EVIDENCIAS = "evidencias-";
+
+/* Tope por ejecucion. El recorte se declara, no se disimula. */
+const TOPE_EVIDENCIAS = 120;
+
+export async function guardarEvidencias(
+  proyectoId,
+  candidatoId,
+  evidencias = [],
+  contexto = {}
+) {
+  const cuando = contexto.ejecutadaEn || new Date().toISOString();
+
+  const lista = (evidencias || []).slice(0, TOPE_EVIDENCIAS).map((e) => ({
+    id: e.id || e.url || e.enlace || null,
+    tipo: e.tipo || null,
+    titulo: e.titulo || null,
+    descripcion: e.descripcion || null,
+    url: e.url || e.enlace || null,
+    dominio: e.dominio || null,
+    plataforma: e.plataforma || null,
+
+    /* Fecha que declara la fuente. Puede ser anterior a todo. */
+    fecha: e.fecha || null,
+
+    /*
+      Cuando lo vimos NOSOTROS. Nunca se sustituye por `fecha`:
+      seria afirmar una vigilancia que no existio.
+    */
+    observadaEn: cuando,
+
+    motores: e.motores || [],
+    corroboracionMultiMotor: e.corroboracionMultiMotor ?? null
+  }));
+
+  const entidad = `${PREFIJO_EVIDENCIAS}${candidatoId}-${cuando}`;
+
+  try {
+    const r = await escribirEnLake(
+      {
+        entidad,
+        tipoEntidad: TIPO_EXPEDIENTE,
+        tenantId: TENANT,
+        proyectoId,
+        fuente: SUBMOTOR,
+        linaje: linaje("corpus_evidencias"),
+        datos: {
+          candidatoId,
+          ejecucionId: contexto.investigacionId || null,
+          observadaEn: cuando,
+          total: (evidencias || []).length,
+          guardadas: lista.length,
+          truncadas: Math.max(0, (evidencias || []).length - lista.length),
+          evidencias: lista
+        }
+      },
+      {}
+    );
+
+    return { entidad, escrito: r?.escrito === true, guardadas: lista.length };
+  } catch (e) {
+    return { entidad, escrito: false, motivo: e?.message || "fallo de escritura" };
+  }
+}
+
+
+export async function evidenciasDe(proyectoId, candidatoId) {
+  const lotes = await leerSerie(proyectoId, `${PREFIJO_EVIDENCIAS}${candidatoId}-`);
+
+  const porUrl = new Map();
+
+  let truncadas = 0;
+
+  /* Del mas antiguo al mas nuevo: la primera vista gana. */
+  [...lotes].reverse().forEach((lote) => {
+    truncadas += lote.truncadas || 0;
+
+    (lote.evidencias || []).forEach((e) => {
+      const clave = String(e.url || e.id || "").toLowerCase();
+
+      if (!clave) return;
+
+      const ya = porUrl.get(clave);
+
+      if (!ya) {
+        porUrl.set(clave, { ...e, vecesObservada: 1 });
+
+        return;
+      }
+
+      /*
+        Vista otra vez. `observadaEn` NO se toca: es la primera
+        vez que la vimos, y ese es el dato que no se puede
+        reescribir.
+      */
+      ya.vecesObservada += 1;
+
+      ya.ultimaVezObservada = e.observadaEn || ya.observadaEn;
+    });
+  });
+
+  return {
+    evidencias: [...porUrl.values()],
+    total: porUrl.size,
+    lotes: lotes.length,
+    truncadas,
+    nota: lotes.length
+      ? "Corpus acumulado de todas las ejecuciones. `observadaEn` es la PRIMERA vez que Sentinel vio cada pieza; `fecha` es lo que declara la fuente."
+      : "Todavia no hay corpus de evidencias: se acumula desde la primera investigacion posterior a este contrato. Las investigaciones anteriores solo guardaron recuentos."
+  };
+}
+
+
+/*
+  Lectura de una serie append-only, de la mas reciente a la mas
+  antigua. Comun a snapshots de cuenta, de identidad y a los
+  lotes de evidencias: tres series con la misma mecanica.
+*/
+async function leerSerie(proyectoId, prefijo) {
+  const entidades = await entidadesDe(proyectoId);
 
   const suyas = (entidades || []).filter(
     (e) => typeof e.entidad === "string" && e.entidad.startsWith(prefijo)
   );
 
-  const snapshots = [];
+  const registros = [];
 
   for (const { claveEntidad } of suyas) {
     try {
       const v = await obtenerVersionEntidad(claveEntidad, {});
 
-      if (v?.registro?.datos) snapshots.push(v.registro.datos);
+      if (v?.registro?.datos) registros.push(v.registro.datos);
     } catch {
-      /* Un snapshot ilegible no invalida la serie. */
+      /* Un registro ilegible no invalida la serie. */
     }
   }
 
-  return snapshots.sort((a, b) =>
-    String(b.capturedAt || "").localeCompare(String(a.capturedAt || ""))
+  return registros.sort((a, b) =>
+    String(b.capturedAt || b.observadaEn || "").localeCompare(
+      String(a.capturedAt || a.observadaEn || "")
+    )
   );
 }
 
@@ -2974,6 +3167,34 @@ export async function registrarInvestigacion(
     };
   }
 
+  /*
+    ---------------------------------------------------------
+    CORPUS DE EVIDENCIAS DE ESTA EJECUCION
+    ---------------------------------------------------------
+
+    Fuera de la guarda `sinCambios`, y por la misma razon que la
+    ejecucion: lo que se guarda es un HECHO fechado —estas piezas
+    se vieron este dia—, no una version del expediente. Un lote
+    identico al de ayer sigue siendo la observacion de hoy, y sin
+    ella la serie temporal tendria agujeros donde si mirabamos.
+    ---------------------------------------------------------
+  */
+  let escrituraEvidencias = null;
+
+  const evidenciasDeLaEjecucion = [
+    ...(resultado?.fichaObjetivo?.evidencias?.web || []),
+    ...(resultado?.fichaObjetivo?.evidencias?.sociales || [])
+  ];
+
+  if (evidenciasDeLaEjecucion.length) {
+    escrituraEvidencias = await guardarEvidencias(
+      proyectoId,
+      candidatoId,
+      evidenciasDeLaEjecucion,
+      { ejecutadaEn, investigacionId }
+    );
+  }
+
   if (!sinCambios) {
     try {
       escritura = await escribirEnLake(
@@ -3031,6 +3252,16 @@ export async function registrarInvestigacion(
       escrituraEjecucion?.escrito === true && !!actual.traza,
 
     expedienteActualizado: sinCambios ? false : escritura?.escrito === true,
+
+    /*
+      Tercer hecho, tambien aparte: el corpus de esta ejecucion.
+      Es lo que permite deduplicar y agrupar replicas despues.
+    */
+    corpusEvidencias: {
+      guardadas: escrituraEvidencias?.guardadas ?? 0,
+      escrito: escrituraEvidencias?.escrito === true,
+      motivo: escrituraEvidencias?.motivo || null
+    },
 
     sinCambios,
 
@@ -3090,6 +3321,13 @@ export default {
   fichaIdentidad,
   guardarSnapshots,
   snapshotsDe,
+
+  /* Candidate Intelligence V1 — series longitudinales */
+  guardarSnapshotDeIdentidad,
+  snapshotsDeIdentidadDe,
+  guardarEvidencias,
+  evidenciasDe,
+
   inventarioConsolidado,
   expedienteDe,
   PLATAFORMAS_FICHA,

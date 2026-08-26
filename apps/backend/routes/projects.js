@@ -16,6 +16,31 @@ import {
   resumenDeCuentas
 } from "../services/intelligence/accountIntelligence.js";
 
+/* Candidate Intelligence V1 */
+import { resolverCuentasDelCandidato } from "../services/intelligence/accountResolution.js";
+
+import {
+  ventanasDe,
+  crearSnapshotDeIdentidad,
+  compararInventarios,
+  procedenciaTemporal
+} from "../services/intelligence/candidateTimeline.js";
+
+import {
+  amplificacionDeCandidato,
+  separarConversacion
+} from "../services/intelligence/candidateAmplification.js";
+
+import {
+  relacionesDeEvidencias,
+  CONTRATO_MEDIA_RELATION,
+  vincularLote
+} from "../services/intelligence/candidateRelations.js";
+
+import { presenciaDigitalObservada } from "../services/intelligence/digitalPresence.js";
+
+import { solidezDelExpediente } from "../services/intelligence/expedienteSolidez.js";
+
 import {
   crearProyecto,
   obtenerProyecto,
@@ -28,6 +53,9 @@ import {
   fichaIdentidad,
   guardarSnapshots,
   snapshotsDe,
+  guardarSnapshotDeIdentidad,
+  snapshotsDeIdentidadDe,
+  evidenciasDe,
   ESTADOS,
   agregarCandidato,
   obtenerCandidato,
@@ -378,6 +406,39 @@ async function componerInteligencia(proyectoId, candidatoId, ejecutar) {
 
   const cuentas = ficha.plataformas.flatMap((p) => p.cuentas || []);
 
+  /*
+    ---------------------------------------------------------
+    1 · ACCOUNT RESOLUTION
+
+    Antes de observar nada hay que saber de quien es cada cuenta,
+    y con que se sostiene. Ninguna pasa a corroborada por
+    parecerse el nombre.
+
+    `enlacesCruzados` llega VACIO hoy y eso es un limite, no un
+    olvido: para saber que la web declarada enlaza a una cuenta
+    hay que leer esa web, y este panel no sale a la red al
+    abrirse. La senal se calculara cuando la observacion recoja
+    los enlaces salientes de las paginas que si puede leer.
+    ---------------------------------------------------------
+  */
+  const anclas = [
+    ficha.nombre,
+    ...(ficha.aliases || []).map((a) => a?.valor || a)
+  ].filter(Boolean);
+
+  const resolucion = resolverCuentasDelCandidato({
+    candidateId: candidatoId,
+    projectId: proyectoId,
+    cuentas,
+    anclasIdentidad: anclas,
+    enlacesCruzados: []
+  });
+
+  /*
+    ---------------------------------------------------------
+    2 · OBSERVACION Y SERIES LONGITUDINALES
+    ---------------------------------------------------------
+  */
   const r = await observarCuentasDelCandidato({
     candidateId: candidatoId,
     projectId: proyectoId,
@@ -387,19 +448,71 @@ async function componerInteligencia(proyectoId, candidatoId, ejecutar) {
 
   const historico = await snapshotsDe(proyectoId, candidatoId);
 
+  const identidadPrevia = await snapshotsDeIdentidadDe(proyectoId, candidatoId);
+
   let snapshots = [];
+
+  let snapshotIdentidad = null;
 
   if (ejecutar) {
     snapshots = snapshotsDeObservaciones(r.observaciones, {});
 
     await guardarSnapshots(proyectoId, candidatoId, snapshots);
+
+    /*
+      Foto del inventario. Se escribe SIEMPRE que se observa, no
+      solo cuando cambia: sin el punto de hoy no se puede decir
+      manana que cuentas habia hoy.
+    */
+    snapshotIdentidad = crearSnapshotDeIdentidad({
+      candidateId: candidatoId,
+      projectId: proyectoId,
+      cuentas: resolucion.cuentas,
+      origen: "observacion_de_cuentas"
+    });
+
+    await guardarSnapshotDeIdentidad(proyectoId, candidatoId, snapshotIdentidad);
   }
 
+  const serieIdentidad = snapshotIdentidad
+    ? [snapshotIdentidad, ...identidadPrevia]
+    : identidadPrevia;
+
   /*
-    Publicaciones: hoy no hay ninguna fuente que las entregue, asi
-    que la lista esta vacia y se dice por que. No se rellena con
-    evidencias web, que son menciones de terceros y no
-    publicaciones propias.
+    ---------------------------------------------------------
+    3 · CORPUS Y AMPLIFICACION
+    ---------------------------------------------------------
+
+    El corpus lo escriben las investigaciones, no este panel:
+    abrir Account Intelligence no sale a la red.
+  */
+  const corpus = await evidenciasDe(proyectoId, candidatoId);
+
+  const amplificacion = amplificacionDeCandidato({
+    evidencias: corpus.evidencias,
+    cuentas
+  });
+
+  const conversacion = separarConversacion({
+    evidencias: corpus.evidencias,
+    cuentas
+  });
+
+  const relaciones = relacionesDeEvidencias({
+    evidencias: corpus.evidencias,
+    candidateId: candidatoId,
+    cuentas
+  });
+
+  const territorio = vincularLote({
+    candidateId: candidatoId,
+    evidencias: corpus.evidencias
+  });
+
+  /*
+    Publicaciones propias: hoy no hay ninguna fuente que las
+    entregue. La lista vacia se declara y NO se rellena con
+    evidencias web, que son menciones de terceros.
   */
   const publicaciones = [];
 
@@ -409,27 +522,25 @@ async function componerInteligencia(proyectoId, candidatoId, ejecutar) {
 
     resumen: resumenDeCuentas(cuentas, r.observaciones),
 
-    cuentas: cuentas.map((c) => ({
-      accountId: c.id,
-      candidateId: candidatoId,
-      projectId: proyectoId,
-      plataformaId: c.plataformaId,
-      url: c.url,
-      handle: c.handle,
-      estadoIdentidad: c.estado,
-      procedencia: {
-        declaradaPorAnalista: c.declaradaPorAnalista === true,
-        descubiertaPorSentinel: c.descubiertaPorSentinel === true,
-        corroboradaPorSentinel: c.corroboradaPorSentinel === true
-      },
-      corroboracion: c.corroboracion || null,
-      firstSeenAt: c.firstSeenAt || null,
-      lastSeenAt: c.lastSeenAt || null,
-      lastCheckedAt: c.lastCheckedAt || null
-    })),
+    /* ---- IDENTIDAD ---- */
+    resolucion,
+
+    solidez: solidezDelExpediente(
+      resolucion.cuentas.map((c) => ({
+        ...c,
+        senalesIndependientes: c.solidez.senalesIndependientes,
+        declaradaPorAnalista: c.procedencia.declaradaPorAnalista,
+        proveedoresHistoricos: c.procedencia.proveedores,
+        corroboradaPorSentinel: c.procedencia.corroboradaPorSentinel,
+        seenInCurrentRun: !c.observacion.noReencontradaEnLaUltimaVerificacion
+      }))
+    ),
+
+    cuentas: resolucion.cuentas,
 
     observaciones: r.observaciones,
 
+    /* ---- ACTIVIDAD ---- */
     actividad: actividadDePublicaciones(publicaciones),
 
     publicaciones,
@@ -438,18 +549,84 @@ async function componerInteligencia(proyectoId, candidatoId, ejecutar) {
 
     temas: temasDeLasCuentas(publicaciones),
 
+    /* ---- AMPLIFICACION, MEDIOS, CONVERSACION ---- */
+    amplificacion,
+    conversacion,
+    relaciones,
+
+    medios: {
+      ...amplificacion.ganada.medios,
+      contrato: CONTRATO_MEDIA_RELATION
+    },
+
+    territorio,
+
+    /* ---- PRESENCIA DIGITAL OBSERVADA ---- */
+    presencia: presenciaDigitalObservada({
+      actividad: actividadDePublicaciones(publicaciones),
+      amplificacion,
+      conversacion,
+      snapshots: historico,
+      evidencias: corpus.evidencias
+    }),
+
+    /* ---- HISTORICO ---- */
     historico: {
       snapshots: historico,
       total: historico.length,
+
+      ventanas: ventanasDe(historico),
+
+      identidad: {
+        snapshots: serieIdentidad,
+        total: serieIdentidad.length,
+        ultimoCambio:
+          serieIdentidad.length > 1
+            ? compararInventarios(serieIdentidad[1], serieIdentidad[0])
+            : null,
+        nota:
+          serieIdentidad.length > 1
+            ? null
+            : "Hace falta mas de una foto del inventario para poder compararlas. La serie empieza en la primera observacion."
+      },
+
+      corpus: {
+        total: corpus.total,
+        lotes: corpus.lotes,
+        truncadas: corpus.truncadas,
+        nota: corpus.nota,
+
+        /*
+          Procedencia temporal de las piezas mas antiguas: sirve
+          para no leer una nota recuperada como una observacion
+          en directo.
+          */
+        muestraDeProcedencia: corpus.evidencias.slice(0, 10).map((e) => ({
+          url: e.url,
+          ...procedenciaTemporal({
+            recuperadaEn: e.observadaEn,
+            fechaDeclaradaPorLaFuente: e.fecha
+          })
+        }))
+      },
+
       nota:
         "Los snapshots se acumulan desde la primera ejecucion real. No se reconstruye historia anterior ni se inventan dias."
+    },
+
+    /* ---- EVIDENCIAS ---- */
+    evidencias: {
+      total: corpus.total,
+      muestra: corpus.evidencias.slice(0, 60),
+      nota: corpus.nota
     },
 
     traza: {
       ejecutado: r.ejecutado,
       peticionesRealizadas: r.peticionesRealizadas,
       topePeticiones: r.topePeticiones,
-      snapshotsEscritos: snapshots.length
+      snapshotsEscritos: snapshots.length,
+      snapshotDeIdentidadEscrito: snapshotIdentidad != null
     }
   };
 }
