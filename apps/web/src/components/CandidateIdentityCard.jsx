@@ -19,6 +19,7 @@ import {
   RefreshCw,
   FolderOpen,
   Activity,
+  Image as ImageIcon,
   Info,
   Loader2
 } from "lucide-react";
@@ -380,7 +381,12 @@ export default function CandidateIdentityCard({
   onEditar,
   onComprobar,
   onExpediente,
-  ocupado
+  onObtenerFoto,
+  onAnalizar,
+  fotoIntentos,
+  ocupado,
+  ocupadoFoto,
+  ocupadoAnalisis
 }) {
   if (!ficha) return null;
 
@@ -497,7 +503,35 @@ export default function CandidateIdentityCard({
           )}
         </div>
 
-        <Solidez valor={solidez} componentes={componentesSolidez} />
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "8px",
+            alignItems: "flex-end"
+          }}
+        >
+          <Solidez valor={solidez} componentes={componentesSolidez} />
+
+          {onObtenerFoto && (
+            <button
+              className="sentinel-boton"
+              onClick={onObtenerFoto}
+              disabled={ocupadoFoto}
+              title="Lee la metadata publica de las cuentas declaradas para intentar obtener una imagen. Sin login y sin scraping."
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "5px 11px",
+                fontSize: "10.5px"
+              }}
+            >
+              {ocupadoFoto ? <Loader2 size={11} /> : <ImageIcon size={11} />}
+              {ocupadoFoto ? "Buscando foto…" : "Obtener foto desde fuentes"}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ---- RESUMEN DE IDENTIDAD ---- */}
@@ -559,20 +593,68 @@ export default function CandidateIdentityCard({
 
         <button
           className="sentinel-boton"
-          disabled
-          title="Account Intelligence: publicaciones, métricas públicas y evolución. Todavía no implementado."
+          onClick={onAnalizar}
+          disabled={!onAnalizar || ocupadoAnalisis}
+          title="Account Intelligence: que se puede observar en estas cuentas, con su traza y sus limites. Abrirlo no sale a la red."
           style={{
             display: "flex",
             alignItems: "center",
             gap: "7px",
             fontSize: "11px",
-            opacity: 0.45,
-            cursor: "not-allowed"
+            opacity: onAnalizar ? 1 : 0.45,
+            cursor: onAnalizar ? "pointer" : "not-allowed"
           }}
         >
-          <Activity size={12} /> Analizar actividad
+          {ocupadoAnalisis ? <Loader2 size={12} /> : <Activity size={12} />}
+          Analizar actividad
         </button>
       </div>
+
+      {/*
+        INTENTOS DE OBTENCION DE FOTOGRAFIA. No se ocultan los
+        fallos: el analista tiene que poder ver que fuente se
+        probo y por que no dio imagen.
+      */}
+      {fotoIntentos?.length > 0 && (
+        <div style={{ ...caja, marginBottom: "10px" }}>
+          <strong style={{ color: "#FFFFFF", fontSize: "11.5px" }}>
+            Intentos de obtencion de fotografia
+          </strong>
+
+          {fotoIntentos.map((i, n) => (
+            <div
+              key={`${i.plataformaId}-${n}`}
+              style={{
+                display: "flex",
+                gap: "8px",
+                alignItems: "baseline",
+                flexWrap: "wrap",
+                marginTop: "7px"
+              }}
+            >
+              <span style={pill(i.resultado === "RESUELTA" ? "verde" : "ambar")}>
+                {i.resultado}
+              </span>
+
+              <span style={{ color: "var(--sentinel-texto)", fontSize: "10.5px" }}>
+                {i.plataforma || i.plataformaId}
+              </span>
+
+              <span
+                style={{
+                  color: "var(--sentinel-texto-tenue)",
+                  fontSize: "9.5px",
+                  flex: "1 1 200px"
+                }}
+              >
+                {i.metadataKey ? `${i.metadataKey} · ` : ""}
+                {i.motivo || (i.imageUrl ? "imagen obtenida" : "")}
+                {i.httpStatus ? ` · HTTP ${i.httpStatus}` : ""}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ---- LAS SIETE PLATAFORMAS ---- */}
 
