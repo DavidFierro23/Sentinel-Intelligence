@@ -1305,102 +1305,6 @@
   "agenda": {
     "agenda": [
       {
-        "id": "desc-marisol-penaloza",
-        "etiqueta": "Marisol Peñaloza",
-        "categoria": null,
-        "subtemas": [
-          {
-            "nombre": "Marisol Peñaloza",
-            "evidencias": 3
-          }
-        ],
-        "origen": "descubierto_y_clasificado",
-        "sinCategoria": true,
-        "evidencias": 4,
-        "indices": [
-          18,
-          24,
-          28,
-          29
-        ],
-        "fuentesIndependientes": 3,
-        "fuentes": [
-          {
-            "nombre": "El Mercurio",
-            "dominio": "elmercurio.com.ec",
-            "tipo": "medio_local",
-            "evidencias": 2
-          },
-          {
-            "nombre": "Expreso",
-            "dominio": "expreso.ec",
-            "tipo": "medio_nacional",
-            "evidencias": 1
-          },
-          {
-            "nombre": "El Universo",
-            "dominio": "eluniverso.com",
-            "tipo": "medio_nacional",
-            "evidencias": 1
-          }
-        ],
-        "primeraObservacion": "2026-06-12T07:00:00.000Z",
-        "ultimaObservacion": "2026-07-21T07:00:00.000Z",
-        "recencia": 0,
-        "territorios": [
-          {
-            "unidadId": "ec-azuay-cuenca",
-            "nombre": "Cuenca",
-            "nivel": "canton",
-            "geometriaDisponible": false,
-            "evidencias": 4
-          }
-        ],
-        "evidenciasSinUbicar": 0,
-        "entidades": [
-          {
-            "nombre": "Marisol Peñaloza",
-            "documentos": 4
-          }
-        ],
-        "terminos": [
-          "marisol penaloza",
-          "marisol penaloza",
-          "marisol",
-          "penaloza"
-        ],
-        "confianza": 59,
-        "explicacionDescubrimiento": "Sentinel propone este tema porque 4 evidencias comparten 4 senal(es): «marisol penaloza» (entidad_nombrada, 4 docs), «marisol penaloza» (bigrama_frecuente, 4 docs), «marisol» (coocurrencia_de_terminos, 4 docs), «penaloza» (coocurrencia_de_terminos, 4 docs).",
-        "explicacionClasificacion": "Agrupadas por coocurrencia de terminos frecuentes: marisol, penaloza. No corresponde a ninguna categoria declarada.",
-        "limitaciones": [
-          "Ninguna evidencia del tema se pudo geolocalizar: no se puede asociar a un territorio."
-        ],
-        "titulares": [
-          "Marisol Peñaloza reestructura el Municipio de Cuenca: estos son los funcionarios removidos",
-          "Quién es Marisol Peñaloza, la edila que asumirá la Alcaldía de Cuenca por seis meses tras sanción del TCE",
-          "Marisol Peñaloza preside primera sesión del Concejo Cantonal de Cuenca como alcaldesa subrogante",
-          "Marisol Peñaloza, vicealcaldesa de Cuenca, “No ha llegado notificación del TCE”"
-        ],
-        "dimensiones": {
-          "evidencias": {
-            "valor": 4,
-            "normalizado": 1
-          },
-          "fuentes": {
-            "valor": 3,
-            "normalizado": 1
-          },
-          "recencia": {
-            "valor": "2026-07-21T07:00:00.000Z",
-            "normalizado": 0
-          }
-        },
-        "actividad": 0.85,
-        "estadoActividad": "alta_actividad_observada",
-        "etiquetaActividad": "Alta actividad observada",
-        "posicion": 1
-      },
-      {
         "id": "desc-elecciones-seccionales",
         "etiqueta": "elecciones seccionales",
         "categoria": "Proceso electoral",
@@ -1436,17 +1340,9 @@
         ],
         "primeraObservacion": "2026-07-01T07:00:00.000Z",
         "ultimaObservacion": "2026-08-18T13:24:00.000Z",
-        "recencia": 0.7595390590277777,
-        "territorios": [
-          {
-            "unidadId": "ec-azuay-cuenca",
-            "nombre": "Cuenca",
-            "nivel": "canton",
-            "geometriaDisponible": false,
-            "evidencias": 3
-          }
-        ],
-        "evidenciasSinUbicar": 0,
+        "recencia": 0.7852777777777777,
+        "territorios": [],
+        "evidenciasSinUbicar": 3,
         "entidades": [],
         "terminos": [
           "elecciones seccionales"
@@ -1466,7 +1362,7 @@
         "dimensiones": {
           "evidencias": {
             "valor": 3,
-            "normalizado": 0.75
+            "normalizado": 1
           },
           "fuentes": {
             "valor": 3,
@@ -1474,13 +1370,13 @@
           },
           "recencia": {
             "valor": "2026-08-18T13:24:00.000Z",
-            "normalizado": 0.76
+            "normalizado": 0.785
           }
         },
-        "actividad": 0.8389,
+        "actividad": 0.9678,
         "estadoActividad": "alta_actividad_observada",
         "etiquetaActividad": "Alta actividad observada",
-        "posicion": 2
+        "posicion": 1
       },
       {
         "id": "desc-denuncian-falta",
@@ -1512,24 +1408,9 @@
         ],
         "primeraObservacion": "2026-08-22T17:22:21.000Z",
         "ultimaObservacion": "2026-08-24T22:28:52.000Z",
-        "recencia": 0.9721517133487654,
-        "territorios": [
-          {
-            "unidadId": "ec-azuay-cuenca",
-            "nombre": "Cuenca",
-            "nivel": "canton",
-            "geometriaDisponible": false,
-            "evidencias": 2
-          },
-          {
-            "unidadId": "ec-azuay",
-            "nombre": "Azuay",
-            "nivel": "provincia",
-            "geometriaDisponible": false,
-            "evidencias": 1
-          }
-        ],
-        "evidenciasSinUbicar": 0,
+        "recencia": 0.9978904320987654,
+        "territorios": [],
+        "evidenciasSinUbicar": 3,
         "entidades": [],
         "terminos": [
           "denuncian falta",
@@ -1551,7 +1432,7 @@
         "dimensiones": {
           "evidencias": {
             "valor": 3,
-            "normalizado": 0.75
+            "normalizado": 1
           },
           "fuentes": {
             "valor": 2,
@@ -1559,13 +1440,13 @@
           },
           "recencia": {
             "valor": "2026-08-24T22:28:52.000Z",
-            "normalizado": 0.972
+            "normalizado": 0.998
           }
         },
-        "actividad": 0.7542,
+        "actividad": 0.883,
         "estadoActividad": "alta_actividad_observada",
         "etiquetaActividad": "Alta actividad observada",
-        "posicion": 3
+        "posicion": 2
       },
       {
         "id": "cat-gobernanza",
@@ -1590,17 +1471,9 @@
         ],
         "primeraObservacion": "2026-06-19T07:00:00.000Z",
         "ultimaObservacion": "2026-08-19T09:59:58.000Z",
-        "recencia": 0.7881493985339506,
-        "territorios": [
-          {
-            "unidadId": "ec-azuay-cuenca",
-            "nombre": "Cuenca",
-            "nivel": "canton",
-            "geometriaDisponible": false,
-            "evidencias": 2
-          }
-        ],
-        "evidenciasSinUbicar": 0,
+        "recencia": 0.8138881172839506,
+        "territorios": [],
+        "evidenciasSinUbicar": 2,
         "entidades": [],
         "terminos": [
           "prefectura",
@@ -1620,7 +1493,7 @@
         "dimensiones": {
           "evidencias": {
             "valor": 2,
-            "normalizado": 0.5
+            "normalizado": 0.667
           },
           "fuentes": {
             "valor": 1,
@@ -1628,23 +1501,23 @@
           },
           "recencia": {
             "valor": "2026-08-19T09:59:58.000Z",
-            "normalizado": 0.788
+            "normalizado": 0.814
           }
         },
-        "actividad": 0.4849,
+        "actividad": 0.5721,
         "estadoActividad": "senal_insuficiente",
         "etiquetaActividad": "Señal insuficiente",
-        "posicion": 4
+        "posicion": 3
       }
     ],
     "metricas": {
-      "temas": 4,
+      "temas": 3,
       "descubiertos": 0,
       "clasificados": 1,
-      "ambos": 3,
-      "sinCategoria": 2,
+      "ambos": 2,
+      "sinCategoria": 1,
       "porEstado": {
-        "alta_actividad_observada": 3,
+        "alta_actividad_observada": 2,
         "senal_insuficiente": 1
       }
     },
@@ -24364,6 +24237,20 @@
       "titulo": "Publicaciones, no personas",
       "detalle": "Cada evidencia es un documento publicado. No son ciudadanos ni opiniones: N evidencias no son N personas hablando.",
       "visibleSiempre": true
+    },
+    {
+      "id": "emisores_sin_identificar",
+      "severidad": "alta",
+      "titulo": "40 % del corpus llega por plataforma",
+      "detalle": "12 de 30 evidencias vienen de 1 plataforma(s). Sus emisores reales no están identificados: no cuentan como fuentes independientes.",
+      "visibleSiempre": true
+    },
+    {
+      "id": "agendas_sin_observacion",
+      "severidad": "alta",
+      "titulo": "3 agenda(s) sin una sola evidencia",
+      "detalle": "Agenda ciudadana / comunitaria, Agenda de creadores, Agenda institucional. Vacío NO significa silencio: significa que ninguna fuente de ese tipo entró en el corpus. Es una carencia de la observación, no un hallazgo sobre el territorio.",
+      "visibleSiempre": true
     }
   ],
   "proyecto": null,
@@ -40042,5 +39929,394 @@
     "Restriccion de licencia en el denominador poblacional: La fuente poblacional integrada tiene licencia Creative Commons NonCommercial, que PROHIBE el uso comercial. Sentinel es un producto propietario con modelo SaaS. Antes de explotar comercialmente cualquier metrica derivada hace falta permiso del GAD o sustituir el denominador por la fuente primaria del INEC.",
     "Padron electoral CNE no integrado: cne.gob.ec devuelve HTTP 403 a acceso automatizado en las dos rutas auditadas (pagina de registro electoral y PDF de estadisticas). No se pudo confirmar si existe un desglose descargable por parroquia.",
     "Nomenclatura no contrastada con fuente oficial: 10 de 50 unidades con verificado:false."
-  ]
+  ],
+  "escuchaAbierta": {
+    "entidades": [
+      {
+        "id": "desc-marisol-penaloza",
+        "etiquetaPropuesta": "Marisol Peñaloza",
+        "sinEtiqueta": false,
+        "evidencias": 4,
+        "indices": [
+          18,
+          24,
+          28,
+          29
+        ],
+        "documentosObservados": 4,
+        "unidadDeMedida": "documentos observados, NO personas",
+        "repeticionesIncluidas": 0,
+        "fuentes": [
+          {
+            "nombre": "El Mercurio",
+            "dominio": "elmercurio.com.ec",
+            "tipo": "medio_local",
+            "evidencias": 2
+          },
+          {
+            "nombre": "Expreso",
+            "dominio": "expreso.ec",
+            "tipo": "medio_nacional",
+            "evidencias": 1
+          },
+          {
+            "nombre": "El Universo",
+            "dominio": "eluniverso.com",
+            "tipo": "medio_nacional",
+            "evidencias": 1
+          }
+        ],
+        "fuentesIndependientes": 3,
+        "primeraObservacion": "2026-06-12T07:00:00.000Z",
+        "ultimaObservacion": "2026-07-21T07:00:00.000Z",
+        "entidades": [
+          {
+            "nombre": "Marisol Peñaloza",
+            "documentos": 4
+          }
+        ],
+        "terminos": [
+          "marisol penaloza",
+          "marisol penaloza",
+          "marisol",
+          "penaloza"
+        ],
+        "senales": [
+          {
+            "senal": "marisol penaloza",
+            "tipo": "entidad_nombrada",
+            "documentos": 4
+          },
+          {
+            "senal": "marisol penaloza",
+            "tipo": "bigrama_frecuente",
+            "documentos": 4
+          },
+          {
+            "senal": "marisol",
+            "tipo": "coocurrencia_de_terminos",
+            "documentos": 4
+          },
+          {
+            "senal": "penaloza",
+            "tipo": "coocurrencia_de_terminos",
+            "documentos": 4
+          }
+        ],
+        "territoriosMencionados": [],
+        "metodoDescubrimiento": "entidad_nombrada",
+        "explicacion": "«Marisol Peñaloza» aparece en 4 evidencias, que se reparten entre 1 tema(s): Gestion y gobernanza (1).",
+        "confianza": 59,
+        "limitaciones": [
+          "Ninguna evidencia del tema se pudo geolocalizar: no se puede asociar a un territorio."
+        ],
+        "titulares": [
+          "Marisol Peñaloza reestructura el Municipio de Cuenca: estos son los funcionarios removidos",
+          "Quién es Marisol Peñaloza, la edila que asumirá la Alcaldía de Cuenca por seis meses tras sanción del TCE",
+          "Marisol Peñaloza preside primera sesión del Concejo Cantonal de Cuenca como alcaldesa subrogante",
+          "Marisol Peñaloza, vicealcaldesa de Cuenca, “No ha llegado notificación del TCE”"
+        ],
+        "entidad": "Marisol Peñaloza",
+        "tipoEntidad": "PERSON",
+        "confianzaEntidad": 0.85,
+        "razonesEntidad": [
+          "«Marisol Peñaloza» son 2 palabras capitalizadas sin término de organización, lugar ni evento: tiene forma de nombre propio de persona.",
+          "El contexto trae un título personal (alcalde, candidato, concejal…), que refuerza la lectura.",
+          "Una persona repetida es una señal real, pero no es un asunto. Se conserva como entidad y se declara con qué temas aparece."
+        ],
+        "metodoEntidad": "morfologia_y_titulo",
+        "temasRelacionados": [
+          {
+            "temaId": "cat-gobernanza",
+            "etiqueta": "Gestion y gobernanza",
+            "evidenciasCompartidas": 1,
+            "indices": [
+              28
+            ]
+          }
+        ],
+        "declaracion": "Entidad observada en el corpus. No encabeza la agenda temática: es un sujeto, no un asunto."
+      }
+    ],
+    "separacionEntidadTema": {
+      "descubiertos": {
+        "entrada": 3,
+        "temas": 2,
+        "entidades": 1,
+        "porTipoEntidad": {
+          "PERSON": 1
+        }
+      },
+      "clasificados": {
+        "entrada": 4,
+        "temas": 3,
+        "entidades": 1,
+        "porTipoEntidad": {
+          "PERSON": 1
+        }
+      },
+      "entidadesUnicas": 1
+    },
+    "declaracionSeparacion": "Una entidad no encabeza la agenda temática. «Marisol Peñaloza» no responde «¿qué está pasando?»: es un sujeto sin predicado. Se conserva como señal y se relaciona con los temas en los que aparece.",
+    "sesgoDeConsulta": {
+      "consultas": 9,
+      "porTipo": {
+        "QUERY_NEUTRAL": 6,
+        "QUERY_INSTITUCIONAL": 2,
+        "QUERY_CREATOR": 1
+      },
+      "neutrales": 6,
+      "conVocabularioDeGestion": 2,
+      "proporcionNeutral": 0.667,
+      "proporcionConGestion": 0.222,
+      "porEvidencia": null,
+      "unidad": "proporción de consultas del plan",
+      "declaracion": "Mide la composición del PLAN. Que una consulta sea neutral no garantiza que el buscador devuelva un corpus neutral: eso solo se sabe con los resultados."
+    },
+    "corpusPorTipoDeConsulta": {
+      "total": 30,
+      "general": 0,
+      "dirigido": 0,
+      "sinProcedencia": 30
+    },
+    "diversidad": {
+      "totalEvidencias": 30,
+      "totalFuentes": 7,
+      "fuentesIndependientes": 6,
+      "plataformas": 1,
+      "evidenciasEnPlataforma": 12,
+      "evidenciasSinFuente": 0,
+      "concentracionFuente": 0.178,
+      "lecturaConcentracion": "moderada",
+      "fuenteDominante": {
+        "id": "elmercurio.com.ec",
+        "evidencias": 9,
+        "cuotaDelCorpus": 0.3
+      },
+      "distribucionTipoFuente": {
+        "WEB_PUBLICA": 12,
+        "MEDIO": 18
+      },
+      "mediaShare": 0.6,
+      "communityShare": 0,
+      "institutionShare": 0,
+      "creatorShare": 0,
+      "unidadDeMedida": "% del corpus observado",
+      "declaraciones": [
+        "Todas las proporciones son «% del corpus observado». NUNCA «% de la ciudadanía»: el corpus son las notas que estas consultas trajeron de estos motores.",
+        "Una plataforma no cuenta como emisor. Aloja a emisores que este módulo no identifica, y contarla como una fuente inflaría la diversidad.",
+        "Concentración alta no es un defecto: si un solo medio cubre el cantón, eso es un hecho del territorio. Lo que no se puede es llamarlo diverso."
+      ],
+      "limitacion": "12 de 30 evidencias llegan a través de 1 plataforma(s). Sus emisores reales no están identificados."
+    },
+    "agendasPorFuente": {
+      "metricas": {
+        "AGENDA_CIUDADANA": {
+          "evidencias": 0,
+          "fuentes": 0,
+          "cuotaDelCorpus": 0,
+          "unidadDeMedida": "% del corpus observado"
+        },
+        "AGENDA_MEDIATICA": {
+          "evidencias": 18,
+          "fuentes": 6,
+          "cuotaDelCorpus": 0.6,
+          "unidadDeMedida": "% del corpus observado"
+        },
+        "AGENDA_INSTITUCIONAL": {
+          "evidencias": 0,
+          "fuentes": 0,
+          "cuotaDelCorpus": 0,
+          "unidadDeMedida": "% del corpus observado"
+        },
+        "AGENDA_CREADORES": {
+          "evidencias": 0,
+          "fuentes": 0,
+          "cuotaDelCorpus": 0,
+          "unidadDeMedida": "% del corpus observado"
+        },
+        "AGENDA_DIGITAL": {
+          "evidencias": 12,
+          "fuentes": 1,
+          "cuotaDelCorpus": 0.4,
+          "unidadDeMedida": "% del corpus observado"
+        },
+        "SIN_CLASIFICAR": {
+          "evidencias": 0,
+          "fuentes": 0,
+          "cuotaDelCorpus": 0,
+          "unidadDeMedida": "% del corpus observado"
+        }
+      },
+      "etiquetas": {
+        "AGENDA_CIUDADANA": "Agenda ciudadana / comunitaria",
+        "AGENDA_MEDIATICA": "Agenda mediática",
+        "AGENDA_INSTITUCIONAL": "Agenda institucional",
+        "AGENDA_CREADORES": "Agenda de creadores",
+        "AGENDA_DIGITAL": "Agenda digital",
+        "SIN_CLASIFICAR": "Fuente sin clasificar"
+      },
+      "limitaciones": [
+        "Ninguna de estas agendas mide opinión ciudadana. Miden publicación."
+      ]
+    },
+    "universo": {
+      "estado": {
+        "fuentes": 7,
+        "emisores": 6,
+        "plataformas": 1,
+        "porEstado": {
+          "OBSERVADA": 4,
+          "DESCUBIERTA": 3
+        },
+        "porTipo": {
+          "PUBLIC_WEB": 1,
+          "MEDIA": 6
+        },
+        "verificadas": 0,
+        "sinLicenciaComprobada": 7,
+        "declaraciones": [
+          "Una fuente DESCUBIERTA no está verificada. El descubrimiento no se autoverifica: si lo hiciera, el registro sería un espejo de la recolección.",
+          "Una plataforma no es un emisor. YouTube alojando doce vídeos no son doce fuentes ni una fuente: son una plataforma con doce emisores sin identificar.",
+          "`usoComercialPermitido: null` bloquea igual que `false`. Lo que no se ha comprobado no se puede afirmar."
+        ]
+      },
+      "fuentes": [
+        {
+          "id": "news.google.com",
+          "nombre": "YouTube",
+          "tipo": "PUBLIC_WEB",
+          "estado": "OBSERVADA",
+          "verificada": false,
+          "esPlataforma": true,
+          "frecuenciaObservada": 12,
+          "origen": "catalogo_semilla",
+          "procedencia": [
+            {
+              "origen": "catalogo_semilla",
+              "detalle": null,
+              "instante": "Thu, 20 Aug 2026 22:10:21 GMT"
+            }
+          ],
+          "clase": "WEB_PUBLICA"
+        },
+        {
+          "id": "elmercurio.com.ec",
+          "nombre": "El Mercurio",
+          "tipo": "MEDIA",
+          "estado": "OBSERVADA",
+          "verificada": false,
+          "esPlataforma": false,
+          "frecuenciaObservada": 9,
+          "origen": "catalogo_semilla",
+          "procedencia": [
+            {
+              "origen": "catalogo_semilla",
+              "detalle": "Publicador rescatado del sufijo del titular, no del dominio.",
+              "instante": "Mon, 24 Aug 2026 22:28:52 GMT"
+            }
+          ],
+          "clase": "MEDIO"
+        },
+        {
+          "id": "eluniverso.com",
+          "nombre": "El Universo",
+          "tipo": "MEDIA",
+          "estado": "OBSERVADA",
+          "verificada": false,
+          "esPlataforma": false,
+          "frecuenciaObservada": 3,
+          "origen": "catalogo_semilla",
+          "procedencia": [
+            {
+              "origen": "catalogo_semilla",
+              "detalle": "Publicador rescatado del sufijo del titular, no del dominio.",
+              "instante": "Sat, 15 Aug 2026 07:00:00 GMT"
+            }
+          ],
+          "clase": "MEDIO"
+        },
+        {
+          "id": "expreso.ec",
+          "nombre": "Expreso",
+          "tipo": "MEDIA",
+          "estado": "OBSERVADA",
+          "verificada": false,
+          "esPlataforma": false,
+          "frecuenciaObservada": 3,
+          "origen": "catalogo_semilla",
+          "procedencia": [
+            {
+              "origen": "catalogo_semilla",
+              "detalle": "Publicador rescatado del sufijo del titular, no del dominio.",
+              "instante": "Tue, 21 Jul 2026 07:00:00 GMT"
+            }
+          ],
+          "clase": "MEDIO"
+        },
+        {
+          "id": "ecuavisa.com",
+          "nombre": "Ecuavisa",
+          "tipo": "MEDIA",
+          "estado": "DESCUBIERTA",
+          "verificada": false,
+          "esPlataforma": false,
+          "frecuenciaObservada": 1,
+          "origen": "catalogo_semilla",
+          "procedencia": [
+            {
+              "origen": "catalogo_semilla",
+              "detalle": "Publicador rescatado del sufijo del titular, no del dominio.",
+              "instante": "Mon, 17 Aug 2026 20:03:59 GMT"
+            }
+          ],
+          "clase": "MEDIO"
+        },
+        {
+          "id": "lahora.com.ec",
+          "nombre": "La Hora",
+          "tipo": "MEDIA",
+          "estado": "DESCUBIERTA",
+          "verificada": false,
+          "esPlataforma": false,
+          "frecuenciaObservada": 1,
+          "origen": "catalogo_semilla",
+          "procedencia": [
+            {
+              "origen": "catalogo_semilla",
+              "detalle": "Publicador rescatado del sufijo del titular, no del dominio.",
+              "instante": "Tue, 21 Jul 2026 07:00:00 GMT"
+            }
+          ],
+          "clase": "MEDIO"
+        },
+        {
+          "id": "primicias.ec",
+          "nombre": "Primicias",
+          "tipo": "MEDIA",
+          "estado": "DESCUBIERTA",
+          "verificada": false,
+          "esPlataforma": false,
+          "frecuenciaObservada": 1,
+          "origen": "catalogo_semilla",
+          "procedencia": [
+            {
+              "origen": "catalogo_semilla",
+              "detalle": "Publicador rescatado del sufijo del titular, no del dominio.",
+              "instante": "Tue, 18 Aug 2026 13:24:00 GMT"
+            }
+          ],
+          "clase": "MEDIO"
+        }
+      ],
+      "clasificacion": {
+        "clasificadas": 7,
+        "porClase": {
+          "WEB_PUBLICA": 1,
+          "MEDIO": 6
+        },
+        "noDeterminadas": 0
+      }
+    }
+  }
 }

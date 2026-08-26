@@ -862,21 +862,256 @@ Ninguna prueba consulta la red ni consume cuota.
 
 ---
 
-## 13-septies. Roadmap territorial
+## 13-septies. Open Listening Foundation — GATE D2 (2026-08-25)
+
+✅ Se corrige **la entrada**, no el ranking.
+
+### El problema, medido antes de tocar nada
+
+| | |
+|---|---|
+| consultas del plan | **4** |
+| con vocabulario de gestión | **2 de 4 = 50 %** |
+| evidencia entrada por ellas | **14 de 30 = 47 %** |
+| motores que aportaron algo | **1 de 6** (Google News RSS) |
+| «fuentes» declaradas | 7 — pero la mayor era **YouTube**, una plataforma, con el 40 % |
+
+El motor descubría que «en Cuenca se habla de gestión pública». Se le estaba preguntando eso.
+
+> Maquillar el ranking habría falsificado dos veces: una al pedir el corpus inclinado y otra al disimularlo.
+
+### Query Planner — de 4 consultas fijas a un generador
+
+`conversation/queryPlanner.js`. Seis tipos declarados: `NEUTRAL` · `TEMÁTICA` · `ACTOR` · `INSTITUCIONAL` · `MEDIA` · `CREATOR`.
+
+| | antes | ahora |
+|---|---|---|
+| consultas | 4 | **9** |
+| neutrales | 2 (50 %) | **6 (67 %)** |
+| con gestión | 2 (50 %) | 2 (22 %) — **declaradas** `INSTITUCIONAL` |
+| temáticas por defecto | — | **ninguna** |
+
+Las neutras van **primero** porque los motores tienen tope de consultas: lo que va delante es lo que se ejecuta. `hoy`, `noticias`, `actualidad`, `qué pasa` son marcadores de recencia y de género, no de tema: no inclinan hacia gestión, ni hacia deporte, ni hacia cultura.
+
+**El ancla territorial sigue siendo obligatoria.** «Cuenca» a secas devuelve Cuenca de España.
+
+**Solo el corpus neutral sostiene la Agenda General.** El dirigido responde a una pregunta que alguien formuló. Cada evidencia registra **todas** las consultas que la trajeron: sin eso, una nota que aparece en la neutral y en la institucional se clasificaría según el orden de ejecución del plan en vez de según los hechos.
+
+### Source Universe — quién habla y cómo lo sabemos
+
+`conversation/sourceUniverse.js`. Ocho tipos, cinco estados, procedencia acumulada.
 
 ```
-✅ A   Datos oficiales
-✅ B   Gazetteer
-✅ C   Topic Engine 2
-✅ C2  Open Topic Discovery + Geo Foundation
-✅ D   Agenda / Radar UI
-🟡 F1  Mapa verificado — sin zonas analíticas ni MapLibre
-→  E1  Ventanas comparables + Pulse          ← siguiente propuesto
-   F2  Zonas analíticas en interfaz + MapLibre
-   G   Digital Behavior agregado
-   H   Candidate / Territory Intelligence
-   —   Campaign Decision Layer
+DESCUBIERTA → OBSERVADA → VERIFICADA
+                INACTIVA · BLOQUEADA
 ```
+
+**Descubrir no es verificar.** Una fuente observada 20 veces sigue en `OBSERVADA`; solo un catálogo con respaldo o un analista **con autor y motivo** la mueven a `VERIFICADA`. Si el descubrimiento se autoverificara, el registro sería un espejo de la recolección en lugar de una fuente de verdad.
+
+**Una plataforma no es un emisor.** YouTube alojando doce vídeos no son doce fuentes ni una fuente: es una plataforma con doce emisores sin identificar.
+
+`usoComercialPermitido: null` **bloquea igual que `false`**. Lo que no se ha comprobado no se puede afirmar.
+
+### Source Classifier — con razones, y con derecho a no decidir
+
+`conversation/sourceClassifier.js`. Ocho clases; `NO_DETERMINADO` es un resultado válido.
+
+| señal | confianza | por qué |
+|---|---|---|
+| declaración de analista (con autor) | 0.95 | manda sobre todo |
+| `.gob.ec` | 0.92 | hecho administrativo: solo el Estado lo registra |
+| catálogo semilla | 0.80 | no contrastado contra registro oficial de medios |
+| plataforma conocida | 0.85 | → `WEB_PUBLICA`, **nunca** `CREADOR` |
+| señal de comunidad declarada | 0.55 | nombre o dominio de la propia fuente |
+| `.org` | 0.45 | lo registra cualquiera |
+
+**No hay umbral de seguidores.** «Más de N seguidores = creador» parece objetivo y no lo es: N no sale de ningún sitio, y el recuento ni siquiera se lee.
+
+**`CIUDADANIA_COMUNIDAD` designa una fuente colectiva observable**, nunca a un individuo que «represente» a la ciudadanía. `clasificarPersona()` devuelve `NO_DETERMINADO` por diseño.
+
+> Dos defectos corregidos durante la implementación. El clasificador consultaba la **URL** de Google News en lugar del dominio del publicador ya resuelto: las seis fuentes de prensa salían `NO_DETERMINADO` y el reparto por clase se perdía entero. Y el sufijo débil `.org` se evaluaba **antes** que la señal explícita de comunidad, así que un colectivo vecinal salía `ORGANIZACION` y la agenda ciudadana quedaba vacía con una fuente ciudadana delante.
+
+### Entity ≠ Topic — el defecto que la validación visual destapó
+
+`conversation/entityTopicSeparation.js`.
+
+```
+ANTES                          AHORA
+01 Marisol Peñaloza  4ev       01 elecciones seccionales  3ev
+02 elecciones secc.  3ev       02 denuncian falta         3ev
+03 denuncian falta   3ev       03 Gestión y gobernanza    2ev
+04 Gestión y gob.    2ev
+                               ENTIDADES OBSERVADAS
+                               Marisol Peñaloza (persona)
+                                 → aparece en: Gestión y gobernanza
+```
+
+El primer puesto no era un tema: era una **persona**. Un nombre propio es un sujeto sin predicado, y además los nombres propios son la señal más discriminante del corpus —por eso el descubridor los usa—, así que tienden a encabezar **siempre**. El resultado era una agenda llena de nombres que escondía los asuntos.
+
+**La corrección no es borrar.** La entidad conserva sus evidencias, se muestra en su propio bloque y declara **con qué temas aparece**. Se pierde un puesto en un ranking equivocado y se gana la relación, que es lo que un analista usa.
+
+| entidad | ¿puede ser tema? |
+|---|---|
+| `PERSON` · `ORGANIZATION` · `PLACE` | **no** |
+| `EVENT` | **sí** — «el paro de noviembre» es evento y tema |
+
+El **gazetteer manda sobre la morfología**: «Santa Ana» parece nombre de persona y es una parroquia de Cuenca.
+
+> Defecto encontrado al medirlo sobre el corpus real: la persona se separaba de los temas **descubiertos** y volvía a entrar por los **clasificados**, donde el Topic Engine 2 la emite como `emergente-marisol`. Filtrar una sola rama es no filtrar. Ahora se separan las dos y las entidades se deduplican por nombre.
+
+### Diversidad — volumen no es diversidad
+
+`conversation/sourceDiversity.js`. Herfindahl-Hirschman **normalizado**, calculado solo sobre **emisores** (las plataformas quedan fuera).
+
+Sobre el corpus real: **7 «fuentes» → 6 emisores + 1 plataforma**. HHI 0.178 (moderada), dominante El Mercurio con el 30 %.
+
+Toda proporción se etiqueta **«% del corpus observado»**. Nunca «% de la ciudadanía»: convertir publicaciones en porcentaje de personas es el error del 238 % que originó GEO-1, trasladado de la geografía a la audiencia.
+
+Concentración alta **no es un defecto**: si un solo medio cubre el cantón, eso es un hecho del territorio. Lo que no se puede es llamarlo diverso.
+
+### Cinco agendas separadas
+
+Reparto real del corpus de Cuenca:
+
+| agenda | evidencias | fuentes | % |
+|---|---|---|---|
+| Mediática | 18 | 6 | 60 % |
+| Digital | 12 | 1 | 40 % |
+| **Ciudadana** | **0** | — | — |
+| **Institucional** | **0** | — | — |
+| **Creadores** | **0** | — | — |
+
+**Tres agendas a cero.** Sin este panel esa composición no se ve y la pantalla parece hablar de la ciudad entera.
+
+> **Vacío no es silencio.** Que la agenda ciudadana esté a cero no significa que la ciudadanía calle: significa que ninguna consulta trajo una fuente comunitaria. Es una carencia de la **observación**, no un hallazgo sobre el territorio. Se dice con esas palabras, en la interfaz y en `coverageLimitations`.
+
+«Agenda digital» significa **«llegó por plataforma sin emisor identificado»**, no «lo que se dice en redes».
+
+### Snapshots — acumular desde hoy
+
+`territorial/snapshotStore.js`. Append-only, JSONL particionado, mismo patrón que el Knowledge Lake. **No existe `writeFile` en el módulo.**
+
+Entra en este gate y no en E1 por una razón de calendario, no de arquitectura:
+
+> Google News no da archivo histórico. La ventana anterior de Cuenca **no se puede recuperar: hay que acumularla.** Cada día sin guardar snapshots es una comparación que ya no se podrá hacer nunca. Si el almacén empezara con E1, E1 nacería ciego.
+
+Guarda la **forma** del corpus, no el corpus. No es cuestión de espacio: guardar las 30 notas invitaría a recalcular el pasado con la lógica de hoy, y entonces la comparación mediría cambios del código, no del territorio.
+
+Una corrección se **anexa** como snapshot nuevo que declara a cuál sustituye. El original permanece.
+
+La **huella** excluye el instante: dos capturas idénticas en contenido comparten huella, y eso permite decir «no ha cambiado nada» en lugar de «no lo sé».
+
+### Ventanas comparables — la mitad que impide inventarlas
+
+`24h · 7d · 15d · 30d · 90d`. Sin ventana anterior: **`SIN_VENTANA_COMPARABLE`**, `variacion: null`.
+
+La forma de la respuesta es **la misma exista o no** la ventana: un consumidor que lea `variacion` sin comprobar `disponible` lee `null`, no un número inventado. No se compara contra otra duración ni contra otro territorio.
+
+### Matriz de proveedores — declarado ≠ integrado ≠ aportó
+
+`providers/providerAudit.js`, leída del registro real.
+
+| | |
+|---|---|
+| declarados | 6 |
+| implementados | 5 |
+| integrados (con credencial) | 3 |
+| **aportaron evidencia** | **1** |
+| sin coste conocido | 3 |
+
+Las 30 evidencias vinieron de Google News RSS. Un panel que dijera «4 proveedores configurados» mentiría por omisión.
+
+**`costoPorConsulta: null` significa NO SE SABE y se propaga** a `costoEstimadoEjecucion`. No se rellena con precios de lista, no se estima por comparación y no se pone 0 «porque no hemos pagado». Un coste inventado se convierte en la base de una decisión de compra. Sin traza de ejecución, `enUso` sale `null`, que no es lo mismo que `false`.
+
+### DATA-PROVIDER-EVAL-01 — estructura de benchmark
+
+`contracts/providerBenchmark.js`. Caso fijo **BENCH-CUENCA-01**: mismo territorio, mismas consultas ancladas, misma ventana. Sin caso fijo, comparar proveedores es comparar anécdotas.
+
+**19 métricas.** La que decide es **coste por evidencia útil**: integra volumen, calidad y precio. Un proveedor que devuelve 500 resultados de los que 480 son duplicados o hablan de Cuenca de España es peor que uno que devuelve 40 útiles.
+
+**13 candidatos**, ninguno contratado ni integrado. De ninguno se afirma que funcione bien en Ecuador: eso es lo primero que el benchmark tendría que demostrar. Todas las fichas con **todas las métricas en `null`** — un benchmark sin ejecutar no es un benchmark con resultado cero.
+
+Tres incógnitas que el benchmark debería resolver primero:
+
+- **YouTube Data API** — el 40 % del corpus llega por ahí sin emisor identificado; es el mayor hueco de identificación que hay hoy.
+- **RSS directos de medios locales** — la opción más barata y la que más elevaría la diversidad: leer El Mercurio directamente resuelve el publicador sin rescatarlo del sufijo del titular.
+- **GDELT** — tiene archivo histórico, que es justo lo que falta; por medir su cobertura de prensa local ecuatoriana.
+
+### AI Router — auditoría primero
+
+**Sentinel no usa hoy ningún modelo de lenguaje.** Comprobado sobre el árbol de servicios y `package.json`: axios, cors, dotenv, express, rss-parser, whois-json. **Cero** llamadas a Anthropic, OpenAI, Google o cualquier proveedor de IA.
+
+Todo lo que parece inteligencia —descubrimiento de temas, encuadre, separación entidad/tema, geolocalización— es determinista y explicable por construcción.
+
+`contracts/aiRouter.js` define el contrato `AIProviderAdapter` y **ocho tareas**, cada una con:
+
+- `reemplazaDeterminista: false` — se aplica **encima** de un resultado que ya existe
+- `puedeCrearHechos: false` — **sin excepción y sin campo para cambiarlo**
+- `degradaA` — qué pasa si no hay proveedor; sin ruta de degradación, no puede integrarse
+
+> Un modelo puede **etiquetar, resumir y explicar**. No puede **decidir qué existe**: un tema que solo un modelo encuentra no es reproducible y no sostiene un informe.
+
+`elegirProveedor()` **no elige a nadie sin métricas medidas**. Un proveedor sin medir es un proveedor desconocido, y ese es hoy el estado de los tres que se nombran en cualquier conversación sobre IA. Fiabilidad primero, latencia después, coste como desempate: un modelo barato que devuelve JSON inválido el 10 % de las veces cuesta más en revisión de lo que ahorra.
+
+**AI-EVAL-01** registrada como pendiente. Criterio eliminatorio: **alucinación**. Criterio menos comparable y más importante aquí: **español de Ecuador** — «parroquia», «cantón», «prefecto» y «GAD» significan cosas concretas y un modelo entrenado sobre español peninsular las lee mal.
+
+> Hoy Sentinel funciona sin IA. Eso no es una carencia que tapar: es la línea base contra la que cualquier integración tiene que demostrar mejora.
+
+### Ficheros
+
+| Pieza | Fichero |
+|---|---|
+| Generador de consultas | `conversation/queryPlanner.js` |
+| Registro de fuentes | `conversation/sourceUniverse.js` |
+| Clasificación de fuente | `conversation/sourceClassifier.js` |
+| Entidad ≠ tema | `conversation/entityTopicSeparation.js` |
+| Diversidad y agendas | `conversation/sourceDiversity.js` |
+| Snapshots append-only | `territorial/snapshotStore.js` |
+| Matriz de proveedores | `providers/providerAudit.js` |
+| Benchmark | `contracts/providerBenchmark.js` |
+| Contrato de IA | `contracts/aiRouter.js` |
+| Interfaz | `territorio/agenda/{EntitiesPanel,SourceAgendasPanel}.jsx` |
+
+`conversationHarvester.planificarConsultas` **delega** en el nuevo planificador; no se duplicó el recolector ni se añadió un adaptador.
+
+### Pruebas
+
+| Suite | |
+|---|---|
+| `territorial.test.mjs` | **160** ✅ |
+| `territorial-c2.test.mjs` | **53** ✅ |
+| `territorial-d.test.mjs` | **39** ✅ |
+| `territorial-d2.test.mjs` | **92** ✅ |
+| `web/tests/ssr-render.check.jsx` | **97** ✅ |
+
+**441 comprobaciones.** Ninguna consulta la red ni consume cuota.
+
+---
+
+## 13-octies. Roadmap territorial
+
+Orden oficial:
+
+```
+✅ A    Datos oficiales
+✅ B    Gazetteer
+✅ C    Topic Engine 2
+✅ C2   Open Topic Discovery + Geo Foundation
+✅ D    Agenda / Radar UI
+🟡 F1   Mapa verificado — sin zonas analíticas ni MapLibre
+✅ D2   Open Listening Foundation
+→  E1   Ventanas comparables + Pulse          ← siguiente
+   —    DATA-PROVIDER-EVAL-01                 (en paralelo, exige autorización y presupuesto)
+   —    Topic × Territory
+   —    Origin / Amplification
+   —    Pulse
+   —    Media / Creator Intelligence
+   —    Candidate Overlay
+   —    Correlation
+   —    Sentinel Insight
+```
+
+Evaluaciones registradas: **`DATA-PROVIDER-EVAL-01`** (estructura definida, ninguna ficha ejecutada) · **`AI-ROUTER-EVAL`** (contrato definido, cero adaptadores) · **`AI-EVAL-01`** (pendiente, no iniciada).
 
 ---
 
@@ -897,13 +1132,18 @@ Ninguna prueba consulta la red ni consume cuota.
 | 9 | Ingesta continua | separar actividad de observación | riesgo WR-7 |
 | 10 | **Nomenclatura oficial de barrios y sectores** del GAD, con su relación a parroquia | resolución infra-parroquial | 🔴 no localizada; 9 topónimos son candidatos sin certificar |
 | 11 | **Ventana temporal anterior** en el recolector | tendencias, emergentes, «en crecimiento» | 🔴 Google News no da archivo histórico |
-| 12 | **Sesgo de consulta del recolector** | descubrimiento verdaderamente abierto | 🟡 2 de 4 consultas llevan vocabulario de gestión — ya **declarado siempre visible** en la interfaz, no corregido en el recolector |
+| 12 | ~~Sesgo de consulta del recolector~~ | — | ✅ **CORREGIDO EN LA ENTRADA** (D2): de 2/4 con gestión a 6/9 neutrales; las institucionales se declaran como tales y el sesgo residual se mide y se muestra |
 | 13 | **`DATA-PROVIDER-EVAL-01`** | integrar cualquier proveedor comercial | 🔴 evaluación no iniciada |
 | 14 | Ampliar taxonomía: clima/desastres, cultura, deportes, energía | categorías para lo ya descubierto | 🟡 el descubrimiento abierto lo suple mientras tanto |
 | 15 | **Polígono cantonal oficial de Cuenca** | dibujar el cantón sin derivar | 🟡 el mapa usa una **unión declarada** de las 22 parroquias, marcada como derivada |
 | 16 | **Zonas analíticas en la interfaz** | lectura por zonas | 🟡 motor listo (`analyticalZones.js`), registro **vacío**, sin interfaz — F2 |
 | 17 | **MapLibre, basemap y zoom** | War Room completo (UX-WR-001) | 🟡 F1 usa SVG; el agregado no cambia al migrar |
-| 18 | **`territorial-c2` y `territorial-d` fuera de `npm test`** | ejecución automática de la suite territorial | 🟡 `apps/backend/package.json` lo mantiene **Línea A**; no se modifica desde esta línea |
+| 18 | **`territorial-c2`, `-d` y `-d2` fuera de `npm test`** | ejecución automática de la suite territorial | 🟡 `apps/backend/package.json` lo mantiene **Línea A**; no se modifica desde esta línea |
+| 19 | **Emisores dentro de plataformas sin identificar** | diversidad real, agenda de creadores | 🔴 40 % del corpus llega por YouTube sin saber quién publica — requiere YouTube Data API, en `DATA-PROVIDER-EVAL-01` |
+| 20 | **Agendas ciudadana, institucional y de creadores a cero** | lectura no exclusivamente mediática | 🔴 ninguna consulta trae fuentes comunitarias ni institucionales propias; es carencia de observación, ya declarada en la interfaz |
+| 21 | **RSS directos de medios locales** | diversidad y resolución del publicador | 🟡 la mejora más barata disponible: leer El Mercurio directamente evita rescatar el publicador del sufijo del titular |
+| 22 | **`AI-EVAL-01`** | integrar cualquier modelo de lenguaje | 🔴 no iniciada; hoy Sentinel funciona sin IA y esa es la línea base |
+| 23 | **Snapshots acumulándose desde 2026-08-25** | ventanas comparables (E1) | 🟡 el histórico empieza hoy; Google News no permite recuperar días anteriores |
 
 `POST /api/territorio/recargar` integra 1–4 **sin reiniciar el backend y sin
 cambiar arquitectura**.

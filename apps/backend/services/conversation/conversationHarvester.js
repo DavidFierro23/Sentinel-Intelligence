@@ -21,6 +21,8 @@ import {
   permiteAfirmarAusencia
 } from "./conversationContracts.js";
 
+import { planificarConsultasAbiertas } from "./queryPlanner.js";
+
 
 /*
 -----------------------------------------------------------
@@ -205,111 +207,42 @@ analista y no puede ser desplazado por la evidencia.
 -----------------------------------------------------------
 */
 
-export function planificarConsultas({ ambito, actores = [], temas = [] } = {}) {
-  const territorio = (ambito?.nombre || "").trim();
+/*
+===========================================================
+PLANIFICAR — delegado al Query Planner
+===========================================================
 
-  /*
-    -------------------------------------------------------
-    ANCLAJE OBLIGATORIO — el fallo que esto cierra
-    -------------------------------------------------------
+La implementacion vive en `queryPlanner.js` desde D2. Aqui
+queda la firma porque la usan el motor y las pruebas, y porque
+duplicar el planificador seria tener dos definiciones de que es
+una consulta valida.
 
-    Medido en la primera prueba real. La consulta "Cuenca", sin
-    mas, devolvio de Google News:
+QUE CAMBIO Y POR QUE
 
-        Feria de San Julian con Morante y Talavante
-        Accidente en la A-3 con retenciones
-        El eclipse visto desde el Cerro del Socorro
+El plan anterior eran cuatro consultas fijas:
 
-    Todo de CUENCA, ESPANA. Y no por un fallo del buscador:
-    "Cuenca" es una ciudad espanola de medio millon de
-    resultados y ademas un sustantivo comun.
+    Cuenca Azuay                 neutral
+    Cuenca Ecuador               neutral
+    Cuenca municipio alcaldia    GESTION
+    Cuenca concejo cantonal      GESTION
 
-    Es exactamente el fallo que AUD-001 documento con Pedro
-    Palacios —una cronica de ciclismo de Albacete contaminando
-    a un alcalde ecuatoriano— trasladado al territorio. Y no lo
-    arregla el parametro regional: googleNewsService ya pide
-    gl=EC y aun asi llegaron.
+El 50 % del plan y el 47 % de la evidencia entraban por
+vocabulario de gestion publica, y despues el motor descubria
+que «en Cuenca se habla de gestion publica». Se le estaba
+preguntando eso.
 
-    La solucion es la misma que ya funciono alli: el ANCLA
-    territorial que declaro el analista entra en la consulta y
-    no es opcional. Nunca se emite el nombre del ambito a
-    secas.
-    -------------------------------------------------------
-  */
-  const ancestros = (ambito?.ancestros || []).filter(Boolean);
+El plan nuevo antepone consultas neutras, marca cada consulta
+con su tipo y deja las institucionales declaradas como lo que
+son. El vocabulario de gestion no desaparece —hace falta para
+observar al municipio—: deja de disfrazarse de escucha general.
+===========================================================
+*/
 
-  /* El mas cercano discrimina mas: provincia antes que pais. */
-  const anclaPrincipal = ancestros[0] || null;
-
-  const anclaPais = ancestros[ancestros.length - 1] || null;
-
-  const consultas = [];
-
-  const agregar = (texto, etiqueta, prioridad) => {
-    const t = String(texto || "").trim();
-
-    if (!t) return;
-
-    if (consultas.some((c) => c.texto.toLowerCase() === t.toLowerCase())) return;
-
-    consultas.push({ texto: t, etiqueta, prioridad, anclada: true });
-  };
-
-  if (territorio) {
-    if (anclaPrincipal) {
-      agregar(`${territorio} ${anclaPrincipal}`, "territorio", 1);
-    }
-
-    if (anclaPais && anclaPais !== anclaPrincipal) {
-      agregar(`${territorio} ${anclaPais}`, "territorio_pais", 2);
-    }
-
-    /*
-      El vocabulario de gestion publica acota hacia la
-      conversacion que interesa y aleja el ruido deportivo o
-      turistico, que fue la otra mitad de la contaminacion
-      medida.
-    */
-    agregar(`${territorio} municipio alcaldia`, "territorio_gestion", 3);
-
-    agregar(`${territorio} concejo cantonal`, "territorio_gobernanza", 5);
-  }
-
-  actores.slice(0, 6).forEach((a) => {
-    if (!a?.nombre) return;
-
-    const ancla = [territorio, anclaPrincipal].filter(Boolean).join(" ");
-
-    agregar(
-      ancla ? `"${a.nombre}" ${ancla}` : `"${a.nombre}"`,
-      `actor:${a.id || a.nombre}`,
-      4
-    );
-  });
-
-  temas.slice(0, 3).forEach((t) => {
-    const ancla = [territorio, anclaPrincipal].filter(Boolean).join(" ");
-
-    agregar(ancla ? `${ancla} ${t}` : t, `tema:${t}`, 6);
-  });
-
-  /*
-    SIN NINGUN ANCESTRO ninguna consulta esta realmente
-    anclada: el vocabulario de gestion acota el tema, pero no
-    el pais. Se marcan todas y se explica, en lugar de dejar
-    creer que el resultado esta acotado al territorio correcto.
-  */
-  if (territorio && !anclaPrincipal && !anclaPais) {
-    consultas.forEach((c) => {
-      c.anclada = false;
-
-      c.aviso =
-        "El ambito no declara provincia ni pais. La consulta no lleva ancla territorial y puede traer homonimos de otros paises: «Cuenca» sin ancla devuelve Cuenca de Espana.";
-    });
-  }
-
-  return consultas.sort((a, b) => a.prioridad - b.prioridad);
+export function planificarConsultas(opciones = {}) {
+  return planificarConsultasAbiertas(opciones);
 }
+
+
 
 
 /*
@@ -330,6 +263,13 @@ export async function recolectar(opciones = {}) {
   const evidencias = [];
 
   const vistas = new Set();
+
+  /*
+    Clave canonica -> evidencia ya anexada. Permite anotar en la
+    evidencia original las consultas posteriores que la
+    volvieron a traer.
+  */
+  const porClave = new Map();
 
   const registro = [];
 
@@ -373,9 +313,34 @@ export async function recolectar(opciones = {}) {
         (e.enlace && normalizarUrl(e.enlace)) ||
         `titulo:${e.titulo.toLowerCase().slice(0, 120)}`;
 
-      if (!clave || vistas.has(clave)) return;
+      if (!clave) return;
+
+      /*
+        DUPLICADA: no se anexa otra vez, pero SI se anota que
+        esta consulta tambien la trajo.
+
+        Sin esto, la separacion por tipo de consulta ve solo la
+        primera que la encontro. Una nota que aparece en la
+        consulta neutral y en la institucional quedaria contada
+        como corpus neutral a secas, y al reves segun el orden
+        de ejecucion: el corpus general dependeria del orden del
+        plan en lugar de dependera de los hechos.
+      */
+      if (vistas.has(clave)) {
+        const previa = porClave.get(clave);
+
+        if (previa && contexto.etiqueta && !previa.consultasOrigen.includes(contexto.etiqueta)) {
+          previa.consultasOrigen.push(contexto.etiqueta);
+        }
+
+        return;
+      }
 
       vistas.add(clave);
+
+      e.consultasOrigen = contexto.etiqueta ? [contexto.etiqueta] : [];
+
+      porClave.set(clave, e);
 
       evidencias.push(e);
 
@@ -406,7 +371,11 @@ export async function recolectar(opciones = {}) {
           url: ev.urlCanonica,
           fecha: ev.instante
         })),
-        { origen: "Knowledge Lake", motorId: "knowledge_lake" }
+        {
+          origen: "Knowledge Lake",
+          motorId: "knowledge_lake",
+          etiqueta: "lake:historico"
+        }
       );
 
       registro.push({
@@ -486,7 +455,8 @@ export async function recolectar(opciones = {}) {
       const n = anexar(r?.resultados, {
         origen: "Google News",
         motorId: "google_news",
-        consulta: c.texto
+        consulta: c.texto,
+        etiqueta: c.etiqueta
       });
 
       const recibidas = r?.total || 0;
@@ -579,7 +549,8 @@ export async function recolectar(opciones = {}) {
     const n = anexar(r?.resultados, {
       origen: r?.proveedorUsado?.nombre || "Web",
       motorId: r?.proveedorUsado?.id || null,
-      consulta: c.texto
+      consulta: c.texto,
+      etiqueta: c.etiqueta
     });
 
     registro.push({

@@ -23,6 +23,10 @@ import CoverageWarning from "./panels/CoverageWarning";
 import AgendaPanel from "./agenda/AgendaPanel";
 import RadarPanel from "./agenda/RadarPanel";
 import TopicDrawer from "./agenda/TopicDrawer";
+
+/* --- Gate D2 --- */
+import EntitiesPanel from "./agenda/EntitiesPanel";
+import SourceAgendasPanel from "./agenda/SourceAgendasPanel";
 import DigitalBehaviorPanel from "./panels/DigitalBehaviorPanel";
 
 /* Gate F1 */
@@ -364,6 +368,15 @@ function Contenido() {
           />
 
           <RadarPanel agenda={datos.agenda} onAbrirTema={setTemaAbierto} />
+
+          {/*
+            Las entidades van JUSTO detrás de la agenda, no al
+            final. Desde D2 salieron del ranking temático, y
+            enterrarlas abajo equivaldría a haberlas borrado.
+          */}
+          <EntitiesPanel escucha={datos.escuchaAbierta} />
+
+          <SourceAgendasPanel escucha={datos.escuchaAbierta} />
 
           <TerritorialMap
             mapa={datos.mapa}

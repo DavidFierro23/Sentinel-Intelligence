@@ -18,6 +18,8 @@ import TopicDrawer from "../src/territorio/agenda/TopicDrawer";
 import TerritorialMap from "../src/territorio/map/TerritorialMap";
 import PlacesWithoutGeometry from "../src/territorio/map/PlacesWithoutGeometry";
 import TerritoryPanel from "../src/territorio/map/TerritoryPanel";
+import EntitiesPanel from "../src/territorio/agenda/EntitiesPanel";
+import SourceAgendasPanel from "../src/territorio/agenda/SourceAgendasPanel";
 
 /*
   Renderiza los paneles con la respuesta REAL de la API y
@@ -154,6 +156,18 @@ htmls.sinGeometria = render(
 htmls.territorio = render(
   "TerritoryPanel",
   <TerritoryPanel unidad={datos.mapa?.conGeometria?.[0]} onCerrar={() => {}} />
+);
+
+/* --- Gate D2 --- */
+
+htmls.entidades = render(
+  "EntitiesPanel",
+  <EntitiesPanel escucha={datos.escuchaAbierta} />
+);
+
+htmls.agendasFuente = render(
+  "SourceAgendasPanel",
+  <SourceAgendasPanel escucha={datos.escuchaAbierta} />
 );
 
 const todo = Object.values(htmls).join("\n");
@@ -384,6 +398,91 @@ t(
 );
 
 
+console.log("\n[C3] ESCUCHA ABIERTA — entidad ≠ tema, fuentes declaradas");
+
+t(
+  "una PERSONA no aparece en la agenda temática",
+  (datos.escuchaAbierta?.entidades || [])
+    .filter((e) => e.tipoEntidad === "PERSON")
+    .every((e) => !htmls.agenda.includes(e.entidad))
+);
+
+t(
+  "...pero SÍ aparece en el bloque de entidades",
+  (datos.escuchaAbierta?.entidades || []).every((e) =>
+    htmls.entidades.includes(e.entidad)
+  )
+);
+
+t(
+  "el bloque de entidades declara que NO son temas",
+  /no son temas|es un sujeto, no un asunto/i.test(htmls.entidades)
+);
+
+t(
+  "cada entidad explica POR QUÉ no es un tema",
+  (datos.escuchaAbierta?.entidades || []).length === 0 ||
+    /por qu[ée] no es un tema/i.test(htmls.entidades)
+);
+
+t(
+  "una entidad muestra los temas en los que aparece, o dice que no hay",
+  (datos.escuchaAbierta?.entidades || []).every((e) =>
+    e.temasRelacionados?.length
+      ? htmls.entidades.includes(e.temasRelacionados[0].etiqueta)
+      : /todav[íi]a no forma tema/i.test(htmls.entidades)
+  )
+);
+
+t(
+  "las cinco agendas por tipo de fuente se muestran",
+  ["mediática", "digital", "institucional", "ciudadana", "creadores"].every((a) =>
+    new RegExp(a, "i").test(htmls.agendasFuente)
+  )
+);
+
+t(
+  "una agenda VACÍA se declara como carencia de observación, no como silencio",
+  Object.entries(datos.escuchaAbierta?.agendasPorFuente?.metricas || {}).some(
+    ([k, m]) => m.evidencias === 0 && k !== "SIN_CLASIFICAR"
+  )
+    ? /no significa silencio/i.test(htmls.agendasFuente)
+    : true
+);
+
+t(
+  "los porcentajes se declaran «del corpus observado»",
+  /del corpus observado/i.test(htmls.agendasFuente)
+);
+
+/*
+  La frase puede aparecer, pero SOLO negada. Es la misma
+  cautela que con «per cápita»: lo que no puede existir es la
+  frase etiquetando un dato.
+*/
+t(
+  "NUNCA se presenta un porcentaje como «de la ciudadanía»",
+  (() => {
+    const texto = todo.replace(/<[^>]+>/g, " ");
+
+    return [...texto.matchAll(/de la ciudadan[íi]a/gi)].every((m) => {
+      const ctx = texto.slice(Math.max(0, m.index - 90), m.index);
+
+      return /nunca|\bno\b|ning[úu]n/i.test(ctx);
+    });
+  })()
+);
+
+t(
+  "una plataforma no se cuenta como emisor independiente",
+  datos.escuchaAbierta?.diversidad?.plataformas > 0
+    ? datos.escuchaAbierta.diversidad.fuentesIndependientes <
+        datos.escuchaAbierta.diversidad.totalFuentes &&
+      /no est[áa]n identificados/i.test(htmls.agendasFuente)
+    : true
+);
+
+
 console.log("\n[D] HONESTIDAD OBLIGATORIA");
 
 t(
@@ -556,6 +655,9 @@ render(
   />
 );
 render("TerritoryPanel sin unidad", <TerritoryPanel unidad={null} onCerrar={() => {}} />);
+render("EntitiesPanel sin entidades", <EntitiesPanel escucha={{ entidades: [] }} />);
+render("EntitiesPanel null", <EntitiesPanel escucha={null} />);
+render("SourceAgendasPanel null", <SourceAgendasPanel escucha={null} />);
 
 
 console.log("\n===========================================");

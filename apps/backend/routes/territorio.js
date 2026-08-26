@@ -31,6 +31,47 @@ import {
   construirMapa
 } from "../services/geo/territorialAgenda.js";
 
+/* --- D2: Open Listening Foundation --- */
+
+import {
+  medirSesgo,
+  separarCorpusPorTipoDeConsulta
+} from "../services/conversation/queryPlanner.js";
+
+import {
+  construirUniverso,
+  listarFuentes,
+  estadoUniverso
+} from "../services/conversation/sourceUniverse.js";
+
+import { clasificarUniverso } from "../services/conversation/sourceClassifier.js";
+
+import {
+  medirDiversidad,
+  separarCorpusPorAgenda
+} from "../services/conversation/sourceDiversity.js";
+
+import {
+  separarEntidadesDeTemas,
+  relacionarEntidadesConTemas
+} from "../services/conversation/entityTopicSeparation.js";
+
+import {
+  componerSnapshot,
+  crearAlmacenFichero,
+  guardarSnapshot,
+  buscarVentanaAnterior,
+  compararConVentanaAnterior
+} from "../services/territorial/snapshotStore.js";
+
+import { matrizProveedores } from "../services/providers/providerAudit.js";
+
+import { estadoBenchmark } from "../services/contracts/providerBenchmark.js";
+
+import { estadoAiRouter } from "../services/contracts/aiRouter.js";
+
+import { listarUnidades } from "../services/geo/territoryRegistry.js";
+
 /*
 ===========================================================
 RUTAS DE INTELIGENCIA TERRITORIAL Y CONVERSACION PUBLICA
@@ -369,19 +410,143 @@ router.post("/analisis", async (req, res) => {
 
     /*
       -------------------------------------------------------
+      6-bis. OPEN LISTENING — Gate D2
+
+      Cuatro cosas que tienen que pasar ANTES de componer la
+      agenda, porque la agenda depende de las cuatro:
+
+        a) quien habla        (Source Universe)
+        b) de que naturaleza  (Source Classifier)
+        c) cuanta diversidad  (Source Diversity)
+        d) que es tema y que es entidad
+      -------------------------------------------------------
+    */
+    const consultasPlan = conversacion?.recoleccion?.consultasPlanificadas || [];
+
+    /* (a) Universo de fuentes observado en este corpus. */
+    const universo = construirUniverso(conversacion.evidencias, {
+      idioma: "es"
+    });
+
+    /* (b) Clasificacion explicable de cada una. */
+    const clasificacion = clasificarUniverso(universo);
+
+    /*
+      El resolvedor de fuente es el mismo para diversidad y para
+      agendas. Se define una vez: si divergieran, las cuotas por
+      agenda no sumarian el corpus.
+    */
+    const resolverFuente = (ev) => {
+      const ident = identificarFuente(ev);
+
+      return ident.dominio || ev.dominio || null;
+    };
+
+    /* (c) Diversidad real, con las plataformas separadas. */
+    const diversidad = medirDiversidad(conversacion.evidencias, {
+      clasificacionPorFuente: clasificacion.porFuente,
+      resolverFuente
+    });
+
+    const agendasPorFuente = separarCorpusPorAgenda(conversacion.evidencias, {
+      clasificacionPorFuente: clasificacion.porFuente,
+      resolverFuente
+    });
+
+    /*
+      Corpus neutral frente a corpus dirigido. La Agenda General
+      se lee del primero: el segundo responde a una pregunta que
+      alguien formulo.
+    */
+    const corpusPorConsulta = separarCorpusPorTipoDeConsulta(
+      conversacion.evidencias,
+      consultasPlan
+    );
+
+    const sesgoDeConsulta = medirSesgo(
+      consultasPlan,
+      (conversacion?.recoleccion?.registro || []).reduce((acc, r) => {
+        if (r.etiqueta) acc[r.etiqueta] = (acc[r.etiqueta] || 0) + (r.nuevas || 0);
+
+        return acc;
+      }, {})
+    );
+
+    /*
+      (d) ENTIDAD != TEMA.
+
+      El gazetteer sale del registro territorial: una unidad
+      reconocida es un lugar, y un lugar repetido no es un tema.
+      «Cuenca» aparece en las 30 evidencias de un corpus de
+      Cuenca y no significa nada.
+    */
+    const gazetteer = new Set(
+      listarUnidades().flatMap((u) =>
+        [u.nombre, ...(u.alias || [])].filter(Boolean).map((n) => n.toLowerCase())
+      )
+    );
+
+    /*
+      Las DOS ramas. Un nombre propio llega a la agenda por el
+      descubridor abierto y tambien por el Topic Engine 2, que
+      lo emite como tema `emergente`. Separar solo una rama deja
+      la otra puerta abierta y la persona reaparece en el
+      ranking.
+    */
+    const separacion = separarEntidadesDeTemas(
+      conversacion?.descubrimiento?.temasDescubiertos || [],
+      { gazetteer }
+    );
+
+    const separacionClasificados = separarEntidadesDeTemas(
+      conversacion?.temas?.temas || [],
+      { gazetteer }
+    );
+
+    /*
+      -------------------------------------------------------
       7. AGENDA Y MAPA — Gate D + F1
 
       La agenda FUSIONA descubiertos y clasificados: son dos
       caminos al mismo asunto, no dos asuntos. Un tema que la
       taxonomia no cubre no se esconde, se marca.
+
+      Desde D2 recibe los descubiertos YA SIN ENTIDADES. Una
+      persona repetida no encabeza la agenda tematica: es un
+      sujeto, no un asunto.
       -------------------------------------------------------
     */
     const agendaCompuesta = construirAgenda({
-      temasClasificados: conversacion?.temas?.temas || [],
-      temasDescubiertos: conversacion?.descubrimiento?.temasDescubiertos || [],
+      temasClasificados: separacionClasificados.temas,
+      temasDescubiertos: separacion.temas,
       ubicaciones,
       referencia: cuerpo.hasta || new Date().toISOString()
     });
+
+    /*
+      Las entidades de las dos ramas, deduplicadas por nombre:
+      la misma persona suele salir por las dos y no debe
+      aparecer dos veces en el bloque.
+    */
+    const entidadesUnicas = [];
+
+    const vistasEntidad = new Set();
+
+    [...separacion.entidades, ...separacionClasificados.entidades].forEach((e) => {
+      const clave = String(e.entidad || "").toLowerCase();
+
+      if (!clave || vistasEntidad.has(clave)) return;
+
+      vistasEntidad.add(clave);
+
+      entidadesUnicas.push(e);
+    });
+
+    /* Se relacionan con la agenda ya construida. */
+    const entidadesObservadas = relacionarEntidadesConTemas(
+      entidadesUnicas,
+      agendaCompuesta.agenda
+    );
 
     const mapa = construirMapa({
       agregado: territorio.agregado,
@@ -401,8 +566,90 @@ router.post("/analisis", async (req, res) => {
     const coverageLimitations = construirLimitacionesDeCobertura({
       conversacion,
       territorio,
-      mapa
+      mapa,
+      diversidad,
+      agendasPorFuente
     });
+
+    /*
+      -------------------------------------------------------
+      9. SNAPSHOT — acumular desde hoy
+
+      Google News no da archivo historico: la ventana anterior
+      de Cuenca no se puede recuperar, hay que acumularla. Cada
+      ejecucion que no se guarda es una comparacion que ya no se
+      podra hacer nunca.
+
+      Se guarda por defecto y se puede desactivar con
+      `persistirSnapshot: false`. Un fallo al guardar NO tumba
+      la respuesta: la vista es util aunque el historico falle,
+      y se declara.
+      -------------------------------------------------------
+    */
+    const instante = new Date().toISOString();
+
+    const snapshot = componerSnapshot({
+      territorio: {
+        unidadId: ambito.unidadId || null,
+        nombre: ambito.nombre || null,
+        resolucion: territorio?.resolucion?.efectiva || null
+      },
+      projectId: cuerpo.proyectoId || null,
+      window: {
+        id: cuerpo.ventana || "30d",
+        desde: cuerpo.desde || null,
+        hasta: cuerpo.hasta || null
+      },
+      capturedAt: instante,
+      diversidad,
+      temas: agendaCompuesta.agenda,
+      entidades: entidadesObservadas,
+      territorios: territorio?.agregado?.unidades || [],
+      consultas: consultasPlan,
+      providers: conversacion?.recoleccion?.registro || [],
+      coverageLimitations,
+      agendas: agendasPorFuente.metricas
+    });
+
+    let persistencia = {
+      guardado: false,
+      motivo: "No solicitado."
+    };
+
+    let ventanaComparable = compararConVentanaAnterior(snapshot, null);
+
+    if (cuerpo.persistirSnapshot !== false) {
+      try {
+        const almacen = crearAlmacenFichero();
+
+        const previos = await almacen.leerTodos();
+
+        const anterior = buscarVentanaAnterior(previos, {
+          territorioId: snapshot.territorio?.unidadId,
+          ventanaId: snapshot.window?.id,
+          capturedAt: snapshot.capturedAt
+        });
+
+        ventanaComparable = compararConVentanaAnterior(snapshot, anterior);
+
+        const r = await guardarSnapshot(almacen, snapshot);
+
+        persistencia = {
+          guardado: true,
+          snapshotId: r.snapshotId,
+          huella: r.huella,
+          snapshotsAcumulados: previos.length + 1,
+          modo: "append-only",
+          declaracion:
+            "Anexado, nunca sobrescrito. Una corrección se anexa como snapshot nuevo que declara a cuál sustituye."
+        };
+      } catch (error) {
+        persistencia = {
+          guardado: false,
+          motivo: `No se pudo guardar el snapshot: ${error?.message || "error"}. La vista es válida; lo que se pierde es la comparación futura.`
+        };
+      }
+    }
 
     res.json({
       modulo: "inteligencia_territorial",
@@ -419,6 +666,73 @@ router.post("/analisis", async (req, res) => {
 
       /* Gate F1 */
       mapa,
+
+      /* --- Gate D2: Open Listening --- */
+
+      escuchaAbierta: {
+        /*
+          Las entidades van FUERA de la agenda y con el mismo
+          rango de importancia: no se esconden por no ser temas.
+        */
+        entidades: entidadesObservadas,
+        separacionEntidadTema: {
+          descubiertos: separacion.metricas,
+          clasificados: separacionClasificados.metricas,
+          entidadesUnicas: entidadesUnicas.length
+        },
+        declaracionSeparacion: separacion.declaracion,
+
+        sesgoDeConsulta,
+        corpusPorTipoDeConsulta: corpusPorConsulta.metricas,
+        declaracionCorpus: corpusPorConsulta.declaracion,
+
+        diversidad,
+
+        agendasPorFuente: {
+          metricas: agendasPorFuente.metricas,
+          etiquetas: agendasPorFuente.etiquetas,
+          limitaciones: agendasPorFuente.limitaciones
+        },
+
+        universo: {
+          estado: estadoUniverso(universo),
+          fuentes: listarFuentes(universo).map((f) => ({
+            id: f.id,
+            nombre: f.nombre,
+            tipo: f.tipo,
+            estado: f.estado,
+            verificada: f.verificada,
+            esPlataforma: f.esPlataforma,
+            plataforma: f.plataforma,
+            frecuenciaObservada: f.frecuenciaObservada,
+            origen: f.origen,
+            procedencia: f.procedencia,
+            clase: clasificacion.porFuente.get(f.id)?.clase || null,
+            confianzaClase: clasificacion.porFuente.get(f.id)?.confianza ?? null,
+            razonesClase: clasificacion.porFuente.get(f.id)?.razones || []
+          })),
+          clasificacion: clasificacion.metricas
+        }
+      },
+
+      /* Base E1: se acumula ya, se compara despues. */
+      snapshot: {
+        snapshotId: snapshot.snapshotId,
+        capturedAt: snapshot.capturedAt,
+        huella: snapshot.huella,
+        window: snapshot.window,
+        persistencia,
+        ventanaComparable
+      },
+
+      /* Auditorias declaradas, sin coste ni red. */
+      proveedores: matrizProveedores({
+        trazaEjecucion: conversacion?.recoleccion?.registro || []
+      }),
+
+      benchmarkProveedores: estadoBenchmark(),
+
+      aiRouter: estadoAiRouter(),
 
       coverageLimitations,
 
@@ -474,7 +788,13 @@ convertiria una lectura parcial en una conclusion.
 ===========================================================
 */
 
-function construirLimitacionesDeCobertura({ conversacion, territorio, mapa }) {
+function construirLimitacionesDeCobertura({
+  conversacion,
+  territorio,
+  mapa,
+  diversidad = null,
+  agendasPorFuente = null
+}) {
   const lims = [];
 
   const consultas = conversacion?.recoleccion?.consultasPlanificadas || [];
@@ -524,6 +844,70 @@ function construirLimitacionesDeCobertura({ conversacion, territorio, mapa }) {
         .join(", ")} no se puede afirmar ausencia: no se les preguntó o no pudieron responder.`,
       visibleSiempre: false
     });
+  }
+
+  /*
+    LA PLATAFORMA QUE ESCONDE EMISORES
+
+    Medido en el corpus real de Cuenca: 12 de 30 evidencias
+    llegaron por YouTube. Contadas como «una fuente» sugieren
+    poca diversidad; contadas como doce, mucha. Ninguna de las
+    dos es cierta: son doce emisores sin identificar, y hasta
+    saber quienes son no se puede afirmar nada sobre ellos.
+  */
+  if (diversidad?.plataformas > 0 && diversidad.evidenciasEnPlataforma > 0) {
+    const cuota = Math.round(
+      (diversidad.evidenciasEnPlataforma / diversidad.totalEvidencias) * 100
+    );
+
+    lims.push({
+      id: "emisores_sin_identificar",
+      severidad: cuota >= 30 ? "alta" : "media",
+      titulo: `${cuota} % del corpus llega por plataforma`,
+      detalle: `${diversidad.evidenciasEnPlataforma} de ${diversidad.totalEvidencias} evidencias vienen de ${diversidad.plataformas} plataforma(s). Sus emisores reales no están identificados: no cuentan como fuentes independientes.`,
+      visibleSiempre: cuota >= 30
+    });
+  }
+
+  /*
+    CONCENTRACION
+
+    No es un defecto: si un solo medio cubre el canton, eso es
+    un hecho del territorio. Lo que no se puede es leer la
+    agenda como si viniera de muchas voces.
+  */
+  if (diversidad?.lecturaConcentracion === "alta" && diversidad.fuenteDominante) {
+    lims.push({
+      id: "corpus_concentrado",
+      severidad: "media",
+      titulo: "Corpus concentrado en pocas fuentes",
+      detalle: `«${diversidad.fuenteDominante.id}» aporta ${diversidad.fuenteDominante.evidencias} de las ${diversidad.totalEvidencias} evidencias. Concentración alta no es un error del análisis, pero la agenda no puede leerse como si viniera de muchas voces.`,
+      visibleSiempre: true
+    });
+  }
+
+  /*
+    AGENDAS VACIAS
+
+    Que la agenda ciudadana este vacia NO significa que la
+    ciudadania calle: significa que ninguna consulta trajo una
+    fuente comunitaria. Es una carencia de la observacion y hay
+    que decirlo antes de que se lea al reves.
+  */
+  if (agendasPorFuente?.metricas) {
+    const vacias = ["AGENDA_CIUDADANA", "AGENDA_CREADORES", "AGENDA_INSTITUCIONAL"]
+      .filter((a) => (agendasPorFuente.metricas[a]?.evidencias || 0) === 0)
+      .map((a) => agendasPorFuente.etiquetas?.[a] || a);
+
+    if (vacias.length > 0) {
+      lims.push({
+        id: "agendas_sin_observacion",
+        severidad: "alta",
+        titulo: `${vacias.length} agenda(s) sin una sola evidencia`,
+        detalle: `${vacias.join(", ")}. Vacío NO significa silencio: significa que ninguna fuente de ese tipo entró en el corpus. Es una carencia de la observación, no un hallazgo sobre el territorio.`,
+        visibleSiempre: true
+      });
+    }
   }
 
   if (mapa?.metricas?.unidadesSinGeometria > 0) {
