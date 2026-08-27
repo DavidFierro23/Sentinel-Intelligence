@@ -19,6 +19,13 @@ import {
 } from "lucide-react";
 
 import CandidateIdentityCard from "./CandidateIdentityCard";
+
+/*
+  El MISMO componente que pinta la fotografia en la ficha. Se
+  reutiliza a proposito: dos componentes distintos para la misma
+  imagen acabarian mostrando cosas distintas.
+*/
+import CandidatePhoto from "./CandidatePhoto";
 import CandidateIdentityForm from "./CandidateIdentityForm";
 import AccountIntelligencePanel from "./AccountIntelligencePanel";
 import { METRICA, fechaLocal } from "../services/identidadCandidato";
@@ -2110,38 +2117,76 @@ export default function ProjectsModule() {
               .slice()
               .sort((a, b) => (b.cobertura || 0) - (a.cobertura || 0))
               .map((c) => (
-                <div key={c.id} style={{ marginBottom: "12px" }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      color: "var(--sentinel-texto)",
-                      fontSize: "12.5px"
-                    }}
-                  >
-                    <span>{c.nombre}</span>
+                <div
+                  key={c.id}
+                  style={{
+                    marginBottom: "12px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "11px"
+                  }}
+                >
+                  {/*
+                    LA MISMA fotografia que la ficha individual.
+                    `c.foto` es el campo persistido del candidato:
+                    esta pantalla lo CONSUME, no lo copia ni lo
+                    vuelve a guardar. Si se cambia en «Editar
+                    identidad», aqui aparece la nueva al recargar.
 
-                    <span style={{ fontFamily: "monospace" }}>
-                      {c.cobertura}% · {c.cuentas} cuentas
-                    </span>
-                  </div>
+                    `CandidatePhoto` valida la URL antes de
+                    pintarla y cae a iniciales si no es una imagen
+                    o si la carga falla: la ausencia de foto no
+                    puede romper la comparacion.
+                  */}
+                  <CandidatePhoto
+                    foto={c.foto || null}
+                    nombre={c.nombre}
+                    tamano={42}
+                    radio="50%"
+                  />
 
-                  <div
-                    style={{
-                      height: "6px",
-                      background: "var(--sentinel-borde)",
-                      borderRadius: "3px",
-                      marginTop: "5px"
-                    }}
-                  >
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div
                       style={{
-                        height: "100%",
-                        width: `${c.cobertura}%`,
-                        background: colorCobertura(c.cobertura),
-                        borderRadius: "3px"
+                        display: "flex",
+                        justifyContent: "space-between",
+                        color: "var(--sentinel-texto)",
+                        fontSize: "12.5px",
+                        gap: "10px"
                       }}
-                    />
+                    >
+                      <span
+                        style={{
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap"
+                        }}
+                      >
+                        {c.nombre}
+                      </span>
+
+                      <span style={{ fontFamily: "monospace", whiteSpace: "nowrap" }}>
+                        {c.cobertura}% · {c.cuentas} cuentas
+                      </span>
+                    </div>
+
+                    <div
+                      style={{
+                        height: "6px",
+                        background: "var(--sentinel-borde)",
+                        borderRadius: "3px",
+                        marginTop: "5px"
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: "100%",
+                          width: `${c.cobertura}%`,
+                          background: colorCobertura(c.cobertura),
+                          borderRadius: "3px"
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
               ))}
