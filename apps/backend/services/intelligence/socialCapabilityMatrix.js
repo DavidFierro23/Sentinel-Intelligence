@@ -82,6 +82,122 @@ export const ALCANCES = Object.freeze({
 
 
 /*
+-----------------------------------------------------------
+QUE FALTA EXACTAMENTE — SOCIAL-PROVIDER-EVAL-01
+-----------------------------------------------------------
+
+`estado` dice si existe via oficial. Esto dice que hace falta
+para recorrerla, que es una pregunta distinta y la que decide si
+el siguiente paso lo da una persona, un pago o un proveedor.
+
+La distincion importa porque «requiere autorizacion» se usa para
+dos cosas que no se parecen:
+
+    APP_REVIEW              nuestra app pasa una revision
+    AUTORIZACION_TITULAR    el sujeto observado nos da permiso
+
+La primera es trabajo nuestro y se puede hacer. La segunda es
+imposible en inteligencia electoral: el objetivo no va a
+autorizar que lo observemos.
+-----------------------------------------------------------
+*/
+export const REQUISITOS = Object.freeze({
+  NINGUNO: "NINGUNO",
+
+  /* Clave de API y nada mas. */
+  CREDENCIAL: "CREDENCIAL",
+
+  /* Revision de la app por la plataforma. Trabajo nuestro. */
+  APP_REVIEW: "APP_REVIEW",
+
+  /* Verificacion de empresa ante la plataforma. */
+  BUSINESS_VERIFICATION: "BUSINESS_VERIFICATION",
+
+  /* El titular observado tiene que dar permiso. Inviable aqui. */
+  AUTORIZACION_TITULAR: "AUTORIZACION_TITULAR",
+
+  /* Programa de investigacion con elegibilidad restringida. */
+  PROGRAMA_INVESTIGACION: "PROGRAMA_INVESTIGACION",
+
+  /* Existe y esta detras de un plan de pago. */
+  PLAN_PAGO: "PLAN_PAGO",
+
+  /* Solo por proveedor de datos con licencia. */
+  PROVEEDOR: "PROVEEDOR"
+});
+
+
+/*
+-----------------------------------------------------------
+LA ETIQUETA DE CELDA
+
+Los siete estados de la matriz de salida. Se DERIVAN de
+`estado` + `verificacion` + `requisito`; no son un campo aparte
+que alguien pueda dejar desincronizado.
+-----------------------------------------------------------
+*/
+export const ESTADOS_CELDA = Object.freeze({
+  MEDIDO: "MEDIDO",
+  OFICIAL_DISPONIBLE: "OFICIAL_DISPONIBLE",
+  REQUIERE_AUTORIZACION: "REQUIERE_AUTORIZACION",
+  REQUIERE_APP_REVIEW: "REQUIERE_APP_REVIEW",
+  REQUIERE_PLAN_PAGO: "REQUIERE_PLAN_PAGO",
+  REQUIERE_PROVEEDOR: "REQUIERE_PROVEEDOR",
+  NO_DISPONIBLE: "NO_DISPONIBLE"
+});
+
+
+export function celdaDe(cap) {
+  if (!cap) return ESTADOS_CELDA.NO_DISPONIBLE;
+
+  if (cap.estado === ESTADOS_CAPACIDAD.NO_DISPONIBLE) {
+    return ESTADOS_CELDA.NO_DISPONIBLE;
+  }
+
+  if (cap.estado === ESTADOS_CAPACIDAD.REQUIERE_PROVEEDOR_EXTERNO) {
+    return ESTADOS_CELDA.REQUIERE_PROVEEDOR;
+  }
+
+  /*
+    Disponible, pero el requisito puede moverla. Una capacidad
+    que existe y esta detras de un plan NO es lo mismo que una
+    que ya funciona.
+  */
+  if (cap.estado === ESTADOS_CAPACIDAD.DISPONIBLE) {
+    if (cap.requisito === REQUISITOS.PLAN_PAGO) {
+      return ESTADOS_CELDA.REQUIERE_PLAN_PAGO;
+    }
+
+    if (cap.requisito === REQUISITOS.APP_REVIEW) {
+      return ESTADOS_CELDA.REQUIERE_APP_REVIEW;
+    }
+
+    return cap.verificacion === VERIFICACION.MEDIDO_EN_PRODUCCION
+      ? ESTADOS_CELDA.MEDIDO
+      : ESTADOS_CELDA.OFICIAL_DISPONIBLE;
+  }
+
+  /* REQUIERE_AUTORIZACION: depende de QUIEN tiene que autorizar. */
+  if (
+    cap.requisito === REQUISITOS.APP_REVIEW ||
+    cap.requisito === REQUISITOS.BUSINESS_VERIFICATION
+  ) {
+    return ESTADOS_CELDA.REQUIERE_APP_REVIEW;
+  }
+
+  if (cap.requisito === REQUISITOS.PLAN_PAGO) {
+    return ESTADOS_CELDA.REQUIERE_PLAN_PAGO;
+  }
+
+  if (cap.requisito === REQUISITOS.PROVEEDOR) {
+    return ESTADOS_CELDA.REQUIERE_PROVEEDOR;
+  }
+
+  return ESTADOS_CELDA.REQUIERE_AUTORIZACION;
+}
+
+
+/*
   Las capacidades que Candidate Intelligence necesita. Son las
   mismas para todas las plataformas: es lo que permite una sola
   matriz y un solo contrato.
@@ -102,7 +218,27 @@ export const CAPACIDADES = Object.freeze([
 ]);
 
 
-const c = (estado, verificacion, nota) => ({ estado, verificacion, nota });
+/*
+  `requisito` es opcional: si no se declara, se deduce del
+  estado. Una capacidad disponible sin requisito explicito solo
+  necesita la credencial; una que exige autorizacion sin decir de
+  quien se asume del titular, que es el caso peor y por tanto el
+  que no conviene suponer a la ligera.
+*/
+const c = (estado, verificacion, nota, requisito = null) => ({
+  estado,
+  verificacion,
+  nota,
+  requisito:
+    requisito ||
+    (estado === ESTADOS_CAPACIDAD.DISPONIBLE
+      ? REQUISITOS.CREDENCIAL
+      : estado === ESTADOS_CAPACIDAD.REQUIERE_AUTORIZACION
+        ? REQUISITOS.AUTORIZACION_TITULAR
+        : estado === ESTADOS_CAPACIDAD.REQUIERE_PROVEEDOR_EXTERNO
+          ? REQUISITOS.PROVEEDOR
+          : REQUISITOS.NINGUNO)
+});
 
 const DISP = ESTADOS_CAPACIDAD.DISPONIBLE;
 const AUTZ = ESTADOS_CAPACIDAD.REQUIERE_AUTORIZACION;
@@ -159,9 +295,10 @@ const YOUTUBE = {
     ),
     shares: c(NOPE, DOC, "la API no expone compartidos por video en ningun part"),
     menciones: c(
-      AUTZ,
+      DISP,
       DOC,
-      "search.list encuentra videos que nombran al candidato, pero cuesta 100 unidades por consulta: viable con presupuesto, no por defecto"
+      "search.list encuentra videos que nombran al candidato. Cuesta 100 unidades de las 10.000 diarias: viable con presupuesto, no por defecto",
+      REQUISITOS.CREDENCIAL
     ),
     busqueda: c(DISP, MEDIDO, "search.list, 100 unidades: 100 consultas agotan el dia"),
     historico: c(
@@ -193,19 +330,65 @@ const TIKTOK = {
   notaAlcance:
     "La Display API opera sobre la cuenta que INICIA SESION y autoriza: sirve para que un creador vea sus propios datos, no para observar a un candidato. La Research API si cubre terceros, pero su acceso se concede por solicitud y esta orientado a investigacion academica con afiliacion institucional.",
 
+  /*
+    TRES APIS Y NINGUNA SIRVE, y conviene saber por que cada una:
+
+      Display API            opera sobre la cuenta que INICIA
+                             SESION. Sirve para que un creador vea
+                             sus propios datos.
+      Research API           si cubre terceros, y su elegibilidad
+                             esta orientada a investigacion
+                             academica sin animo de lucro. Un
+                             producto comercial no encaja en el
+                             perfil.
+      Commercial Content API biblioteca de contenido comercial y
+                             anuncios. No da metricas organicas de
+                             una cuenta.
+
+    Es la unica plataforma del grupo donde el problema no es un
+    permiso que se pueda pedir ni un plan que se pueda pagar: es
+    que el caso de uso no encaja en ningun programa. De ahi que la
+    respuesta sea proveedor.
+  */
+  apisEvaluadas: [
+    {
+      id: "display_api",
+      cubreTerceros: false,
+      motivo:
+        "opera sobre la cuenta que inicia sesion y autoriza por OAuth. El candidato tendria que darnos acceso a su cuenta"
+    },
+    {
+      id: "research_api",
+      cubreTerceros: true,
+      motivo:
+        "cubre terceros, pero su elegibilidad esta orientada a investigacion academica sin animo de lucro. Sentinel es un producto comercial: NO se asume que podamos solicitarla ni usarla"
+    },
+    {
+      id: "commercial_content_api",
+      cubreTerceros: true,
+      motivo:
+        "solo contenido comercial y publicitario. No entrega metricas organicas de las publicaciones de una cuenta"
+    }
+  ],
+
+  programasDeAcceso: [
+    "Ninguno aplicable a un producto comercial que observa a terceros.",
+    "La via realista es un proveedor con licencia: ver TIKTOK-PROVIDER-EVAL-01."
+  ],
+
   capacidades: {
     identidad: c(
       DISP,
       DOC,
       "el handle se lee de la URL publica con SD-1A, sin API. Identifica la cuenta; no da ningun dato de ella"
     ),
-    cuenta: c(AUTZ, DOC, "Display API: solo la cuenta autorizada. Research API: por solicitud"),
-    followers: c(AUTZ, DOC, "no hay via oficial para terceros sin Research API"),
-    publicaciones: c(AUTZ, DOC, "idem"),
-    views: c(AUTZ, DOC, "idem"),
-    likes: c(AUTZ, DOC, "idem"),
-    comments: c(AUTZ, DOC, "idem"),
-    shares: c(AUTZ, DOC, "idem"),
+    cuenta: c(PROV, DOC, "Display API exige el login del titular; Research API no es elegible"),
+    followers: c(PROV, DOC, "sin via oficial para terceros en un uso comercial"),
+    publicaciones: c(PROV, DOC, "idem"),
+    views: c(PROV, DOC, "idem"),
+    likes: c(PROV, DOC, "idem"),
+    comments: c(PROV, DOC, "idem"),
+    shares: c(PROV, DOC, "idem"),
     menciones: c(PROV, DOC, "no hay busqueda publica por API"),
     busqueda: c(NOPE, DOC, "sin endpoint de busqueda publica para terceros"),
     historico: c(NOPE, DOC, "ninguna via entrega serie temporal"),
@@ -240,6 +423,37 @@ const FACEBOOK = {
   notaAlcance:
     "Graph API distingue PAGINA de PERFIL. Los datos de una pagina se obtienen con un token de acceso de esa pagina, que solo tiene su administrador; los perfiles personales no son accesibles de ningun modo. El error habitual es leer «se puede consultar paginas publicas» como «cualquiera puede consultar cualquier pagina»: hace falta el token del titular.",
 
+  /*
+    HAY UNA VIA PARA TERCEROS Y CONVIENE NO CONFUNDIRLA CON LAS
+    OTRAS: `Page Public Content Access`.
+
+    Es un permiso que permite leer contenido publico de paginas
+    que NO administramos. No lo autoriza el titular de la pagina:
+    lo concede Meta a la app, tras App Review y verificacion de
+    empresa. Historicamente su concesion es restrictiva y depende
+    del caso de uso declarado.
+
+    Los PERFILES personales quedan fuera de todo: no hay permiso
+    que los abra.
+  */
+  endpoints: {
+    pagina: "GET /{page-id}?fields=id,name,fan_count,link",
+    publicaciones:
+      "GET /{page-id}/posts?fields=id,created_time,permalink_url,message (requiere PPCA)",
+    resumenes:
+      "GET /{post-id}?fields=comments.summary(true),reactions.summary(true),shares"
+  },
+
+  autenticacion:
+    "Token de app con Page Public Content Access para terceros; token de la pagina si es propia.",
+
+  programasDeAcceso: [
+    "Meta for Developers: crear app y solicitar App Review del permiso Page Public Content Access.",
+    "Business Verification de la empresa.",
+    "Meta Content Library, sucesora de CrowdTangle, para investigacion: elegibilidad restringida a instituciones academicas.",
+    "Los perfiles personales no son accesibles por ninguna via."
+  ],
+
   capacidades: {
     identidad: c(DISP, DOC, "la URL publica identifica la pagina o el perfil, sin API"),
     cuenta: c(
@@ -247,20 +461,41 @@ const FACEBOOK = {
       DOC,
       "metadata publica de la pagina —titulo, og:image— legible sin API. Ninguna metrica"
     ),
-    followers: c(AUTZ, DOC, "exige token de la pagina"),
-    publicaciones: c(AUTZ, DOC, "idem"),
-    views: c(AUTZ, DOC, "video views de pagina: idem"),
-    likes: c(AUTZ, DOC, "reacciones: idem"),
-    comments: c(AUTZ, DOC, "idem"),
-    shares: c(AUTZ, DOC, "idem"),
+    followers: c(
+      AUTZ,
+      DOC,
+      "fan_count. Con PPCA para paginas de terceros; su disponibilidad varia",
+      REQUISITOS.APP_REVIEW
+    ),
+    publicaciones: c(
+      AUTZ,
+      DOC,
+      "/posts con Page Public Content Access. Es la unica via oficial a publicaciones de una pagina ajena",
+      REQUISITOS.APP_REVIEW
+    ),
+    views: c(
+      AUTZ,
+      DOC,
+      "las metricas de video son insights de pagina y exigen token de la pagina: no hay via para terceros",
+      REQUISITOS.AUTORIZACION_TITULAR
+    ),
+    likes: c(
+      AUTZ,
+      DOC,
+      "reactions.summary(true) sobre un post, con PPCA",
+      REQUISITOS.APP_REVIEW
+    ),
+    comments: c(AUTZ, DOC, "comments.summary(true), con PPCA", REQUISITOS.APP_REVIEW),
+    shares: c(AUTZ, DOC, "campo shares del post, con PPCA", REQUISITOS.APP_REVIEW),
     menciones: c(
       AUTZ,
       DOC,
-      "existio la Content Library / CrowdTangle para investigacion; su acceso es restringido y por solicitud"
+      "Meta Content Library. Elegibilidad academica: no es una via para un producto comercial",
+      REQUISITOS.PROGRAMA_INVESTIGACION
     ),
     busqueda: c(NOPE, DOC, "sin busqueda publica por API"),
     historico: c(NOPE, DOC, "ninguna via entrega serie temporal"),
-    url_verificable: c(DISP, DOC, "la URL del post es canonica")
+    url_verificable: c(DISP, DOC, "permalink_url del post es canonica")
   },
 
   rutaConcreta: [
@@ -287,20 +522,67 @@ const INSTAGRAM = {
   notaAlcance:
     "Exige cuenta profesional vinculada a una pagina de Facebook Y el token del titular. Existe `business_discovery`, que permite a una cuenta profesional consultar datos publicos de OTRA cuenta profesional: es el unico resquicio real para terceros, y sigue necesitando una cuenta profesional propia con app revisada por Meta.",
 
+  /*
+    BUSINESS DISCOVERY ES LA PIEZA CLAVE, y conviene entender que
+    autoriza y que no.
+
+    NO necesita permiso del observado. Necesita que NOSOTROS
+    tengamos una cuenta profesional propia, vinculada a una pagina
+    de Facebook, con una app revisada por Meta. Y que la cuenta
+    del objetivo sea PROFESIONAL (business o creator): las
+    personales quedan fuera.
+
+    Para un candidato con cuenta de campana, profesional es lo
+    habitual. Para un perfil personal, no hay via.
+  */
+  endpoints: {
+    businessDiscovery:
+      "GET /{ig-user-id}?fields=business_discovery.username(OBJETIVO){username,name,followers_count,media_count,media{id,caption,like_count,comments_count,media_type,permalink,timestamp}}"
+  },
+
+  autenticacion:
+    "Token de una cuenta profesional PROPIA con app revisada. El objetivo no interviene.",
+
+  programasDeAcceso: [
+    "Crear cuenta profesional de Instagram propia y vincularla a una pagina de Facebook.",
+    "Crear app en Meta for Developers y solicitar App Review de instagram_basic y instagram_manage_insights.",
+    "Business Verification de la empresa ante Meta.",
+    "Solo cubre objetivos con cuenta PROFESIONAL."
+  ],
+
   capacidades: {
-    identidad: c(DISP, DOC, "el handle se lee de la URL publica con SD-1A"),
+    identidad: c(DISP, DOC, "el handle se lee de la URL publica con SD-1A, sin API"),
     cuenta: c(
       AUTZ,
       DOC,
-      "business_discovery da nombre, biografia y foto de otra cuenta PROFESIONAL. No de una personal"
+      "business_discovery: nombre, biografia y foto de otra cuenta PROFESIONAL. No de una personal",
+      REQUISITOS.APP_REVIEW
     ),
-    followers: c(AUTZ, DOC, "business_discovery: followers_count de cuentas profesionales"),
-    publicaciones: c(AUTZ, DOC, "business_discovery: media reciente de cuentas profesionales"),
-    views: c(AUTZ, DOC, "reproducciones de reels: solo cuenta propia"),
-    likes: c(AUTZ, DOC, "like_count via business_discovery"),
-    comments: c(AUTZ, DOC, "comments_count via business_discovery"),
-    shares: c(NOPE, DOC, "no expuesto para terceros"),
-    menciones: c(AUTZ, DOC, "menciones: solo de la cuenta propia"),
+    followers: c(
+      AUTZ,
+      DOC,
+      "business_discovery: followers_count de cuentas profesionales",
+      REQUISITOS.APP_REVIEW
+    ),
+    publicaciones: c(
+      AUTZ,
+      DOC,
+      "business_discovery: media reciente con permalink y timestamp",
+      REQUISITOS.APP_REVIEW
+    ),
+    views: c(
+      NOPE,
+      DOC,
+      "las reproducciones de reels son metrica de insights y los insights son de la cuenta PROPIA. Para un tercero no hay via"
+    ),
+    likes: c(AUTZ, DOC, "like_count via business_discovery", REQUISITOS.APP_REVIEW),
+    comments: c(AUTZ, DOC, "comments_count via business_discovery", REQUISITOS.APP_REVIEW),
+    shares: c(NOPE, DOC, "no expuesto para terceros por ninguna via"),
+    menciones: c(
+      NOPE,
+      DOC,
+      "las menciones que la API entrega son las de la cuenta propia. Saber quien menciona a un tercero no es obtenible"
+    ),
     busqueda: c(NOPE, DOC, "sin busqueda publica por API"),
     historico: c(NOPE, DOC, "ninguna via entrega serie temporal"),
     url_verificable: c(DISP, DOC, "instagram.com/p/ID es canonica")
@@ -333,27 +615,69 @@ const X = {
   notaAlcance:
     "Tecnicamente cubre terceros sin autorizacion, que la coloca por delante de TikTok, Facebook e Instagram. El obstaculo no es el permiso: es el plan. Los niveles bajos tienen cuotas muy pequenas y la busqueda amplia esta en los niveles altos.",
 
+  /*
+    Endpoints de la v2, con su campo. El plan gobierna CUANTO se
+    puede pedir, no QUE se puede pedir: la forma del dato es la
+    misma en todos los niveles.
+  */
+  endpoints: {
+    usuario: "GET /2/users/by/username/:username?user.fields=public_metrics,description,created_at",
+    timeline: "GET /2/users/:id/tweets?tweet.fields=created_at,public_metrics",
+    busquedaReciente: "GET /2/tweets/search/recent?query=...&tweet.fields=created_at,public_metrics",
+    busquedaArchivo: "GET /2/tweets/search/all (niveles superiores)"
+  },
+
+  autenticacion: "Bearer token de aplicacion (app-only). No necesita OAuth de usuario para lectura publica.",
+
+  programasDeAcceso: [
+    "Portal de desarrolladores de X: crear proyecto y app, obtener bearer token.",
+    "El nivel gratuito historicamente NO cubre lectura de timelines de terceros; la lectura vive en los niveles de pago.",
+    "El archivo completo pertenece a los niveles superiores."
+  ],
+
   capacidades: {
-    identidad: c(DISP, DOC, "users/by/username: sin autorizacion del titular"),
-    cuenta: c(DISP, DOC, "nombre, descripcion, fecha de creacion"),
-    followers: c(DISP, DOC, "public_metrics.followers_count"),
-    publicaciones: c(DISP, DOC, "users/:id/tweets, sujeto a la cuota del plan"),
-    views: c(DISP, DOC, "public_metrics.impression_count cuando la API lo incluye"),
-    likes: c(DISP, DOC, "public_metrics.like_count"),
-    comments: c(DISP, DOC, "reply_count"),
-    shares: c(DISP, DOC, "retweet_count y quote_count, separados"),
+    identidad: c(
+      DISP,
+      DOC,
+      "users/by/username: resuelve handle -> id SIN autorizacion del titular",
+      REQUISITOS.PLAN_PAGO
+    ),
+    cuenta: c(DISP, DOC, "nombre, descripcion, fecha de creacion", REQUISITOS.PLAN_PAGO),
+    followers: c(DISP, DOC, "public_metrics.followers_count", REQUISITOS.PLAN_PAGO),
+    publicaciones: c(
+      DISP,
+      DOC,
+      "users/:id/tweets. Es el equivalente exacto de la lista de subidas de YouTube",
+      REQUISITOS.PLAN_PAGO
+    ),
+    views: c(
+      DISP,
+      DOC,
+      "public_metrics.impression_count. Su disponibilidad para publicaciones de terceros es el punto que hay que comprobar en la primera llamada real",
+      REQUISITOS.PLAN_PAGO
+    ),
+    likes: c(DISP, DOC, "public_metrics.like_count", REQUISITOS.PLAN_PAGO),
+    comments: c(DISP, DOC, "public_metrics.reply_count", REQUISITOS.PLAN_PAGO),
+    shares: c(
+      DISP,
+      DOC,
+      "retweet_count y quote_count, SEPARADOS: republicar y citar no son el mismo acto",
+      REQUISITOS.PLAN_PAGO
+    ),
     menciones: c(
       DISP,
       DOC,
-      "busqueda reciente por mencion. Es la capacidad que ninguna otra plataforma ofrece"
+      "search/recent por mencion. Es la capacidad que ninguna otra plataforma ofrece para terceros, y la que hace posible la amplificacion medida",
+      REQUISITOS.PLAN_PAGO
     ),
-    busqueda: c(DISP, DOC, "recent search en niveles bajos; historico completo en los altos"),
+    busqueda: c(DISP, DOC, "search/recent cubre 7 dias", REQUISITOS.PLAN_PAGO),
     historico: c(
       AUTZ,
       DOC,
-      "full-archive search existe pero pertenece a los niveles superiores"
+      "search/all da archivo completo y pertenece a los niveles superiores",
+      REQUISITOS.PLAN_PAGO
     ),
-    url_verificable: c(DISP, DOC, "x.com/handle/status/ID es canonica")
+    url_verificable: c(DISP, DOC, "x.com/handle/status/ID es canonica y se construye sin API")
   },
 
   rutaConcreta: [
@@ -372,10 +696,14 @@ export function matrizDeCapacidades() {
     nombre: cap.nombre,
 
     porPlataforma: Object.fromEntries(
-      PLATAFORMAS.map((p) => [
-        p.plataformaId,
-        p.capacidades[cap.id] || c(ESTADOS_CAPACIDAD.NO_DISPONIBLE, VERIFICACION.NO_VERIFICADO, null)
-      ])
+      PLATAFORMAS.map((p) => {
+        const celda =
+          p.capacidades[cap.id] ||
+          c(ESTADOS_CAPACIDAD.NO_DISPONIBLE, VERIFICACION.NO_VERIFICADO, null);
+
+        /* La etiqueta de salida se DERIVA; no se guarda aparte. */
+        return [p.plataformaId, { ...celda, celda: celdaDe(celda) }];
+      })
     )
   }));
 
@@ -410,6 +738,13 @@ export function matrizDeCapacidades() {
       notaAlcance: p.notaAlcance,
       rutaConcreta: p.rutaConcreta || [],
 
+      /* SOCIAL-PROVIDER-EVAL-01 */
+      endpoints: p.endpoints || null,
+      autenticacion: p.autenticacion || null,
+      programasDeAcceso: p.programasDeAcceso || [],
+      apisEvaluadas: p.apisEvaluadas || null,
+      credencial: p.credencial || null,
+
       disponibles: Object.values(p.capacidades).filter(
         (x) => x.estado === ESTADOS_CAPACIDAD.DISPONIBLE
       ).length,
@@ -429,7 +764,22 @@ export function matrizDeCapacidades() {
       medidasEnProduccion: cuenta(null, VERIFICACION.MEDIDO_EN_PRODUCCION),
       requierenAutorizacion: cuenta(ESTADOS_CAPACIDAD.REQUIERE_AUTORIZACION),
       noDisponibles: cuenta(ESTADOS_CAPACIDAD.NO_DISPONIBLE),
-      requierenProveedor: cuenta(ESTADOS_CAPACIDAD.REQUIERE_PROVEEDOR_EXTERNO)
+      requierenProveedor: cuenta(ESTADOS_CAPACIDAD.REQUIERE_PROVEEDOR_EXTERNO),
+
+      /*
+        Recuento por la etiqueta de salida. Es la que responde a
+        «que hace falta para tener esto», que es la pregunta que
+        se lleva a una reunion.
+      */
+      porCelda: PLATAFORMAS.reduce((acc, p) => {
+        Object.values(p.capacidades).forEach((x) => {
+          const e = celdaDe(x);
+
+          acc[e] = (acc[e] || 0) + 1;
+        });
+
+        return acc;
+      }, {})
     },
 
     lectura:

@@ -638,23 +638,63 @@ await t("TikTok, Facebook e Instagram no dan acceso a terceros", () => {
   );
 });
 
-await t("las metricas de TikTok requieren autorizacion, no estan disponibles", () => {
+/*
+  Corregido en SOCIAL-PROVIDER-EVAL-01. Antes se decia que las
+  metricas de TikTok «requieren autorizacion», lo que sugiere que
+  hay un permiso que pedir. No lo hay: la Display API exige el
+  login del titular, la Research API no es elegible para un
+  producto comercial y la Commercial Content API no da metricas
+  organicas. El estado exacto es proveedor externo.
+*/
+await t("las metricas de TikTok exigen proveedor, no un permiso que pedir", () => {
   return ["views", "likes", "comments", "shares"].every(
-    (c) => scm.capacidad("tiktok", c).estado === "REQUIERE_AUTORIZACION"
+    (c) => scm.celdaDe(scm.capacidad("tiktok", c)) === "REQUIERE_PROVEEDOR"
   );
 });
 
-await t("X si cubre terceros y es la unica con menciones disponibles", () => {
+await t("y las tres APIs de TikTok se evaluan por separado con su motivo", () => {
+  const tk = scm.PLATAFORMAS.find((p) => p.plataformaId === "tiktok");
+
+  return (
+    tk.apisEvaluadas.length === 3 &&
+    tk.apisEvaluadas.every((a) => typeof a.motivo === "string" && a.motivo.length > 30) &&
+    tk.apisEvaluadas.find((a) => a.id === "display_api").cubreTerceros === false
+  );
+});
+
+await t("X cubre terceros sin autorizacion del titular", () => {
   const m = scm.matrizDeCapacidades();
 
-  const conMenciones = m.plataformas.filter(
-    (p) => p.capacidades.menciones.estado === "DISPONIBLE"
+  const x = m.plataformas.find((p) => p.plataformaId === "x");
+
+  return x.terceros === true && x.autorizacionDelTitular === false;
+});
+
+/*
+  Afinado en SOCIAL-PROVIDER-EVAL-01. La version anterior
+  afirmaba que X era la unica con menciones disponibles; al
+  precisar la matriz resulto que `search.list` de YouTube tambien
+  las encuentra con la credencial que ya tenemos.
+
+  El hecho exacto, y el que decide: de las cinco plataformas,
+  YouTube es la UNICA cuyas menciones se pueden pedir hoy. Las de
+  X existen oficialmente y estan detras de un plan.
+*/
+await t("hoy solo las menciones de YouTube son alcanzables", () => {
+  const m = scm.matrizDeCapacidades();
+
+  const alcanzables = m.plataformas.filter((p) =>
+    ["MEDIDO", "OFICIAL_DISPONIBLE"].includes(
+      scm.celdaDe(p.capacidades.menciones)
+    )
   );
 
   return (
-    m.plataformas.find((p) => p.plataformaId === "x").terceros === true &&
-    conMenciones.length === 1 &&
-    conMenciones[0].plataformaId === "x"
+    alcanzables.length === 1 &&
+    alcanzables[0].plataformaId === "youtube" &&
+    scm.celdaDe(
+      m.plataformas.find((p) => p.plataformaId === "x").capacidades.menciones
+    ) === "REQUIERE_PLAN_PAGO"
   );
 });
 
@@ -673,12 +713,31 @@ await t("el resumen cuenta bien las medidas: no eran cero", () => {
   return m.resumen.medidasEnProduccion === 9;
 });
 
-await t("ninguna capacidad de YouTube esta en verde sin medir", () => {
+/*
+  Invariante mas fuerte que el anterior, y que cubre las cinco
+  plataformas en lugar de solo YouTube: NINGUNA celda puede
+  llamarse MEDIDO si no se midio. Es lo que impide que un
+  «disponible segun la documentacion» se lea como «ya funciona».
+*/
+await t("ninguna celda se etiqueta MEDIDO sin haberse medido", () => {
+  return scm.PLATAFORMAS.every((p) =>
+    Object.values(p.capacidades).every((c) =>
+      scm.celdaDe(c) === "MEDIDO"
+        ? c.verificacion === "MEDIDO_EN_PRODUCCION"
+        : true
+    )
+  );
+});
+
+await t("y lo que solo esta documentado se etiqueta OFICIAL_DISPONIBLE", () => {
   const yts = scm.PLATAFORMAS.find((p) => p.plataformaId === "youtube");
 
-  return Object.values(yts.capacidades)
-    .filter((c) => c.estado === "DISPONIBLE")
-    .every((c) => c.verificacion === "MEDIDO_EN_PRODUCCION");
+  /* `menciones` existe con la credencial, pero no se ha ejecutado. */
+  return (
+    yts.capacidades.menciones.estado === "DISPONIBLE" &&
+    yts.capacidades.menciones.verificacion === "DOCUMENTADO" &&
+    scm.celdaDe(yts.capacidades.menciones) === "OFICIAL_DISPONIBLE"
+  );
 });
 
 await t("shares de YouTube se declara NO_DISPONIBLE, no se inventa", () => {

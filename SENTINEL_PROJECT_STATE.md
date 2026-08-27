@@ -4606,6 +4606,177 @@ cuenta**, y eso es deliberado: poder leer una cuenta no dice de quien es.
 
 ---
 
+## 18-tervicies. SOCIAL-PROVIDER-EVAL-01 (2026-08-27)
+
+Commit `feat(intelligence): x adapter and social access evaluation`.
+
+**842 comprobaciones, 20 suites, 0 fallos.** Cero llamadas reales: X no tiene
+credencial todavia y el adapter se niega a salir a la red sin ella.
+
+Evaluacion de las vias reales para observar candidatos que **no administramos**
+en TikTok, Facebook, Instagram y X.
+
+---
+
+### La distincion que decide todo
+
+    CUENTA PROPIA / AUTORIZADA   el titular nos da permiso
+    CUENTA DE TERCERO            no nos lo da
+
+Casi toda la documentacion de estas APIs describe el primer caso. Sentinel hace
+inteligencia electoral: sus objetivos son terceros que no van a autorizar nada.
+
+Y «requiere autorizacion» eran en realidad **dos cosas distintas** que la matriz
+mezclaba:
+
+| | quien decide | viable |
+|---|---|---|
+| **App Review** | la plataforma revisa NUESTRA app | si, es trabajo nuestro |
+| **Autorizacion del titular** | el candidato observado | no, en este negocio |
+
+Separarlas cambio el diagnostico de TikTok: no es que falte un permiso que
+pedir, es que **ningun programa cubre el caso de uso**.
+
+---
+
+### Matriz: siete estados derivados
+
+`ESTADOS_CELDA` con siete valores, y `celdaDe()` los **deriva** de
+`estado` + `verificacion` + `requisito`. No hay una etiqueta paralela que alguien
+pueda dejar desincronizada, y un test lo comprueba celda por celda.
+
+| Capacidad | YouTube | X | Instagram | Facebook | TikTok |
+|---|---|---|---|---|---|
+| Identidad | **MEDIDO** | PLAN_PAGO | OFICIAL | OFICIAL | OFICIAL |
+| Cuenta | **MEDIDO** | PLAN_PAGO | APP_REVIEW | OFICIAL | PROVEEDOR |
+| Followers | **MEDIDO** | PLAN_PAGO | APP_REVIEW | APP_REVIEW | PROVEEDOR |
+| Publicaciones | **MEDIDO** | PLAN_PAGO | APP_REVIEW | APP_REVIEW | PROVEEDOR |
+| Views | **MEDIDO** | PLAN_PAGO | NO_DISPONIBLE | AUTORIZACION | PROVEEDOR |
+| Likes | **MEDIDO** | PLAN_PAGO | APP_REVIEW | APP_REVIEW | PROVEEDOR |
+| Comments | **MEDIDO** | PLAN_PAGO | APP_REVIEW | APP_REVIEW | PROVEEDOR |
+| Shares | NO_DISPONIBLE | PLAN_PAGO | NO_DISPONIBLE | APP_REVIEW | PROVEEDOR |
+| Menciones | OFICIAL | PLAN_PAGO | NO_DISPONIBLE | AUTORIZACION | PROVEEDOR |
+| Busqueda | **MEDIDO** | PLAN_PAGO | NO_DISPONIBLE | NO_DISPONIBLE | NO_DISPONIBLE |
+| Historico | NO_DISPONIBLE | PLAN_PAGO | NO_DISPONIBLE | NO_DISPONIBLE | NO_DISPONIBLE |
+| URL verificable | **MEDIDO** | OFICIAL | OFICIAL | OFICIAL | OFICIAL |
+
+De 60 casillas: 9 medidas, 11 tras un plan de pago, 11 inexistentes, 10 tras App
+Review, 9 oficialmente disponibles, 8 solo por proveedor y 2 dependientes del
+titular.
+
+**Las nueve medidas son todas de YouTube.**
+
+Dos correcciones que salieron al precisar la matriz, y las dos hacia peor:
+
+- `menciones` de YouTube pasa a DISPONIBLE: `search.list` las encuentra con la
+  credencial que ya tenemos. Resulta que **YouTube es la unica plataforma cuyas
+  menciones se pueden pedir hoy**; las de X existen y estan detras de un plan.
+- Las metricas de TikTok pasan de REQUIERE_AUTORIZACION a REQUIERE_PROVEEDOR.
+  Decir «requiere autorizacion» sugeria un permiso que pedir, y no lo hay.
+
+Los dos tests que afirmaban lo anterior se reescribieron hacia el invariante
+real, que es mas fuerte: **ninguna celda puede llamarse MEDIDO sin haberse
+medido**, en las cinco plataformas.
+
+---
+
+### X — adapter completo, esperando credencial
+
+`services/ingest/adapters/xAdapter.js`, con la misma forma que el de YouTube
+—`ID`, `estaConfigurado`, `diagnostico`, estado `SIN_CREDENCIAL`— para que entre
+en el registro de la linea de ingesta sin adaptaciones.
+
+    GET /2/users/by/username/:username
+    GET /2/users/:id/tweets
+    GET /2/tweets/search/recent
+
+**Sin `X_BEARER_TOKEN` no hace ni una peticion.** No es que falle: no lo
+intenta, y hay un test por cada funcion que lo comprueba contando llamadas.
+
+Cuatro decisiones del adapter que conviene conocer:
+
+- **Repost y cita se guardan separados.** Uno amplifica sin anadir nada, el otro
+  comenta. Sumarlos borra la diferencia.
+- **`impression_count` ausente es `NO_INCLUIDA_POR_LA_API`, no 0.** Su
+  disponibilidad para publicaciones de terceros es lo primero que habra que
+  comprobar en la llamada real.
+- **La marca de verificado NO corrobora nada**: en X es una suscripcion de pago,
+  no una comprobacion de identidad. Viaja con esa advertencia para que nadie la
+  use como senal de atribucion.
+- **Un 403 se distingue de un 429**: el primero suele significar «tu plan no
+  incluye este endpoint» y el segundo «espera». Uno se resuelve contratando y el
+  otro esperando.
+
+`COSTE_POR_LLAMADA` es **`null`**. El precio depende del plan y ha cambiado
+varias veces; un numero inventado aqui se convertiria en una linea de
+presupuesto. Se cuentan llamadas, que si se pueden contar sin saber el precio.
+
+#### Por que X es la siguiente
+
+Es la unica pendiente que cubre terceros sin autorizacion del titular, la unica
+que entrega **menciones** —la mitad que le falta a Candidate Intelligence, que
+hoy solo mide lo que publica el candidato— y la unica cuyo obstaculo es una
+decision nuestra en lugar de una solicitud que otro tiene que aprobar.
+
+---
+
+### Instagram, Facebook, TikTok
+
+**Instagram — Business Discovery.** No necesita permiso del observado: necesita
+que NOSOTROS tengamos cuenta profesional propia vinculada a una pagina de
+Facebook y una app revisada por Meta. Y que el objetivo sea cuenta
+**profesional**; las personales quedan fuera. Da identidad, seguidores,
+publicaciones con permalink, likes y comentarios. NO da reproducciones de reels
+de terceros, ni compartidos, ni menciones. Coste de licencia 0; el coste es
+tiempo de revision.
+
+**Facebook — Page Public Content Access.** Existe una via para terceros y no hay
+que confundirla: el permiso lo concede Meta a nuestra app, no el titular de la
+pagina. Con el se leen publicaciones, reacciones, comentarios y compartidos de
+paginas ajenas. **Los perfiles personales quedan fuera de todo** — y el candidato
+patron tiene precisamente un perfil personal, no una pagina.
+
+**TikTok — tres APIs y ninguna sirve.** Display API opera sobre la cuenta que
+inicia sesion; Research API cubre terceros pero su elegibilidad esta orientada a
+investigacion academica sin animo de lucro; Commercial Content API solo cubre
+contenido publicitario. **No se asume que podamos solicitar ni usar la Research
+API.** La via realista es un proveedor con licencia.
+
+---
+
+### Evaluacion de proveedores
+
+`docs/SOCIAL-PROVIDER-EVAL.md`. Ficha a rellenar, no recomendacion: **no se ha
+contactado a ningun proveedor**. Shortlist de seis suites con cobertura Ecuador y
+precio **sin verificar** en todas.
+
+Dos criterios **eliminatorios**, y conviene tenerlos claros antes de mirar
+precios:
+
+1. **Sin derechos de almacenamiento no hay Candidate Intelligence.** Todo el
+   modelo longitudinal depende de guardar snapshots. Un proveedor que solo
+   permita consultar en vivo no sirve, por bueno que sea.
+2. **Sin URL canonica por pieza, incumple evidence-first.** Una cifra sin enlace
+   verificable no se puede publicar en este sistema.
+
+Los precios figuran como `null` en todo el documento. No los conozco, cambian, y
+estimarlos en un documento de decision seria peor que dejar el hueco.
+
+### Riesgos y limitaciones
+
+- **Lo unico verificado de X es la forma de los endpoints.** Que el plan
+  contratado incluya lectura de timelines de terceros y `impression_count` esta
+  por comprobar, y solo se comprueba pagando.
+- **Instagram y Facebook dependen de una decision de Meta**, no nuestra. La App
+  Review puede rechazar el caso de uso y no consta cuanto tarda.
+- **El candidato patron tiene perfil personal de Facebook**, que ningun permiso
+  abre. Conviene contar cuantos candidatos usan pagina antes de invertir en la
+  revision.
+- El adapter de X esta escrito y **nunca se ha ejecutado**. Su primera llamada
+  real puede desmentir cualquiera de sus supuestos.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -4730,7 +4901,14 @@ resueltos y verificados.
 | Estadisticas por publicacion de YouTube | 🟢 **RESUELTO**: `resolverVideos`, `resolverCanalPorHandle` y `listarSubidas` anadidos al adapter existente. Medido en produccion |
 | Web declarada del candidato patron | 🔴 **no existe en el expediente**. Es la fuente `WEB_TO_ACCOUNT` que falta y la via de corroboracion mas barata que queda |
 | Cross-link desde paginas con JavaScript | 🔴 Facebook responde 200 y no entrega ni un `href`. Sin navegador no hay enlaces, y usar uno seria scraping evasivo |
-| Evaluacion de proveedores TikTok/Facebook/Instagram/X | 🔴 **siguiente gate**. Cuatro de cinco plataformas sin acceso a terceros; cada una con ruta concreta declarada en la matriz |
+| **SOCIAL-PROVIDER-EVAL-01** | 🟢 **COMPLETADO** (§18-tervicies): matriz de 60 casillas con siete estados derivados, adapter de X completo y `docs/SOCIAL-PROVIDER-EVAL.md` |
+| **X_BEARER_TOKEN** | 🔴 **ACCION REQUERIDA DE DAVID**. Es el unico desbloqueo que depende de una decision nuestra y no de un tercero. Sin el, el adapter no hace ni una peticion |
+| Precio real del plan de X | 🔴 `null`. Depende del plan y ha cambiado varias veces: se verifica en el portal, no se estima |
+| Instagram Business Discovery | 🟡 **via identificada**: cuenta profesional propia + App Review de Meta. Coste de licencia 0, coste en tiempo de revision. Depende de una decision de Meta |
+| Facebook Page Public Content Access | 🟡 **via identificada** para paginas. Los PERFILES personales no los abre ningun permiso, y el candidato patron tiene perfil |
+| TikTok | 🔴 **ningun programa oficial cubre el caso de uso**. Display API exige login del titular, Research API no es elegible para uso comercial, Commercial Content API solo cubre publicidad. Unica via: proveedor con licencia |
+| Registrar `x_api` en `providerAudit.js` | 🔴 fichero de Terminal 2. El adapter existe y su matriz de proveedores todavia no lo lista |
+| Evaluacion de proveedores TikTok/Facebook/Instagram/X | 🟡 **ficha preparada**, ningun proveedor contactado. Dos criterios eliminatorios: derechos de almacenamiento y URL canonica por pieza |
 | Segunda observacion real de YouTube | 🔴 la serie temporal empieza con ella. No se hizo una segunda llamada para fabricar dos puntos |
 | **P-CAND-02 Cross-Link Evidence** | 🟢 **IMPLEMENTADO** (§18-unvicies) |
 | **Contrato evidence-first** | 🟢 **IMPLEMENTADO**: `insight → metric → evidenceId → source → observedAt → canonicalUrl`. Una afirmacion sin la cadena completa no se publica |
@@ -5065,6 +5243,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-27 | SOCIAL-PROVIDER-EVAL-01 | Evaluacion de las vias reales para observar candidatos que no administramos en las cuatro plataformas pendientes. El hallazgo que reordena todo: «requiere autorizacion» eran dos cosas distintas —que la plataforma revise NUESTRA app, que es trabajo nuestro, y que el observado nos de permiso, que es imposible en inteligencia electoral—. Separarlas cambio el diagnostico de TikTok: no falta un permiso que pedir, es que ningun programa cubre el caso de uso. Matriz de 60 casillas con siete estados DERIVADOS de estado + verificacion + requisito, con un test que comprueba celda por celda que no hay etiqueta paralela desincronizada. Al precisarla salieron dos correcciones hacia peor: las menciones de YouTube son alcanzables hoy con la credencial que ya tenemos —resulta que es la unica plataforma donde lo son— y las metricas de TikTok pasan a REQUIERE_PROVEEDOR. Los dos tests que afirmaban lo anterior se reescribieron hacia un invariante mas fuerte: ninguna celda puede llamarse MEDIDO sin haberse medido. Adapter de X completo con la misma forma que el de YouTube, que sin credencial NO hace ni una peticion —no es que falle: no lo intenta, y hay un test por funcion contando llamadas—. Repost y cita separados, `impression_count` ausente marcado NO_INCLUIDA_POR_LA_API y no 0, la marca de verificado declarada explicitamente como no evidencia porque es una suscripcion de pago, y 403 distinguido de 429 porque uno se resuelve contratando y el otro esperando. `COSTE_POR_LLAMADA` en null: el precio depende del plan y estimarlo seria una linea de presupuesto inventada. `docs/SOCIAL-PROVIDER-EVAL.md` con shortlist de seis proveedores, ninguno contactado, todos los precios null y dos criterios eliminatorios: sin derechos de almacenamiento no hay modelo longitudinal, y sin URL canonica se incumple evidence-first. 842 pruebas, 0 fallos, cero llamadas reales. Nueva §18-tervicies. |
 | 2026-08-27 | P-CAND-03 Prueba real | Primera observacion REAL de plataforma: 3 unidades de cuota de 10.000. Se anaden al adapter existente `resolverCanalPorHandle`, `listarSubidas` y `resolverVideos` —las tres piezas que faltaban— en lugar de escribir un segundo cliente de YouTube. La via cuesta 3 unidades frente a las 100 de `search.list`, y sobre todo no interpreta nada: `forHandle` devuelve el canal de ESE handle o ninguno, mientras que buscar el nombre habria sido aceptar el criterio de relevancia de un buscador como evidencia de identidad. Canal resuelto con 26 suscriptores y 3 publicaciones con views, likes y comentarios reales; un `commentCount = 0` que es dato disponible y no `null`. Cross-link real ejecutado: sin web declarada, la unica fuente legible era Facebook, que responde 200 y no entrega ni un `href` porque se rellena con JavaScript. La ausencia de cross-links no es ausencia de identidad y se declara asi. Corregida la guarda de anticircularidad, que elegia el origen por una bandera mas laxa que el propio veredicto del resolvedor. Y dos defectos propios que encontro la prueba real: tres dimensiones de presencia mostraban 0 donde debia haber `null` —«miramos y no hay» en lugar de «no hay nada que mirar»—, y el historico decia «sin observaciones» teniendo nueve snapshots de metricas. Matriz de 60 celdas donde cada una declara si es medida o solo documentada: solo YouTube esta medida. Las dos cuentas de Instagram intactas. Observar YouTube NO ascendio su cuenta, que es el comportamiento correcto. 805 pruebas, 0 fallos. Nueva §18-duovicies. |
 | 2026-08-26 | P-CAND-02 Cross-Link | Se cierra el hueco declarado de V1: `enlacesCruzados` ya no llega vacio. Tres direcciones —WEB_TO_ACCOUNT, ACCOUNT_TO_ACCOUNT, EXTERNAL_REFERENCE_TO_ACCOUNT— con senal de resolucion distinta cada una, deduplicacion por `relationId` estable y `firstObservedAt` inmutable: cien observaciones del mismo enlace dan 25 puntos de solidez, no 100. Anticircularidad: una cuenta sin corroborar no puede corroborar a otra. Hallazgo de las pruebas: los enlaces relativos de una pagina social se resuelven a perfiles falsos —`facebook.com/contacto`— y habrian fabricado una cuenta corroborada por cada elemento del menu; se descartan por mismo dominio y se declara el descarte. Contrato evidence-first que RECHAZA afirmaciones sin cadena completa hasta la evidencia primaria; cuatro tipos de metrica declarados y ninguno disponible; ninguna etiqueta «viral», y la palabra invalida la afirmacion. Metricas como snapshots: 100k ayer y 150k hoy son dos observaciones. Puerto de adaptadores en lugar de duplicar el adaptador de YouTube que ya existe en la linea de ingesta; se detecta que le falta `videos.list?part=statistics`, asi que el rendimiento por publicacion no sera obtenible ni con credencial. Verificado end-to-end sin red: DECLARADA/0 pasa a CORROBORADA/25 y la solidez de identidad de 25 a 43. 766 pruebas, 0 fallos. Nueva §18-unvicies. |
 | 2026-08-25 | Candidate Intelligence V1 | Sentinel pasa de investigar un candidato a mantener un expediente longitudinal. Dos principios congelados: CANDIDATE-LONGITUDINAL-01 (las observaciones se agregan, no reemplazan) y OBSERVED-PRESENCE-01 (la presencia observada no es intencion de voto ni apoyo). Account Resolution con ocho estados y senales independientes frente a senales que dependen del nombre: una cuenta no pasa a corroborada por parecido de nombre ni por declaracion del analista. Ventanas 7d/30d/90d/campana con «historico insuficiente» en lugar de tendencias de un punto. Snapshots de identidad y corpus de evidencias append-only: el expediente guardaba recuentos y ahora guarda piezas, que es lo que permite deduplicar. Amplificacion separa presencia propia de ganada y da tres cifras distintas —piezas, hechos, fuentes—: diez cabeceras replicando una nota son un hecho. Cuatro planos de conversacion con `personas: null`. Contratos de Media y Territorio definidos y declarados no disponibles; territorio solo acepta lo que GEO-1 autoriza y bloquea IP, dispositivo y usuario por nombre. Presencia digital observada con seis dimensiones y indice compuesto NO DISPONIBLE. BUG-16 corregido en el modelo: solidez v2 sobre el inventario consolidado, probada identica antes y despues de un fallo de buscador, con la reencontrabilidad al lado y nunca restada. Workspace de diez secciones; ficha compacta intacta. 689 pruebas, 0 fallos. Nueva §18-vicies. |

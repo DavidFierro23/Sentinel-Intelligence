@@ -13,11 +13,12 @@ endpoints, coste en unidades, estado SIN_CREDENCIAL,
 normalizacion de video y de canal. Escribir otro habria sido
 exactamente lo que este gate prohibe.
 
-Pero ese adaptador es trabajo AJENO y todavia sin commitear.
-Importarlo de forma rigida dejaria a Candidate Intelligence
-dependiendo de un fichero que no esta en el arbol de git: el
-codigo funcionaria en esta maquina y se romperia en cualquier
-otra.
+Ese adaptador es trabajo de otra linea. Cuando se decidio esta
+arquitectura todavia no estaba commiteado, asi que importarlo de
+forma rigida habria dejado Candidate Intelligence dependiendo de
+un fichero ausente del arbol de git. Ya esta integrado, y la
+decision se mantiene: un puerto sobrevive a que esa rama cambie
+de forma.
 
 La solucion es la misma que ya usa toda la plataforma con las
 credenciales: se declara lo que se NECESITA, se intenta resolver
@@ -102,7 +103,41 @@ export const CAPACIDADES_REQUERIDAS = Object.freeze([
   caliente: si el fichero no esta, se declara y no se rompe.
 */
 const RUTAS_CONOCIDAS = Object.freeze({
-  youtube: "../ingest/adapters/youtubeAdapter.js"
+  youtube: "../ingest/adapters/youtubeAdapter.js",
+  x: "../ingest/adapters/xAdapter.js"
+});
+
+
+/*
+  Cada adapter nombra sus funciones segun su plataforma
+  —`resolverCanalPorHandle` en YouTube, `resolverCuentaPorHandle`
+  en X— porque un canal y una cuenta no son lo mismo. El puerto
+  traduce: aqui se declara QUE funcion sirve cada capacidad, en
+  lugar de exigir que todos los adapters usen el mismo nombre.
+*/
+const FUNCIONES_POR_CAPACIDAD = Object.freeze({
+  youtube: {
+    metadatos_de_cuenta: ["resolverCanales", "resolverCanalPorHandle"],
+    estadisticas_de_cuenta: ["resolverCanales", "resolverCanalPorHandle"],
+    listado_de_publicaciones: ["listarSubidas", "buscar"],
+    estadisticas_de_publicacion: ["resolverVideos", "estadisticasDeVideos"]
+  },
+
+  x: {
+    metadatos_de_cuenta: ["resolverCuentaPorHandle"],
+    estadisticas_de_cuenta: ["resolverCuentaPorHandle"],
+    listado_de_publicaciones: ["listarPublicaciones"],
+
+    /*
+      En X las metricas vienen EN el propio post: no hay una
+      segunda llamada como `videos.list`. La capacidad la cumple
+      la misma funcion que lista, y eso es una diferencia real
+      entre plataformas que el puerto tiene que poder expresar.
+    */
+    estadisticas_de_publicacion: ["listarPublicaciones"],
+
+    menciones: ["buscarMenciones"]
+  }
 });
 
 
@@ -166,27 +201,24 @@ export async function resolverAdaptador(plataformaId, opciones = {}) {
       : null;
 
   /*
-    Que capacidades cumple REALMENTE, comprobadas por la
-    presencia de la funcion que las sirve. No se supone: se
-    mira.
-  */
-  const cumple = {
-    metadatos_de_cuenta: typeof modulo.resolverCanales === "function",
-    estadisticas_de_cuenta: typeof modulo.resolverCanales === "function",
-    listado_de_publicaciones: typeof modulo.buscar === "function",
+    Se comprueba por la presencia de la funcion que sirve cada
+    capacidad, con los nombres que declara esta plataforma. No se
+    supone: se mira.
 
-    /*
-      Estadisticas POR PUBLICACION. En la API de YouTube salen
-      de `videos.list?part=statistics`, que es una llamada
-      distinta de la busqueda: `search` no devuelve cifras.
-      Mientras el adaptador no exponga esa funcion, el
-      rendimiento por publicacion no es obtenible aunque haya
-      credencial.
-    */
-    estadisticas_de_publicacion:
-      typeof modulo.resolverVideos === "function" ||
-      typeof modulo.estadisticasDeVideos === "function"
-  };
+    En YouTube las estadisticas por publicacion salen de
+    `videos.list?part=statistics`, una llamada distinta de la
+    busqueda —`search` no devuelve cifras—; en X vienen en el
+    propio post. Son dos formas distintas de cumplir la misma
+    capacidad, y el mapa las expresa.
+  */
+  const mapa = FUNCIONES_POR_CAPACIDAD[plataformaId] || {};
+
+  const cumple = Object.fromEntries(
+    CAPACIDADES_REQUERIDAS.map((cap) => [
+      cap.id,
+      (mapa[cap.id] || []).some((fn) => typeof modulo[fn] === "function")
+    ])
+  );
 
   const faltantes = CAPACIDADES_REQUERIDAS.filter((c) => !cumple[c.id]);
 
@@ -289,7 +321,9 @@ export async function preparacionParaObservacionReal(plataformas = ["youtube"]) 
 
 
 function variableDe(plataformaId) {
-  return plataformaId === "youtube" ? "YOUTUBE_API_KEY" : null;
+  const v = { youtube: "YOUTUBE_API_KEY", x: "X_BEARER_TOKEN" };
+
+  return v[plataformaId] || null;
 }
 
 
