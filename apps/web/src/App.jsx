@@ -10,6 +10,7 @@ import AIRouter from "./components/AIRouter";
 import Dashboard from "./components/Dashboard";
 import ProjectsModule from "./components/ProjectsModule";
 import TerritorialModule from "./territorio/TerritorialModule";
+import MediaPieceModule from "./media/MediaPieceModule";
 
 /*
 ===========================================================
@@ -366,6 +367,9 @@ export default function App() {
             dibujar una geometría inventada.
           */}
           {modulo === "mapa" && <TerritorialModule />}
+
+          {/* MEDIA-PIECE-01 — análisis de una publicación concreta. */}
+          {modulo === "media_pieza" && <MediaPieceModule />}
 
           {modulo === "configuracion" && (
             <div

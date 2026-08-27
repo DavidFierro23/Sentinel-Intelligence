@@ -4,6 +4,7 @@ import {
   Users,
   TrendingUp,
   Map,
+  Newspaper,
   Settings
 } from "lucide-react";
 
@@ -73,6 +74,18 @@ const MODULOS = [
       propio módulo tiene prohibido.
     */
     nota: "Inteligencia territorial y conversación pública. El mapa requiere el GeoJSON oficial."
+  },
+  {
+    /*
+      MEDIA-PIECE-01. No es "Media Intelligence" completo: es el
+      analisis de UNA publicacion. El menu dice lo que hace para
+      no prometer un modulo que aun no existe.
+    */
+    id: "media_pieza",
+    texto: "Analizar publicación",
+    icono: Newspaper,
+    estado: "operativo",
+    nota: "Media Intelligence · análisis de una pieza con evidencias y límites declarados."
   },
   {
     id: "configuracion",

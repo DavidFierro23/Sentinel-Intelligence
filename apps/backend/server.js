@@ -9,6 +9,7 @@ import osintRoutes from "./routes/osint.js";
 import assetRoutes from "./routes/assets.js";
 import projectRoutes from "./routes/projects.js";
 import territorioRoutes from "./routes/territorio.js";
+import mediaRoutes from "./routes/media.js";
 
 dotenv.config();
 
@@ -110,6 +111,9 @@ app.use("/api/proyectos", projectRoutes);
 
 /* ARQ-GEO-001 — inteligencia territorial y conversación pública. */
 app.use("/api/territorio", territorioRoutes);
+
+/* MEDIA-PIECE-01 — análisis de una publicación concreta. */
+app.use("/api/media", mediaRoutes);
 
 const PORT = process.env.PORT || 3001;
 
