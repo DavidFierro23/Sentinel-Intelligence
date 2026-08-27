@@ -491,6 +491,385 @@ export async function resolverCanales(channelIds = [], opciones = {}) {
 }
 
 
+/*
+===========================================================
+RESOLVER UN CANAL POR SU HANDLE — channels.list?forHandle
+===========================================================
+
+Anadido por Candidate Intelligence (P-CAND-03).
+
+`resolverCanales` resuelve por ID, y de un expediente lo que se
+tiene es un HANDLE. La alternativa era `search.list`, que cuesta
+100 unidades y ordena por relevancia: buscar el nombre de una
+persona y quedarse con el primer resultado es precisamente lo
+que no se puede hacer para atribuir identidad.
+
+`forHandle` cuesta 1 unidad y no interpreta nada: devuelve el
+canal de ESE handle o no devuelve nada.
+
+    100 unidades y una conjetura   frente a   1 unidad y un hecho
+
+Se pide tambien `contentDetails` para conocer la lista de
+subidas del canal, que es la via barata a sus publicaciones.
+===========================================================
+*/
+
+export async function resolverCanalPorHandle(handle, opciones = {}) {
+  const clave = credencial();
+
+  if (!clave) {
+    return { estado: "SIN_CREDENCIAL", canal: null, unidadesConsumidas: 0 };
+  }
+
+  const limpio = String(handle || "").trim().replace(/^@+/, "");
+
+  if (!limpio) {
+    return { estado: "OK", canal: null, unidadesConsumidas: 0, motivo: "handle vacio" };
+  }
+
+  const fetchImpl = opciones.fetch || globalThis.fetch;
+
+  const params = new URLSearchParams({
+    key: clave,
+    part: "snippet,statistics,contentDetails",
+    forHandle: `@${limpio}`
+  });
+
+  try {
+    const respuesta = await conTiempoLimite(
+      fetchImpl(`${ENDPOINT_CANALES}?${params}`),
+      TIEMPO_MAXIMO_MS,
+      "YouTube canal por handle"
+    );
+
+    if (!respuesta.ok) {
+      const cuerpo = await respuesta.text().catch(() => "");
+
+      return {
+        estado: /quota/i.test(cuerpo) ? "CUOTA_AGOTADA" : "ERROR",
+        canal: null,
+        unidadesConsumidas: COSTE_UNIDADES.channels,
+        motivo: `HTTP ${respuesta.status}`
+      };
+    }
+
+    const datos = await respuesta.json();
+
+    const item = (datos?.items || [])[0] || null;
+
+    if (!item) {
+      return {
+        estado: "NO_ENCONTRADO",
+        canal: null,
+        unidadesConsumidas: COSTE_UNIDADES.channels,
+        motivo: `YouTube no devuelve ningun canal con el handle @${limpio}. NO significa que no exista: significa que ese handle no resuelve.`
+      };
+    }
+
+    const canal = normalizarCanal(item);
+
+    /* Lista de subidas: la via de 1 unidad a las publicaciones. */
+    canal.listaDeSubidas =
+      item?.contentDetails?.relatedPlaylists?.uploads || null;
+
+    canal.handleConsultado = `@${limpio}`;
+
+    return { estado: "OK", canal, unidadesConsumidas: COSTE_UNIDADES.channels };
+  } catch (error) {
+    return {
+      estado: "ERROR",
+      canal: null,
+      unidadesConsumidas: 0,
+      motivo: error?.message || "fallo de red"
+    };
+  }
+}
+
+
+/*
+===========================================================
+PUBLICACIONES RECIENTES DE UN CANAL — playlistItems.list
+===========================================================
+
+Anadido por Candidate Intelligence (P-CAND-03). La lista de
+subidas de un canal se pagina con `playlistItems`, que cuesta 1
+unidad, frente a las 100 de `search.list`. Y devuelve lo que el
+canal SUBIO, no lo que un buscador considera relevante.
+
+Se pide una muestra pequena a proposito: validar el pipeline no
+exige recorrer un canal entero, y la cuota es un presupuesto.
+===========================================================
+*/
+
+const ENDPOINT_LISTA = "https://www.googleapis.com/youtube/v3/playlistItems";
+
+export async function listarSubidas(playlistId, opciones = {}) {
+  const clave = credencial();
+
+  if (!clave) {
+    return { estado: "SIN_CREDENCIAL", videos: [], unidadesConsumidas: 0 };
+  }
+
+  if (!playlistId) {
+    return {
+      estado: "OK",
+      videos: [],
+      unidadesConsumidas: 0,
+      motivo: "el canal no declara lista de subidas"
+    };
+  }
+
+  const fetchImpl = opciones.fetch || globalThis.fetch;
+
+  /* Tope duro: una muestra, no un volcado. */
+  const cuantos = Math.min(Math.max(1, opciones.maximo || 5), 25);
+
+  const params = new URLSearchParams({
+    key: clave,
+    part: "snippet,contentDetails",
+    playlistId,
+    maxResults: String(cuantos)
+  });
+
+  try {
+    const respuesta = await conTiempoLimite(
+      fetchImpl(`${ENDPOINT_LISTA}?${params}`),
+      TIEMPO_MAXIMO_MS,
+      "YouTube lista de subidas"
+    );
+
+    if (!respuesta.ok) {
+      const cuerpo = await respuesta.text().catch(() => "");
+
+      return {
+        estado: /quota/i.test(cuerpo) ? "CUOTA_AGOTADA" : "ERROR",
+        videos: [],
+        unidadesConsumidas: COSTE_UNIDADES.videos,
+        motivo: `HTTP ${respuesta.status}`
+      };
+    }
+
+    const datos = await respuesta.json();
+
+    const videos = (datos?.items || [])
+      .map((it) => {
+        const videoId =
+          it?.contentDetails?.videoId || it?.snippet?.resourceId?.videoId || null;
+
+        if (!videoId) return null;
+
+        return {
+          videoId,
+          title: it?.snippet?.title || null,
+
+          /*
+            `publishedAt` del item de lista es cuando se anadio a
+            la lista; el del video es el de la publicacion. Para
+            las subidas propias coinciden, pero se marca de donde
+            sale para no confundirlo con una observacion nuestra.
+          */
+          publishedAt:
+            it?.contentDetails?.videoPublishedAt || it?.snippet?.publishedAt || null,
+
+          channelId: it?.snippet?.channelId || null,
+          channelTitle: it?.snippet?.channelTitle || null,
+
+          canonicalUrl: `https://www.youtube.com/watch?v=${videoId}`,
+
+          descripcion: it?.snippet?.description || null
+        };
+      })
+      .filter(Boolean);
+
+    return {
+      estado: "OK",
+      videos,
+      solicitados: cuantos,
+      unidadesConsumidas: COSTE_UNIDADES.videos
+    };
+  } catch (error) {
+    return {
+      estado: "ERROR",
+      videos: [],
+      unidadesConsumidas: 0,
+      motivo: error?.message || "fallo de red"
+    };
+  }
+}
+
+
+/*
+===========================================================
+ESTADISTICAS POR VIDEO — videos.list
+===========================================================
+
+Anadido por Candidate Intelligence (P-CAND-03). `ENDPOINT_VIDEOS`
+ya estaba declarado y sin usar: `search.list` NO devuelve
+cifras, y las de un video concreto solo salen de esta llamada.
+
+Se anade AQUI, en el adapter que ya existe, en lugar de escribir
+un segundo cliente de YouTube: duplicarlo habria significado
+duplicar tambien la lectura perezosa de la credencial, el tiempo
+limite y el manejo de errores.
+
+Cuesta 1 unidad por llamada y admite hasta 50 IDs, asi que una
+llamada cubre una muestra entera.
+
+    LO QUE YOUTUBE OMITE, SE DECLARA OMITIDO
+
+`likeCount` desaparece del payload cuando el canal oculta los
+«me gusta»; `commentCount`, cuando los desactiva. En los dos
+casos el dato EXISTE y esta cerrado: eso no es cero y tampoco es
+«no lo pedimos». Cada metrica viaja con su `availability`.
+===========================================================
+*/
+
+export const DISPONIBILIDAD_METRICA = Object.freeze({
+  DISPONIBLE: "DISPONIBLE",
+  OCULTO_POR_LA_CUENTA: "OCULTO_POR_LA_CUENTA",
+  NO_DISPONIBLE: "NO_DISPONIBLE"
+});
+
+
+/*
+  Una cifra de `statistics`. Ausente no es 0: se distingue el
+  campo que el canal cierra del que la API simplemente no trae.
+*/
+function metricaDeVideo(est, campo, ocultable) {
+  const bruto = est?.[campo];
+
+  if (bruto == null) {
+    return {
+      value: null,
+      availability: ocultable
+        ? DISPONIBILIDAD_METRICA.OCULTO_POR_LA_CUENTA
+        : DISPONIBILIDAD_METRICA.NO_DISPONIBLE,
+      motivo: ocultable
+        ? `la API no devuelve ${campo}: el canal lo tiene oculto o desactivado`
+        : `la API no devuelve ${campo}`
+    };
+  }
+
+  const n = Number(bruto);
+
+  if (!Number.isFinite(n)) {
+    return {
+      value: null,
+      availability: DISPONIBILIDAD_METRICA.NO_DISPONIBLE,
+      motivo: `${campo} no es un numero utilizable`
+    };
+  }
+
+  return { value: n, availability: DISPONIBILIDAD_METRICA.DISPONIBLE, motivo: null };
+}
+
+
+export function normalizarEstadisticasDeVideo(item) {
+  const s = item?.snippet || {};
+
+  const est = item?.statistics || {};
+
+  const videoId = item?.id || null;
+
+  if (!videoId) return null;
+
+  return {
+    videoId,
+    channelId: s.channelId || null,
+    channelTitle: s.channelTitle || null,
+
+    title: s.title || null,
+    publishedAt: s.publishedAt || null,
+
+    /* La URL de YouTube ES canonica para un video. */
+    canonicalUrl: `https://www.youtube.com/watch?v=${videoId}`,
+
+    metricas: {
+      views: metricaDeVideo(est, "viewCount", false),
+      likes: metricaDeVideo(est, "likeCount", true),
+      comments: metricaDeVideo(est, "commentCount", true)
+    },
+
+    /*
+      Lo que esta API NO da, dicho aqui para que nadie lo busque
+      en otro sitio: no hay compartidos ni alcance por video.
+    */
+    noDisponibleEnEstaApi: ["shares", "reach", "impressions"]
+  };
+}
+
+
+export async function resolverVideos(videoIds = [], opciones = {}) {
+  const clave = credencial();
+
+  if (!clave) {
+    return { estado: "SIN_CREDENCIAL", videos: [], unidadesConsumidas: 0 };
+  }
+
+  if (videoIds.length === 0) {
+    return { estado: "OK", videos: [], unidadesConsumidas: 0 };
+  }
+
+  const fetchImpl = opciones.fetch || globalThis.fetch;
+
+  const params = new URLSearchParams({
+    key: clave,
+    part: "snippet,statistics",
+    id: videoIds.slice(0, 50).join(",")
+  });
+
+  try {
+    const respuesta = await conTiempoLimite(
+      fetchImpl(`${ENDPOINT_VIDEOS}?${params}`),
+      TIEMPO_MAXIMO_MS,
+      "YouTube videos"
+    );
+
+    if (!respuesta.ok) {
+      const cuerpo = await respuesta.text().catch(() => "");
+
+      const esCuota = /quota/i.test(cuerpo);
+
+      return {
+        estado: esCuota ? "CUOTA_AGOTADA" : "ERROR",
+        videos: [],
+        unidadesConsumidas: COSTE_UNIDADES.videos,
+        motivo: esCuota
+          ? `Cuota diaria agotada (${CUOTA_DIARIA_GRATUITA} unidades).`
+          : `HTTP ${respuesta.status}`
+      };
+    }
+
+    const datos = await respuesta.json();
+
+    const videos = (datos?.items || [])
+      .map(normalizarEstadisticasDeVideo)
+      .filter(Boolean);
+
+    /*
+      IDs pedidos que la API no devolvio: video privado, borrado
+      o id equivocado. Se declara en lugar de perderlos en
+      silencio.
+    */
+    const devueltos = new Set(videos.map((v) => v.videoId));
+
+    return {
+      estado: "OK",
+      videos,
+      noDevueltos: videoIds.filter((id) => !devueltos.has(id)),
+      unidadesConsumidas: COSTE_UNIDADES.videos
+    };
+  } catch (error) {
+    return {
+      estado: "ERROR",
+      videos: [],
+      unidadesConsumidas: 0,
+      motivo: error?.message || "fallo de red"
+    };
+  }
+}
+
+
 export function diagnostico() {
   const configurado = estaConfigurado();
 
@@ -537,8 +916,12 @@ export default {
   CUOTA_DIARIA_GRATUITA,
   buscar,
   resolverCanales,
+  resolverCanalPorHandle,
+  listarSubidas,
+  resolverVideos,
   normalizarVideo,
   normalizarCanal,
+  normalizarEstadisticasDeVideo,
   estaConfigurado,
   diagnostico
 };

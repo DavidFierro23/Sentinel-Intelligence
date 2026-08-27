@@ -4424,6 +4424,188 @@ con un candidato del mismo nombre** y ausencia de credenciales en el codigo
 
 ---
 
+## 18-duovicies. P-CAND-03 Prueba real multiplataforma (2026-08-27)
+
+Commit `feat(intelligence): real youtube observation and social capability matrix`.
+
+**805 comprobaciones, 19 suites, 0 fallos.** Primera observacion REAL de
+plataforma: **3 unidades de cuota consumidas** de 10.000.
+
+---
+
+### 1 · Cross-link real: sin cross-links, y por que
+
+Ejecutado contra el expediente real. **El candidato patron no tiene web
+declarada**, asi que no existe fuente `WEB_TO_ACCOUNT`. La guarda de
+anticircularidad dejo pasar exactamente **una** fuente: la pagina de Facebook,
+la unica cuenta que Account Resolution considera CORROBORADA y cuya plataforma
+admite lectura publica.
+
+    facebook.com/<perfil>   HTTP 200   0 enlaces   SIN_ENLACES
+
+La pagina responde y **no contiene ni un `href`**: Facebook sirve un armazon que
+se rellena con JavaScript. Sin ejecutar un navegador no hay enlaces que leer, y
+ejecutar un navegador para eludir eso es scraping evasivo.
+
+**La ausencia de cross-links NO es ausencia de identidad.** El expediente sigue
+con sus seis cuentas y sus estados; lo que falta es una via de corroboracion,
+no la identidad.
+
+#### Correccion de la guarda de anticircularidad
+
+Antes, el origen `ACCOUNT_TO_ACCOUNT` se elegia por `corroboradaPorSentinel` de
+la ficha, que solo significa «algun proveedor la devolvio». Eso es **mas laxo**
+que el veredicto de Account Resolution, que exige una senal independiente del
+nombre: una cuenta que el resolvedor considera CANDIDATA podia usarse como
+origen y debilitar la guarda.
+
+Ahora el origen lo decide el resolvedor. No puede haber dos autoridades sobre
+lo mismo.
+
+---
+
+### 2 · YouTube real: la via de 3 unidades
+
+`youtubeAdapter.js` tenia `search.list` y `channels.list` por ID. Faltaban tres
+piezas, y se anadieron **a ese adapter** en lugar de escribir un segundo cliente:
+
+| Anadido | Endpoint | Coste |
+|---|---|---|
+| `resolverCanalPorHandle` | `channels.list?forHandle` | 1 unidad |
+| `listarSubidas` | `playlistItems.list` | 1 unidad |
+| `resolverVideos` | `videos.list?part=snippet,statistics` | 1 unidad |
+
+    100 unidades y una conjetura   frente a   3 unidades y un hecho
+
+La alternativa era `search.list` con el nombre del candidato: 100 unidades y
+ordenar por relevancia, es decir, aceptar el criterio de un buscador como
+evidencia de identidad. `forHandle` no interpreta nada: devuelve el canal de ESE
+handle o no devuelve nada.
+
+#### Resultado medido
+
+    canal        UCF4mSMXUhfbsO6PpiaRGvFA
+    titulo       «Jota Lloret (Prefecto de Azuay)»
+    handle       @jotalloretv   (del expediente, no de una busqueda)
+    suscriptores 26        videos 3        vistas del canal 661
+    territorio   ninguno declarado
+
+Tres publicaciones observadas, con `viewCount`, `likeCount` y `commentCount`
+reales. Una de ellas tiene **`commentCount = 0`**, que es un dato disponible con
+valor cero — distinto de `null`, y el contrato lo distingue.
+
+`shares` no existe en esta API y se declara `NO_DISPONIBLE` en lugar de
+inventarse.
+
+---
+
+### 3 · Dos defectos propios, encontrados por la prueba real
+
+Los dos son del mismo tipo: mi codigo violando mi propia doctrina.
+
+#### `null` presentado como 0
+
+Con el corpus vacio, `hechosDistintos` y `dominiosDistintos` valen 0 —agrupar
+una lista vacia da cero grupos— y tres dimensiones de presencia se presentaban
+como **observadas con valor 0**. Eso afirma «miramos y no hay amplificacion»
+cuando lo cierto es «no hay nada que mirar». Ahora la condicion es el corpus,
+no la cifra: sin piezas, `null` y motivo.
+
+#### El historico decia «sin observaciones» con nueve snapshots
+
+Las ventanas 7d/30d/90d miran los snapshots de CUENTA, que son 0. Pero habia
+**nueve snapshots de metricas** de publicacion. Se anade `historico.metricas`
+con una serie por metrica y por publicacion: las nueve en
+`HISTORICO_INSUFICIENTE`, que es lo correcto —hay dato, no hay comparacion— en
+lugar de un silencio que se lee como «no hay nada».
+
+Un tercer defecto menor: el resumen de la matriz contaba
+`medidasEnProduccion: 0` teniendo nueve, por una guarda de filtro que comparaba
+contra `null`.
+
+---
+
+### 4 · Matriz de capacidades sociales
+
+`socialCapabilityMatrix.js`. Doce capacidades × cinco plataformas = 60 celdas,
+cada una con estado **y** con `verificacion`, que dice como se sabe:
+
+| | disponibles | medidas en produccion | terceros |
+|---|---|---|---|
+| **YouTube** | 9 | **9** | si |
+| TikTok | 2 | 0 | no |
+| Facebook | 3 | 0 | no |
+| Instagram | 2 | 0 | no |
+| X | 11 | 0 | si |
+
+**Solo YouTube tiene capacidades medidas.** Todo lo demas es documentacion
+oficial sin comprobar, y se marca como tal: una capacidad documentada puede
+caerse el dia que se intente.
+
+#### La distincion que decide todo
+
+    CUENTA PROPIA / AUTORIZADA   el titular nos da permiso
+    CUENTA DE TERCERO            no nos lo da
+
+Casi toda la documentacion de las APIs sociales habla del primer caso. Sentinel
+hace inteligencia electoral: sus objetivos son terceros que no van a autorizar
+nada. YouTube es la **excepcion** del grupo —entrega datos publicos de canales
+de terceros sin autorizacion—, y de ahi que sea la unica que funciona hoy.
+
+X es la segunda mejor situada: tecnicamente cubre terceros y es **la unica con
+menciones disponibles**, que es justo lo que hace falta para amplificacion. Su
+obstaculo no es el permiso, es el plan.
+
+TikTok, Facebook e Instagram exigen autorizacion del titular o programa de
+investigacion. Cada una lleva su `rutaConcreta`.
+
+---
+
+### 5 · Las dos cuentas de Instagram
+
+El caso real existe y **se conserva intacto**:
+
+    instagram @jotalloretv         DECLARADA   solidez 0
+    instagram @lloretvaldivieso    CANDIDATA   solidez 0
+
+Ninguna se borro, ninguna se fusiono, ninguna se declaro falsa. La pluralidad se
+declara en `multiplesPorPlataforma` con su nota, y cada cuenta se sostiene con
+sus propias senales: ninguna hereda la corroboracion de la otra.
+
+### Estado final del expediente real
+
+| plataforma | handle | estado | solidez |
+|---|---|---|---|
+| facebook | juancristobal.lloretvaldivieso | **CONSOLIDADA** | 25 |
+| instagram | jotalloretv | DECLARADA | 0 |
+| instagram | lloretvaldivieso | CANDIDATA | 0 |
+| x | jotalloretv | CANDIDATA | 0 |
+| tiktok | jotalloretv | DECLARADA | 0 |
+| youtube | jotalloretv | DECLARADA | 0 |
+
+Solidez de identidad **65/100**, reencontrabilidad **100%**.
+
+Cinco de seis cuentas siguen sin senal independiente. Es el resultado correcto:
+la unica via de corroboracion disponible —el cross-link— no produjo nada porque
+Facebook no entrega enlaces sin JavaScript. **Observar YouTube no ascendio su
+cuenta**, y eso es deliberado: poder leer una cuenta no dice de quien es.
+
+---
+
+### Riesgos y limitaciones
+
+- **Cross-link sin fuente utilizable.** Sin web declarada y con Facebook
+  sirviendo un armazon de JavaScript, no hay pagina legible que enlace cuentas.
+  La via mas barata que queda es cargar la web oficial del candidato si existe.
+- **El canal de YouTube es pequeno** —26 suscriptores, 661 vistas—. El pipeline
+  esta validado; el volumen de datos que produce es el que hay.
+- **Una sola observacion.** No se hizo una segunda para fabricar dos puntos: la
+  serie temporal empieza cuando haya una segunda observacion real.
+- Cuatro de cinco plataformas sin acceso a terceros. La evaluacion de
+  proveedores para TikTok, Facebook, Instagram y X queda como gate propio.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -4544,6 +4726,12 @@ resueltos y verificados.
 | Indice compuesto de presencia digital | 🔴 **NO DISPONIBLE a proposito**. Faltan metodologia, normalizacion, deduplicacion total, ventanas comparables y cobertura. No se publicara antes |
 | Corpus de evidencias de los candidatos ya existentes | 🔴 arranca vacio: las investigaciones anteriores guardaron recuentos, no piezas. Se llena desde la siguiente investigacion real |
 | Enlaces cruzados como senal independiente | 🟢 **IMPLEMENTADO** (§18-unvicies): tres direcciones, deduplicacion por identidad de relacion, `firstObservedAt` inmutable y anticircularidad. Verificado end-to-end: una cuenta DECLARADA pasa a CORROBORADA con una sola senal real |
+| **P-CAND-03 Prueba real multiplataforma** | 🟢 **IMPLEMENTADO** (§18-duovicies): YouTube real con 3 unidades, matriz de 60 celdas, dos defectos propios corregidos |
+| Estadisticas por publicacion de YouTube | 🟢 **RESUELTO**: `resolverVideos`, `resolverCanalPorHandle` y `listarSubidas` anadidos al adapter existente. Medido en produccion |
+| Web declarada del candidato patron | 🔴 **no existe en el expediente**. Es la fuente `WEB_TO_ACCOUNT` que falta y la via de corroboracion mas barata que queda |
+| Cross-link desde paginas con JavaScript | 🔴 Facebook responde 200 y no entrega ni un `href`. Sin navegador no hay enlaces, y usar uno seria scraping evasivo |
+| Evaluacion de proveedores TikTok/Facebook/Instagram/X | 🔴 **siguiente gate**. Cuatro de cinco plataformas sin acceso a terceros; cada una con ruta concreta declarada en la matriz |
+| Segunda observacion real de YouTube | 🔴 la serie temporal empieza con ella. No se hizo una segunda llamada para fabricar dos puntos |
 | **P-CAND-02 Cross-Link Evidence** | 🟢 **IMPLEMENTADO** (§18-unvicies) |
 | **Contrato evidence-first** | 🟢 **IMPLEMENTADO**: `insight → metric → evidenceId → source → observedAt → canonicalUrl`. Una afirmacion sin la cadena completa no se publica |
 | Metricas de rendimiento (absolute, relative, velocity, amplification) | 🔴 **contratos definidos, ninguna disponible**. Cada una declara su metodologia y sus requisitos. NO existe etiqueta «viral» |
@@ -4877,6 +5065,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-27 | P-CAND-03 Prueba real | Primera observacion REAL de plataforma: 3 unidades de cuota de 10.000. Se anaden al adapter existente `resolverCanalPorHandle`, `listarSubidas` y `resolverVideos` —las tres piezas que faltaban— en lugar de escribir un segundo cliente de YouTube. La via cuesta 3 unidades frente a las 100 de `search.list`, y sobre todo no interpreta nada: `forHandle` devuelve el canal de ESE handle o ninguno, mientras que buscar el nombre habria sido aceptar el criterio de relevancia de un buscador como evidencia de identidad. Canal resuelto con 26 suscriptores y 3 publicaciones con views, likes y comentarios reales; un `commentCount = 0` que es dato disponible y no `null`. Cross-link real ejecutado: sin web declarada, la unica fuente legible era Facebook, que responde 200 y no entrega ni un `href` porque se rellena con JavaScript. La ausencia de cross-links no es ausencia de identidad y se declara asi. Corregida la guarda de anticircularidad, que elegia el origen por una bandera mas laxa que el propio veredicto del resolvedor. Y dos defectos propios que encontro la prueba real: tres dimensiones de presencia mostraban 0 donde debia haber `null` —«miramos y no hay» en lugar de «no hay nada que mirar»—, y el historico decia «sin observaciones» teniendo nueve snapshots de metricas. Matriz de 60 celdas donde cada una declara si es medida o solo documentada: solo YouTube esta medida. Las dos cuentas de Instagram intactas. Observar YouTube NO ascendio su cuenta, que es el comportamiento correcto. 805 pruebas, 0 fallos. Nueva §18-duovicies. |
 | 2026-08-26 | P-CAND-02 Cross-Link | Se cierra el hueco declarado de V1: `enlacesCruzados` ya no llega vacio. Tres direcciones —WEB_TO_ACCOUNT, ACCOUNT_TO_ACCOUNT, EXTERNAL_REFERENCE_TO_ACCOUNT— con senal de resolucion distinta cada una, deduplicacion por `relationId` estable y `firstObservedAt` inmutable: cien observaciones del mismo enlace dan 25 puntos de solidez, no 100. Anticircularidad: una cuenta sin corroborar no puede corroborar a otra. Hallazgo de las pruebas: los enlaces relativos de una pagina social se resuelven a perfiles falsos —`facebook.com/contacto`— y habrian fabricado una cuenta corroborada por cada elemento del menu; se descartan por mismo dominio y se declara el descarte. Contrato evidence-first que RECHAZA afirmaciones sin cadena completa hasta la evidencia primaria; cuatro tipos de metrica declarados y ninguno disponible; ninguna etiqueta «viral», y la palabra invalida la afirmacion. Metricas como snapshots: 100k ayer y 150k hoy son dos observaciones. Puerto de adaptadores en lugar de duplicar el adaptador de YouTube que ya existe en la linea de ingesta; se detecta que le falta `videos.list?part=statistics`, asi que el rendimiento por publicacion no sera obtenible ni con credencial. Verificado end-to-end sin red: DECLARADA/0 pasa a CORROBORADA/25 y la solidez de identidad de 25 a 43. 766 pruebas, 0 fallos. Nueva §18-unvicies. |
 | 2026-08-25 | Candidate Intelligence V1 | Sentinel pasa de investigar un candidato a mantener un expediente longitudinal. Dos principios congelados: CANDIDATE-LONGITUDINAL-01 (las observaciones se agregan, no reemplazan) y OBSERVED-PRESENCE-01 (la presencia observada no es intencion de voto ni apoyo). Account Resolution con ocho estados y senales independientes frente a senales que dependen del nombre: una cuenta no pasa a corroborada por parecido de nombre ni por declaracion del analista. Ventanas 7d/30d/90d/campana con «historico insuficiente» en lugar de tendencias de un punto. Snapshots de identidad y corpus de evidencias append-only: el expediente guardaba recuentos y ahora guarda piezas, que es lo que permite deduplicar. Amplificacion separa presencia propia de ganada y da tres cifras distintas —piezas, hechos, fuentes—: diez cabeceras replicando una nota son un hecho. Cuatro planos de conversacion con `personas: null`. Contratos de Media y Territorio definidos y declarados no disponibles; territorio solo acepta lo que GEO-1 autoriza y bloquea IP, dispositivo y usuario por nombre. Presencia digital observada con seis dimensiones y indice compuesto NO DISPONIBLE. BUG-16 corregido en el modelo: solidez v2 sobre el inventario consolidado, probada identica antes y despues de un fallo de buscador, con la reencontrabilidad al lado y nunca restada. Workspace de diez secciones; ficha compacta intacta. 689 pruebas, 0 fallos. Nueva §18-vicies. |
 | 2026-08-25 | P-CAND-UX-04 + AI-01 | Resolver de fotografia desde fuentes declaradas: metadata publica estandar, prioridad centralizada, validacion de recurso, descarte de logotipos y genericas, tope de cuatro fuentes, sin login ni cookies. `verifiedImageResource` no implica `verificadaPorSentinel`, que es siempre false. Account Intelligence Fase 1: contratos de cuenta, observacion, publicacion y snapshot append-only; actividad solo derivable de observaciones reales y sin etiquetas sin metodologia; temas propios separados de temas sobre el candidato reutilizando el Topic Engine; metricas agrupadas por plataforma y sin totales cruzados; ninguna puntuacion. Mapa de capacidades real: de siete plataformas solo la web permite lectura. ACCOUNT-PROVIDER-GAPS documentado con precios null. 590 pruebas, 0 fallos. Nueva §18-undevicies. |

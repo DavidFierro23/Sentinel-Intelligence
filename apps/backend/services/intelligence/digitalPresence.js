@@ -183,28 +183,43 @@ export function dimensionesDePresencia(entrada = {}) {
           : null
     },
 
+    /*
+      -----------------------------------------------------------
+      CORREGIDO EN P-CAND-03: SIN CORPUS EL VALOR ES `null`, NO 0
+      -----------------------------------------------------------
+
+      Medido en la primera prueba real. Con el corpus vacio,
+      `hechosDistintos` y `dominiosDistintos` valen 0 —agrupar
+      una lista vacia da cero grupos— y la dimension se
+      presentaba como observada con valor 0.
+
+      Eso afirma «miramos y no hay amplificacion» cuando lo
+      cierto es «no hay nada que mirar todavia»: exactamente la
+      confusion entre `null` y 0 que este modulo existe para
+      evitar. El corpus vacio es ahora la condicion, no la cifra.
+      -----------------------------------------------------------
+    */
     amplificacion_externa: {
-      valor: amplificacion?.ganada?.hechosDistintos ?? null,
-      motivo:
-        amplificacion?.ganada?.piezas == null || amplificacion.ganada.piezas === 0
-          ? "No hay corpus de piezas de terceros para este candidato todavia."
-          : null
+      valor: amplificacion?.ganada?.piezas ? amplificacion.ganada.hechosDistintos : null,
+      motivo: amplificacion?.ganada?.piezas
+        ? null
+        : "No hay corpus de piezas de terceros para este candidato todavia. No es que la amplificacion sea cero: es que no se ha recogido nada que agrupar."
     },
 
     cobertura_mediatica: {
-      valor: amplificacion?.ganada?.medios?.dominiosDistintos ?? null,
-      motivo:
-        amplificacion?.ganada?.medios?.dominiosDistintos == null
-          ? "Sin corpus de evidencias no hay medios que contar."
-          : null
+      valor: amplificacion?.ganada?.piezas
+        ? amplificacion.ganada.medios?.dominiosDistintos ?? null
+        : null,
+      motivo: amplificacion?.ganada?.piezas
+        ? null
+        : "Sin corpus de evidencias no hay medios que contar."
     },
 
     conversacion_publica: {
-      valor: planoD?.piezasObservadas ?? null,
-      motivo:
-        planoD == null
-          ? "La separacion de conversacion no se pudo calcular sin corpus."
-          : null
+      valor: conversacion?.total ? planoD?.piezasObservadas ?? null : null,
+      motivo: conversacion?.total
+        ? null
+        : "La separacion de conversacion no se pudo calcular sin corpus."
     },
 
     diversidad_de_fuentes: {

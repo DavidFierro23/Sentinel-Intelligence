@@ -17,7 +17,10 @@ import {
 } from "../services/intelligence/accountIntelligence.js";
 
 /* Candidate Intelligence V1 */
-import { resolverCuentasDelCandidato } from "../services/intelligence/accountResolution.js";
+import {
+  resolverCuentasDelCandidato,
+  ESTADOS_RESOLUCION
+} from "../services/intelligence/accountResolution.js";
 
 import {
   ventanasDe,
@@ -50,9 +53,17 @@ import {
 
 import { estadoDeMetricas } from "../services/intelligence/evidenceFirst.js";
 
-import { resumenDePublicaciones } from "../services/intelligence/publicationObservation.js";
+import {
+  resumenDePublicaciones,
+  serieDeMetrica
+} from "../services/intelligence/publicationObservation.js";
 
 import { preparacionParaObservacionReal } from "../services/intelligence/platformAdapterPort.js";
+
+/* P-CAND-03 */
+import { observarCandidato } from "../services/intelligence/candidateObservation.js";
+
+import { matrizDeCapacidades } from "../services/intelligence/socialCapabilityMatrix.js";
 
 import {
   crearProyecto,
@@ -71,6 +82,7 @@ import {
   evidenciasDe,
   guardarSenalesCrossLink,
   senalesCrossLinkDe,
+  guardarPublicaciones,
   publicacionesDe,
   ESTADOS,
   agregarCandidato,
@@ -604,6 +616,9 @@ async function componerInteligencia(proyectoId, candidatoId, ejecutar) {
     /* ---- PREPARACION PARA OBSERVACION REAL ---- */
     preparacion: await preparacionParaObservacionReal(["youtube"]),
 
+    /* ---- MATRIZ MULTIPLATAFORMA (P-CAND-03) ---- */
+    capacidades: matrizDeCapacidades(),
+
     temas: temasDeLasCuentas(publicaciones),
 
     /* ---- AMPLIFICACION, MEDIOS, CONVERSACION ---- */
@@ -645,6 +660,46 @@ async function componerInteligencia(proyectoId, candidatoId, ejecutar) {
           serieIdentidad.length > 1
             ? null
             : "Hace falta mas de una foto del inventario para poder compararlas. La serie empieza en la primera observacion."
+      },
+
+      /*
+        SERIES DE METRICAS DE PUBLICACION — P-CAND-03.
+
+        Las ventanas de arriba miran los snapshots de CUENTA. Sin
+        esto, un expediente con nueve snapshots de metricas reales
+        mostraba «sin observaciones» en Historico, que es falso:
+        hay observaciones, lo que no hay es una segunda con la que
+        comparar. Son dos cosas distintas y ahora se ven las dos.
+      */
+      metricas: {
+        publicaciones: publicaciones.length,
+
+        snapshots: publicaciones.reduce(
+          (s, p) => s + (p.metricas || []).length,
+          0
+        ),
+
+        series: publicaciones.flatMap((p) =>
+          ["views", "likes", "comments"].map((m) => {
+            const s = serieDeMetrica(p, m);
+
+            return {
+              publicationId: p.publicationId,
+              canonicalUrl: p.canonicalUrl,
+              metrica: m,
+              observaciones: s.observaciones,
+              comparable: s.comparable,
+              estado: s.comparable ? "COMPARABLE" : "HISTORICO_INSUFICIENTE",
+              delta: s.delta,
+              velocidad: s.velocidad,
+              motivo: s.motivo
+            };
+          })
+        ),
+
+        nota: publicaciones.length
+          ? "Cada metrica de cada publicacion es una serie propia. Con una sola observacion el estado es HISTORICO_INSUFICIENTE: hay dato, no hay comparacion."
+          : "No hay ninguna publicacion observada todavia."
       },
 
       corpus: {
@@ -740,7 +795,42 @@ router.post("/:proyectoId/candidatos/:candidatoId/enlaces", async (req, res) => 
       cuentas ya corroboradas cuya plataforma admite lectura,
       como ACCOUNT_TO_ACCOUNT — solo esas: una cuenta sin
       corroborar no puede corroborar a otra.
+
+      CORREGIDO EN P-CAND-03. Antes esto miraba
+      `corroboradaPorSentinel` de la ficha, que solo significa
+      «algun proveedor la devolvio». Eso es mas laxo que el
+      veredicto de Account Resolution, que exige una senal
+      INDEPENDIENTE del nombre — asi que una cuenta que el
+      resolvedor considera CANDIDATA podia usarse como origen y
+      debilitar la guarda de circularidad.
+
+      Ahora el origen lo decide el resolvedor. Es la misma
+      autoridad que decide si una cuenta esta corroborada, y no
+      puede haber dos.
     */
+    const veredicto = resolverCuentasDelCandidato({
+      candidateId: candidatoId,
+      projectId: proyectoId,
+      cuentas,
+      anclasIdentidad: [
+        ficha.nombre,
+        ...(ficha.aliases || []).map((a) => a?.valor || a)
+      ].filter(Boolean),
+      enlacesCruzados: enlacesParaResolucion(
+        (await senalesCrossLinkDe(proyectoId, candidatoId)).senales
+      )
+    });
+
+    const corroboradas = new Set(
+      veredicto.cuentas
+        .filter(
+          (c) =>
+            c.estado === ESTADOS_RESOLUCION.CORROBORADA ||
+            c.estado === ESTADOS_RESOLUCION.CONSOLIDADA
+        )
+        .map((c) => c.accountId)
+    );
+
     const fuentes = cuentas
       .filter((c) => c.plataformaId === "web")
       .map((c) => ({
@@ -752,7 +842,7 @@ router.post("/:proyectoId/candidatos/:candidatoId/enlaces", async (req, res) => 
       }));
 
     cuentas
-      .filter((c) => c.plataformaId !== "web" && c.corroboradaPorSentinel === true)
+      .filter((c) => c.plataformaId !== "web" && corroboradas.has(c.id))
       .forEach((c) =>
         fuentes.push({
           url: c.url,
@@ -814,6 +904,98 @@ router.post("/:proyectoId/candidatos/:candidatoId/enlaces", async (req, res) => 
     });
   } catch (e) {
     res.status(500).json({ error: e?.message || "fallo al observar los enlaces" });
+  }
+});
+
+
+/*
+-----------------------------------------------------------
+OBSERVACION REAL DE PLATAFORMA — P-CAND-03
+-----------------------------------------------------------
+
+Consume cuota de proveedor. Solo cuando el analista lo pide, y
+con una muestra pequena: validar el pipeline no exige recorrer
+un canal entero.
+
+La cuenta a observar sale del EXPEDIENTE, nunca de una busqueda
+por nombre. Y observar NO corrobora: la identidad se sostiene
+aparte.
+-----------------------------------------------------------
+*/
+router.post("/:proyectoId/candidatos/:candidatoId/observar", async (req, res) => {
+  const { proyectoId, candidatoId } = req.params;
+
+  try {
+    const ficha = await fichaIdentidad(proyectoId, candidatoId, "candidato");
+
+    if (!ficha) {
+      return res.status(404).json({ error: `no existe el candidato ${candidatoId}` });
+    }
+
+    const cuentas = ficha.plataformas.flatMap((p) => p.cuentas || []);
+
+    const r = await observarCandidato({
+      candidateId: candidatoId,
+      projectId: proyectoId,
+      cuentas,
+      maximoPublicaciones: Math.min(Number(req.body?.maximo) || 5, 10),
+      plataformas: req.body?.plataformas || ["youtube"]
+    });
+
+    /* Persistencia append-only: las metricas son snapshots. */
+    let guardado = null;
+
+    if (r.publicaciones.length) {
+      guardado = await guardarPublicaciones(
+        proyectoId,
+        candidatoId,
+        r.publicaciones,
+        { observadoEn: r.observedAt, provider: "youtube_data" }
+      );
+    }
+
+    /* Relectura desde el Lake, no del objeto en memoria. */
+    const desdeElLake = await publicacionesDe(proyectoId, candidatoId);
+
+    res.json({
+      candidatoId,
+      observedAt: r.observedAt,
+
+      resultados: r.resultados.map((x) => ({
+        plataformaId: x.plataformaId,
+        accountId: x.accountId,
+        estado: x.estado,
+        motivo: x.motivo || null,
+        canal: x.canal
+          ? {
+              channelId: x.canal.channelId,
+              displayName: x.canal.displayName,
+              url: x.canal.url,
+              handleConsultado: x.canal.handleConsultado,
+              estadisticasPublicas: x.canal.estadisticasPublicas,
+              territoryClaim: x.canal.territoryClaim
+            }
+          : null,
+        metricasDeCuenta: x.metricasDeCuenta || [],
+        publicaciones: (x.publicaciones || []).length,
+        traza: x.traza || null,
+        notaIdentidad: x.notaIdentidad || null
+      })),
+
+      resumen: r.resumen,
+      unidadesConsumidas: r.unidadesConsumidas,
+
+      persistido: guardado?.escrito === true,
+
+      desdeElLake: {
+        publicaciones: desdeElLake.total,
+        lotes: desdeElLake.lotes,
+        snapshotsDeMetricas: desdeElLake.snapshotsDeMetricas,
+        nota: desdeElLake.nota
+      }
+    });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo al observar el candidato" });
   }
 });
 
