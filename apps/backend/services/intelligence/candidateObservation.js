@@ -44,7 +44,8 @@ exige recorrer un canal entero.
 import {
   crearPublicacionObservada,
   crearSnapshotDeMetrica,
-  DISPONIBILIDAD
+  DISPONIBILIDAD,
+  TIPOS_PUBLICACION
 } from "./publicationObservation.js";
 
 import { resolverAdaptador, ESTADOS_ADAPTADOR } from "./platformAdapterPort.js";
@@ -287,10 +288,50 @@ export async function observarYouTube(entrada = {}) {
 
   const opciones = fetchImpl ? { fetch: fetchImpl } : {};
 
-  /* ---- 1 · handle -> canal ---- */
-  const rc = await adapter.resolverCanalPorHandle(cuenta.handle, opciones);
+  /*
+    ---- 1 · handle -> canal ----
 
-  registrar("channels.list?forHandle", rc);
+    No todos los expedientes guardan un handle. Paul Carrasco
+    tiene un channelId —`UC...`, 24 caracteres— porque su URL es
+    `/channel/...` y no `/@handle`. `forHandle` con un id no
+    resuelve nada.
+
+    Se detecta la forma y se usa el endpoint que corresponde. Y
+    cuando es un id, la lista de subidas se deriva sustituyendo
+    `UC` por `UU`: es la convencion estable de YouTube y evita
+    una llamada extra. Si no funcionara, `listarSubidas`
+    devolveria vacio y quedaria declarado, no adivinado.
+  */
+  const esChannelId = /^UC[A-Za-z0-9_-]{20,24}$/.test(String(cuenta.handle));
+
+  let rc;
+
+  if (esChannelId) {
+    const porId = await adapter.resolverCanales([cuenta.handle], opciones);
+
+    registrar("channels.list?id", porId);
+
+    const canalPorId = (porId.canales || [])[0] || null;
+
+    if (canalPorId) {
+      canalPorId.listaDeSubidas = `UU${String(cuenta.handle).slice(2)}`;
+
+      canalPorId.handleConsultado = cuenta.handle;
+
+      canalPorId.resueltoPor = "channelId";
+    }
+
+    rc = {
+      estado: porId.estado,
+      canal: canalPorId,
+      unidadesConsumidas: porId.unidadesConsumidas,
+      motivo: porId.motivo || (canalPorId ? null : "el channelId no resolvio ningun canal")
+    };
+  } else {
+    rc = await adapter.resolverCanalPorHandle(cuenta.handle, opciones);
+
+    registrar("channels.list?forHandle", rc);
+  }
 
   if (rc.estado === "CUOTA_AGOTADA") {
     return salida(ESTADOS_OBSERVACION_REAL.CUOTA_AGOTADA, { motivo: rc.motivo });
@@ -414,6 +455,13 @@ export async function observarYouTube(entrada = {}) {
 
       title: v.title,
       text: null,
+
+      /*
+        Una subida de YouTube es contenido propio. La plataforma
+        no tiene un equivalente del retweet dentro de la lista de
+        subidas de un canal.
+      */
+      tipoPublicacion: TIPOS_PUBLICACION.ORIGINAL,
 
       metricas,
       metricsObservedAt: observedAt,
@@ -629,6 +677,19 @@ export async function observarX(entrada = {}) {
 
       title: null,
       text: ev.snippet || null,
+
+      /*
+        El tipo lo determina `referenced_tweets`, que el adapter
+        ya traduce. Sin esto, un retweet con 0 likes entraria en
+        la media de rendimiento propio y la hundiria.
+      */
+      tipoPublicacion: ev.x?.esRepost
+        ? TIPOS_PUBLICACION.REPOST
+        : ev.x?.esRespuesta
+          ? TIPOS_PUBLICACION.REPLY
+          : ev.x?.esCita
+            ? TIPOS_PUBLICACION.QUOTE
+            : TIPOS_PUBLICACION.ORIGINAL,
 
       metricas,
       metricsObservedAt: observedAt,

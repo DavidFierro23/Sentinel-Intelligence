@@ -4976,6 +4976,121 @@ mas que el estado actual.
 
 ---
 
+## 18-sexvicies. P-CAND-BENCH-01 — Linea base T0 (2026-08-28)
+
+Commit `feat(candidate): establish real multicandidate T0 baseline`.
+
+**933 comprobaciones, 23 suites, 0 fallos.** 10 requests de X y 6 unidades de
+YouTube: exactamente lo planificado, sin una sola de mas.
+
+Primera medicion real de los **siete candidatos** del proyecto.
+
+### La tabla
+
+| Candidato | X segs | pub | orig | rep | reply | quote | indet | X vistas | YT subs | YT vistas | cob |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Paul Carrasco | — | — | — | — | — | — | — | — | 15 | 999 | 1/5 |
+| J. C. Lloret | 29.413 | 5 | 0 | 0 | 0 | 0 | **5** | — | 26 | — | 2/5 |
+| Pedro Palacios | 29.372 | 5 | 1 | 0 | 4 | 0 | 0 | 807 | — | — | 1/5 |
+| Juan Carlos Vega | 2.502 | 5 | 4 | 1 | 0 | 0 | 0 | 6.158 | — | — | 1/5 |
+| Yaku Perez | 131.305 | 4 | 4 | 0 | 0 | 0 | 0 | 7.976 | 857 | 1.457 | 2/5 |
+| Marcelo Cabrera | 48.742 | 5 | 0 | 4 | 1 | 0 | 0 | — | — | — | 1/5 |
+| Leonardo Morales | 2.270 | 5 | 2 | 0 | 1 | 2 | 0 | 400 | — | — | 1/5 |
+
+Un guion es **ausencia de dato**, nunca un cero.
+
+### Lo que la separacion por tipo dejo ver
+
+La regla de X-REAL-01 —no promediar repost con publicaciones propias— no era
+teorica. Aplicada a siete candidatos reales, aparecen tres perfiles distintos
+que una media unica habria borrado:
+
+- **Marcelo Cabrera**: 4 de 5 republicaciones y ninguna original. Su
+  rendimiento propio es `—`, no 0: en esa muestra no publico contenido propio
+  que medir. Sin la separacion habria aparecido con una media de interaccion
+  ridicula y la lectura habria sido «no le hacen caso», cuando lo que hace es
+  amplificar.
+- **Pedro Palacios**: 4 de 5 son respuestas. Es conversacion, no publicacion, y
+  va en su propia columna.
+- **Juan Carlos Vega y Yaku Perez**: 4 originales cada uno. Son los unicos dos
+  con rendimiento propio comparable en X.
+
+### Cobertura, no porcentaje
+
+    2/5 plataformas objetivo medidas
+
+y no «40 %». El porcentaje supondria que X, YouTube, Instagram, Facebook y
+TikTok pesan igual, y no hay metodologia que lo sostenga. `porcentaje` es `null`
+a proposito y lo declara.
+
+Solo dos candidatos —Lloret y Yaku— llegan a 2/5. Los otros cinco estan en 1/5 y
+quedan **PARCIALMENTE_COMPARABLE**: compararlos globalmente los perjudicaria por
+un hueco de medicion nuestro, no por su actividad.
+
+### Un defecto propio que encontro el expediente real
+
+Las publicaciones guardadas antes de que existiera `tipoPublicacion` no traen el
+campo. Y `undefined` **no** es `NO_DETERMINADO`: las cinco publicaciones de X de
+Lloret se contaban en el total y **desaparecian del desglose** —cinco
+observadas, cero clasificadas—.
+
+Peor aun: su fila mostraba `orig: 0`, que se lee como «no publica nada propio»
+cuando lo cierto es que no sabemos de que tipo son. Ahora se normalizan a
+`NO_DETERMINADO`, los buckets suman siempre el total, y `tipoIndeterminado`
+explica que la columna esta vacia por desconocimiento y no por inactividad.
+
+### Lo que NO hace este gate
+
+    NO hay IPID.
+    NO hay ranking.
+    NO hay ganador.
+    NO se suman vistas de X con vistas de YouTube.
+
+Las observaciones son **por plataforma** y descriptivas: «dentro de la muestra
+observada y solo en X, Yaku Perez acumulo mas vistas en sus publicaciones
+originales». Con 4 y 5 publicaciones por candidato, eso es lo unico que la
+muestra sostiene.
+
+`momentum` es `HISTORICO_INSUFICIENTE`: T0 es el primer punto y no hay contra
+que compararlo.
+
+### Presupuesto
+
+| | previsto | real |
+|---|---|---|
+| requests X | 10 | **10** |
+| unidades YouTube | 6 | **6** |
+
+Lloret **no se volvio a observar**: sus datos son de hace horas y repetirlos
+habria costado 2 requests y 3 unidades para no aprender nada. Su T0 es la
+observacion de X-REAL-01 y P-CAND-03, con sus instantes reales.
+
+Coste monetario de X: `COSTE_NO_RESUELTO`. Se gastaron 10 requests de un saldo
+de 25 USD y la API no devuelve consumo por llamada.
+
+### Detalles tecnicos que aparecieron
+
+- **Paul Carrasco tiene un channelId, no un handle** (`UC...`, porque su URL es
+  `/channel/`). `forHandle` no lo resuelve; ahora se detecta la forma y se usa
+  `channels.list?id`, derivando la lista de subidas con la convencion
+  `UC` → `UU`. Si fallara, `listarSubidas` devolveria vacio y quedaria
+  declarado.
+- **Yaku devolvio 4 publicaciones y no 5.** El tamano de muestra se declara por
+  candidato: comparar 4 con 5 no es lo mismo que comparar 5 con 5.
+
+### Riesgos y limitaciones
+
+- **Cinco de siete candidatos estan en 1/5 de cobertura.** La tabla describe
+  bien lo poco que se puede ver, y lo poco que se puede ver es poco.
+- **Las publicaciones de Lloret siguen sin tipo** hasta que se reobserve. No se
+  infiere por heuristica.
+- **Muestras de 4 y 5 publicaciones.** Sirven para validar el pipeline, no para
+  caracterizar una cuenta con miles de posts.
+- Instagram, Facebook y TikTok siguen sin medir, y son tres de las cinco
+  plataformas objetivo.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -5103,7 +5218,12 @@ resueltos y verificados.
 | **SOCIAL-PROVIDER-EVAL-01** | 🟢 **COMPLETADO** (§18-tervicies): matriz de 60 casillas con siete estados derivados, adapter de X completo y `docs/SOCIAL-PROVIDER-EVAL.md` |
 | **X_BEARER_TOKEN** | 🟢 **CONFIGURADO Y ACEPTADO**. Probado en X-REAL-01: la API devuelve 402, no 401, asi que la credencial no fue rechazada |
 | **Saldo de la cuenta X** | 🟢 **RESUELTO**: cargado credito, el 402 desaparecio y las dos llamadas devuelven 200 |
+| **Linea base T0** | 🟢 **CREADA** (§18-sexvicies): siete candidatos reales medidos en X y YouTube, con cobertura y comparabilidad declaradas |
 | **X operativo** | 🟢 **MEDIDO** (§18-quinvicies): 9 de 12 capacidades. Perfil, publicaciones y las seis metricas por publicacion |
+| Cobertura de los candidatos | 🔴 cinco de siete estan en **1/5 plataformas**. Solo Lloret y Yaku llegan a 2/5 |
+| Tipo de las publicaciones antiguas de Lloret | 🔴 `NO_DETERMINADO`: se guardaron antes del contrato. Se sabra al reobservar; no se infiere por heuristica |
+| Segunda observacion (T1) | 🔴 sin ella no hay momentum. T0 es el primer punto y `HISTORICO_INSUFICIENTE` es el estado correcto |
+| IPID | 🔴 **NO IMPLEMENTADO a proposito**. Hace falta mas cobertura multiplataforma, snapshots longitudinales y metodologia aprobada |
 | `impression_count` y `bookmark_count` de terceros | 🟢 **CONFIRMADAS**: llegaron en las cinco publicaciones. Era la incognita del gate |
 | **Retweets en los promedios** | 🔴 **RIESGO ABIERTO para el benchmark**: en un retweet, likes/replies/quotes valen 0 porque son del post original. Con la muestra real, la media de likes pasa de 76 a 190 al filtrarlos. Usar `esRepost` ANTES de promediar |
 | Menciones de X | 🔴 `NO_PROBADO`. `search/recent` quedaba fuera del presupuesto de este gate. Es la mitad que le falta a Candidate Intelligence |
@@ -5450,6 +5570,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-28 | P-CAND-BENCH-01 | Primera linea base real T0 de los siete candidatos del proyecto, en X y YouTube. 10 requests de X y 6 unidades de YouTube: exactamente lo planificado. Lloret no se volvio a observar —sus datos eran de horas antes y repetirlos habria costado 5 llamadas para no aprender nada—, asi que su T0 son las observaciones de X-REAL-01 y P-CAND-03 con sus instantes reales. La regla de los retweets, aplicada a siete candidatos, dejo ver tres perfiles que una media unica habria borrado: Marcelo Cabrera republica 4 de 5 y no tiene rendimiento propio que medir —«—», no 0—; Pedro Palacios responde 4 de 5, que es conversacion y no publicacion; y solo Vega y Yaku tienen originales suficientes para comparar. La cobertura se expresa «2/5 plataformas objetivo medidas» y no en porcentaje, porque un 40 % supondria que las cinco plataformas pesan igual y no hay metodologia que lo sostenga. Cinco de siete candidatos quedan PARCIALMENTE_COMPARABLE: compararlos globalmente los perjudicaria por un hueco nuestro. Un defecto propio que encontro el expediente real: las publicaciones anteriores al contrato no traen `tipoPublicacion`, y `undefined` no es NO_DETERMINADO, asi que las cinco de Lloret se contaban en el total y desaparecian del desglose mostrando `orig: 0` —que se lee como «no publica nada propio»—. Ahora los buckets suman siempre el total y se declara que la columna esta vacia por desconocimiento. Tambien aparecio que Paul Carrasco tiene un channelId y no un handle, y que Yaku devolvio 4 publicaciones y no 5: el tamano de muestra se declara por candidato. Sin IPID, sin ranking, sin ganador: las observaciones son por plataforma y momentum es HISTORICO_INSUFICIENTE. 933 pruebas, 0 fallos. Nueva §18-sexvicies. |
 | 2026-08-28 | X-REAL-01 reanudado | Cargado el credito, se reanudo la prueba donde quedo el 402. Dos llamadas, dos HTTP 200: perfil real con 29.413 seguidores y cinco publicaciones con seis metricas cada una. Las dos que estaban en duda —`impression_count` y `bookmark_count`— llegaron, y no hizo falta un nivel superior. El hallazgo con mas consecuencias no fue una cifra sino un detalle de contrato: tres de las cinco publicaciones eran retweets, y en un retweet X devuelve likes, replies y quotes a 0 porque las reacciones pertenecen al post original. No son ceros reales de la cuenta. Con esta misma muestra la media de likes pasa de 76 a 190 al filtrar los retweets: dos veces y media de diferencia, y el riesgo concreto para el benchmark multicandidato. `normalizarPost` ya marca `esRepost` desde `referenced_tweets`, y el aviso viaja dentro de la medicion para que no se olvide. El Lake guarda ahora 8 publicaciones del mismo candidato —3 de YouTube y 5 de X— en el mismo contrato y con 39 snapshots: que un post y un video sean la misma cosa con platformId distinto deja de ser una afirmacion y pasa a estar medido. Las 24 series quedan en HISTORICO_INSUFICIENTE y no se hizo una segunda llamada para fabricar dos puntos. Nueve de doce capacidades de X medidas; menciones y busqueda siguen NO_PROBADO por presupuesto, y no se llaman disponibles por no haberse intentado. El 402 anterior se conserva en el historial de la medicion. 897 pruebas, 0 fallos. Nueva §18-quinvicies. |
 | 2026-08-28 | X-REAL-01 | Prueba real controlada de X con la credencial ya configurada. Una sola llamada, cero reintentos: `GET /2/users/by/username` devolvio HTTP 402 Payment Required. La cuenta esta en Pay-Per-Use con saldo cero, asi que la conclusion es X_API_CREDENTIAL_OK_BUT_BILLING_BLOCKED: un token invalido habria devuelto 401, de modo que la credencial no fue rechazada. La prueba encontro ademas un defecto propio: el adapter devolvio el codigo dentro del texto y sin campo `httpStatus`, y mi clasificador lo etiqueto ERROR — la parada fue correcta pero el diagnostico habria mandado a revisar el token en lugar del saldo. Ahora `clasificarBloqueo` lee el codigo tambien del texto y separa cuatro causas que se parecen y no se arreglan igual: 401 credencial, 402 saldo, 403 plan, 429 espera, con solo la ultima reintentable y aun asi sin bucle. La matriz gana dos etiquetas para no confundir medir con inferir: REQUIERE_CREDITOS para las tres capacidades que sirve el endpoint probado, NO_PROBADO para las siete que no se llegaron a pedir. `observarX` traduce X al mismo contrato comun que YouTube —un post y un video son PublicationObservation con platformId distinto— y un bloqueo detiene la secuencia conservando lo ya leido. No se toco `xAdapter.js`, que tenia trabajo sin commitear de la linea de Media. 891 pruebas, 0 fallos. Nueva §18-quatervicies. |
 | 2026-08-27 | SOCIAL-PROVIDER-EVAL-01 | Evaluacion de las vias reales para observar candidatos que no administramos en las cuatro plataformas pendientes. El hallazgo que reordena todo: «requiere autorizacion» eran dos cosas distintas —que la plataforma revise NUESTRA app, que es trabajo nuestro, y que el observado nos de permiso, que es imposible en inteligencia electoral—. Separarlas cambio el diagnostico de TikTok: no falta un permiso que pedir, es que ningun programa cubre el caso de uso. Matriz de 60 casillas con siete estados DERIVADOS de estado + verificacion + requisito, con un test que comprueba celda por celda que no hay etiqueta paralela desincronizada. Al precisarla salieron dos correcciones hacia peor: las menciones de YouTube son alcanzables hoy con la credencial que ya tenemos —resulta que es la unica plataforma donde lo son— y las metricas de TikTok pasan a REQUIERE_PROVEEDOR. Los dos tests que afirmaban lo anterior se reescribieron hacia un invariante mas fuerte: ninguna celda puede llamarse MEDIDO sin haberse medido. Adapter de X completo con la misma forma que el de YouTube, que sin credencial NO hace ni una peticion —no es que falle: no lo intenta, y hay un test por funcion contando llamadas—. Repost y cita separados, `impression_count` ausente marcado NO_INCLUIDA_POR_LA_API y no 0, la marca de verificado declarada explicitamente como no evidencia porque es una suscripcion de pago, y 403 distinguido de 429 porque uno se resuelve contratando y el otro esperando. `COSTE_POR_LLAMADA` en null: el precio depende del plan y estimarlo seria una linea de presupuesto inventada. `docs/SOCIAL-PROVIDER-EVAL.md` con shortlist de seis proveedores, ninguno contactado, todos los precios null y dos criterios eliminatorios: sin derechos de almacenamiento no hay modelo longitudinal, y sin URL canonica se incumple evidence-first. 842 pruebas, 0 fallos, cero llamadas reales. Nueva §18-tervicies. |

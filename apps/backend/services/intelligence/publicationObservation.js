@@ -75,6 +75,41 @@ export const DISPONIBILIDAD = Object.freeze({
   que se obtengan: significa que si una fuente las entrega, hay
   sitio donde ponerlas sin inventar un campo.
 */
+/*
+-----------------------------------------------------------
+TIPO DE PUBLICACION
+
+Descubierto midiendo X: en un retweet, `like_count`,
+`reply_count` y `quote_count` valen 0 porque las reacciones
+pertenecen al post original, no al acto de republicar.
+
+Promediar retweets con publicaciones propias hunde cualquier
+media de interaccion y hace parecer inactiva a una cuenta que
+en realidad amplifica mucho. Con la muestra real de X-REAL-01 la
+media de likes pasaba de 76 a 190 solo con filtrarlos.
+
+Por eso el tipo viaja CON la publicacion: sin el, el filtro
+depende de que alguien se acuerde.
+-----------------------------------------------------------
+*/
+export const TIPOS_PUBLICACION = Object.freeze({
+  /* Contenido propio. Es lo unico que mide rendimiento propio. */
+  ORIGINAL: "ORIGINAL",
+
+  /* Republicacion sin anadir nada. Mide curacion, no rendimiento. */
+  REPOST: "REPOST",
+
+  /* Respuesta a otro. Conversacion, no publicacion. */
+  REPLY: "REPLY",
+
+  /* Cita con comentario propio. A medio camino, y va aparte. */
+  QUOTE: "QUOTE",
+
+  /* La plataforma no permite distinguirlo. */
+  NO_DETERMINADO: "NO_DETERMINADO"
+});
+
+
 export const METRICAS_PUBLICAS = Object.freeze([
   { id: "views", nombre: "Visualizaciones", unidad: "visualizaciones" },
   { id: "likes", nombre: "Me gusta", unidad: "reacciones" },
@@ -172,6 +207,12 @@ export function crearPublicacionObservada(entrada = {}) {
     title: entrada.title ?? null,
     text: entrada.text ?? null,
     politicaAlmacenamiento: entrada.politicaAlmacenamiento || null,
+
+    /*
+      ORIGINAL, REPOST, REPLY o QUOTE. Decide si la publicacion
+      entra en las medias de rendimiento propio.
+    */
+    tipoPublicacion: entrada.tipoPublicacion || TIPOS_PUBLICACION.NO_DETERMINADO,
 
     /*
       LA SERIE. Cada observacion se anade; ninguna sustituye a
@@ -390,6 +431,7 @@ export function resumenDePublicaciones(publicaciones = []) {
 
 export default {
   DISPONIBILIDAD,
+  TIPOS_PUBLICACION,
   METRICAS_PUBLICAS,
   crearSnapshotDeMetrica,
   crearPublicacionObservada,

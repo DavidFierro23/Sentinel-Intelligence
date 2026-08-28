@@ -26,6 +26,8 @@ import CandidateIdentityCard from "./CandidateIdentityCard";
   imagen acabarian mostrando cosas distintas.
 */
 import CandidatePhoto from "./CandidatePhoto";
+
+import BaselineT0Panel from "./BaselineT0Panel";
 import CandidateIdentityForm from "./CandidateIdentityForm";
 import AccountIntelligencePanel from "./AccountIntelligencePanel";
 import { METRICA, fechaLocal } from "../services/identidadCandidato";
@@ -604,6 +606,9 @@ export default function ProjectsModule() {
   /* Account Intelligence — fase 1. */
   const [inteligencia, setInteligencia] = useState(null);
 
+  /* Linea base T0. Se pide solo cuando se abre: no sale a la red al pintar. */
+  const [lineaBase, setLineaBase] = useState(null);
+
   const [fotoIntentos, setFotoIntentos] = useState(null);
 
   /*
@@ -1021,6 +1026,24 @@ export default function ProjectsModule() {
       confirmar(
         `Observacion registrada: ${j.traza?.snapshotsEscritos || 0} snapshot(s).`
       );
+    } catch (e) {
+      setAviso(e.message);
+    } finally {
+      setOcupado(null);
+    }
+  };
+
+  /*
+    LINEA BASE T0. Se ARMA desde el Lake: no consume cuota de
+    ningun proveedor. Lo que se observo ya esta persistido.
+  */
+  const abrirLineaBase = async () => {
+    setOcupado("linea-base");
+
+    try {
+      const j = await pedir(`/${proyecto.id}/linea-base`);
+
+      setLineaBase(j);
     } catch (e) {
       setAviso(e.message);
     } finally {
@@ -2213,6 +2236,45 @@ export default function ProjectsModule() {
                 estos datos.
               </span>
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* LÍNEA BASE DIGITAL T0 — P-CAND-BENCH-01 */}
+
+      <div style={{ marginTop: "26px" }}>
+        <div style={etiqueta}>
+          <BarChart3 size={13} />
+          Línea base digital · T0
+        </div>
+
+        {lineaBase ? (
+          <BaselineT0Panel
+            datos={lineaBase}
+            onCerrar={() => setLineaBase(null)}
+          />
+        ) : (
+          <div style={caja}>
+            <div
+              style={{
+                color: "var(--sentinel-texto-suave)",
+                fontSize: "11.5px",
+                lineHeight: 1.7
+              }}
+            >
+              Lo observado en X y YouTube por candidato, con su cobertura de
+              medición. Se arma desde lo ya persistido:{" "}
+              <strong>no consume cuota de ningún proveedor</strong>.
+            </div>
+
+            <button
+              className="sentinel-boton"
+              onClick={abrirLineaBase}
+              disabled={ocupado === "linea-base"}
+              style={{ marginTop: "10px", fontSize: "11px" }}
+            >
+              {ocupado === "linea-base" ? "Cargando…" : "Ver línea base digital"}
+            </button>
           </div>
         )}
       </div>

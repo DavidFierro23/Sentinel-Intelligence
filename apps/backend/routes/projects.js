@@ -65,6 +65,9 @@ import { observarCandidato } from "../services/intelligence/candidateObservation
 
 import { matrizDeCapacidades } from "../services/intelligence/socialCapabilityMatrix.js";
 
+/* P-CAND-BENCH-01 */
+import { lineaBaseT0 } from "../services/intelligence/candidateBaseline.js";
+
 import {
   crearProyecto,
   obtenerProyecto,
@@ -904,6 +907,89 @@ router.post("/:proyectoId/candidatos/:candidatoId/enlaces", async (req, res) => 
     });
   } catch (e) {
     res.status(500).json({ error: e?.message || "fallo al observar los enlaces" });
+  }
+});
+
+
+/*
+-----------------------------------------------------------
+LINEA BASE T0 MULTICANDIDATO — P-CAND-BENCH-01
+-----------------------------------------------------------
+
+Se ARMA desde el Lake: no sale a la red ni consume cuota. Lo que
+se observo ya esta persistido; esto solo lo lee y lo ordena.
+
+T0 es el punto de partida, no un veredicto. No hay ranking ni
+ganador: hay observaciones por plataforma, con su cobertura y su
+comparabilidad declaradas.
+-----------------------------------------------------------
+*/
+router.get("/:proyectoId/linea-base", async (req, res) => {
+  const { proyectoId } = req.params;
+
+  try {
+    const contenido = await contenidoDeProyecto(proyectoId);
+
+    if (!contenido?.proyecto) {
+      return res.status(404).json({ error: `no existe el proyecto ${proyectoId}` });
+    }
+
+    const candidatos = [];
+
+    for (const cand of contenido.candidatos || []) {
+      const ficha = await fichaIdentidad(proyectoId, cand.id, "candidato");
+
+      if (!ficha) continue;
+
+      const cuentas = ficha.plataformas.flatMap((p) => p.cuentas || []);
+
+      const pubs = await publicacionesDe(proyectoId, cand.id);
+
+      /*
+        Metricas de cuenta: del snapshot mas reciente de cada
+        plataforma. La serie es append-only, asi que el ultimo es
+        el estado actual y los anteriores siguen ahi.
+      */
+      const serie = await snapshotsDe(proyectoId, cand.id);
+
+      const metricasDeCuenta = {};
+
+      serie.forEach((sn) => {
+        if (!sn.platform) return;
+
+        /* El primero que aparece es el mas reciente: la serie viene ordenada. */
+        if (!metricasDeCuenta[sn.platform]) {
+          metricasDeCuenta[sn.platform] = {
+            followers: sn.followers ?? null,
+            capturedAt: sn.capturedAt,
+            provider: sn.provider,
+            accountId: sn.accountId
+          };
+        }
+      });
+
+      candidatos.push({
+        candidateId: cand.id,
+        nombre: cand.nombre,
+        foto: cand.foto || null,
+        cuentas,
+        publicaciones: pubs.publicaciones,
+        metricasDeCuenta
+      });
+    }
+
+    res.json(
+      absolutizarAvatares(
+        {
+          proyectoId,
+          proyecto: contenido.proyecto.nombre,
+          ...lineaBaseT0(candidatos)
+        },
+        req
+      )
+    );
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo al construir la linea base" });
   }
 });
 
