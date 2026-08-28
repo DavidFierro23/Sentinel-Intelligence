@@ -365,8 +365,18 @@ await t("comprobar la preparacion no gasta nada", async () => {
 */
 bloque("matriz: que hace falta, no solo si existe");
 
-await t("los siete estados de celda estan definidos", () => {
-  return Object.keys(scm.ESTADOS_CELDA).length === 7;
+/*
+  Afinado en X-REAL-01, que anadio REQUIERE_CREDITOS y
+  NO_PROBADO. El invariante util no es cuantos hay sino que
+  ninguna celda produzca una etiqueta fuera del catalogo: contar
+  se rompe cada vez que el mundo ensena algo nuevo.
+*/
+await t("toda celda produce una etiqueta del catalogo", () => {
+  const validos = new Set(Object.values(scm.ESTADOS_CELDA));
+
+  return scm.PLATAFORMAS.every((p) =>
+    Object.values(p.capacidades).every((c) => validos.has(scm.celdaDe(c)))
+  );
 });
 
 await t("la celda se DERIVA: no es un campo que pueda desincronizarse", () => {
@@ -388,14 +398,20 @@ await t("app review y autorizacion del titular NO se confunden", () => {
   );
 });
 
-await t("X entero esta detras de un plan de pago", () => {
+/*
+  Corregido con la medicion de X-REAL-01. Antes se decia «detras
+  de un plan de pago»; la llamada real devolvio 402, asi que el
+  plan existe y lo que falta es saldo. Y de las doce capacidades,
+  solo tres se probaron: el resto es NO_PROBADO.
+*/
+await t("X esta cerrado por saldo, no por falta de plan", () => {
   const xp = scm.PLATAFORMAS.find((p) => p.plataformaId === "x");
 
-  const conPlan = Object.values(xp.capacidades).filter(
-    (c) => scm.celdaDe(c) === "REQUIERE_PLAN_PAGO"
+  const cerradas = Object.values(xp.capacidades).filter((c) =>
+    ["REQUIERE_CREDITOS", "NO_PROBADO"].includes(scm.celdaDe(c))
   );
 
-  return conPlan.length >= 10;
+  return cerradas.length >= 10 && xp.medicionReal.httpStatus === 402;
 });
 
 await t("TikTok entero exige proveedor externo", () => {

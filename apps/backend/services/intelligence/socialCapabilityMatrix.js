@@ -122,6 +122,15 @@ export const REQUISITOS = Object.freeze({
   /* Existe y esta detras de un plan de pago. */
   PLAN_PAGO: "PLAN_PAGO",
 
+  /*
+    Existe, la credencial vale y el acceso esta cerrado por
+    facturacion. Es distinto de PLAN_PAGO: alli falta elegir un
+    plan; aqui el plan ya existe y falta saldo.
+
+    Medido en X-REAL-01: HTTP 402 Payment Required.
+  */
+  CREDITOS: "CREDITOS",
+
   /* Solo por proveedor de datos con licencia. */
   PROVEEDOR: "PROVEEDOR"
 });
@@ -143,7 +152,21 @@ export const ESTADOS_CELDA = Object.freeze({
   REQUIERE_APP_REVIEW: "REQUIERE_APP_REVIEW",
   REQUIERE_PLAN_PAGO: "REQUIERE_PLAN_PAGO",
   REQUIERE_PROVEEDOR: "REQUIERE_PROVEEDOR",
-  NO_DISPONIBLE: "NO_DISPONIBLE"
+  NO_DISPONIBLE: "NO_DISPONIBLE",
+
+  /*
+    X-REAL-01. La credencial vale y falta saldo: comprobado con
+    una llamada real que devolvio 402.
+  */
+  REQUIERE_CREDITOS: "REQUIERE_CREDITOS",
+
+  /*
+    Se infiere que esta cerrado por lo mismo, pero NO se
+    intento. Es la diferencia entre «lo probamos y fallo» y «no
+    llegamos a probarlo», y merece etiqueta propia: sin ella,
+    una inferencia razonable se leeria como una medicion.
+  */
+  NO_PROBADO: "NO_PROBADO"
 });
 
 
@@ -164,6 +187,17 @@ export function celdaDe(cap) {
     que ya funciona.
   */
   if (cap.estado === ESTADOS_CAPACIDAD.DISPONIBLE) {
+    /*
+      Cerrado por saldo. Se distingue lo COMPROBADO de lo
+      inferido: solo se llama REQUIERE_CREDITOS lo que se
+      intento de verdad.
+    */
+    if (cap.requisito === REQUISITOS.CREDITOS) {
+      return cap.verificacion === VERIFICACION.MEDIDO_EN_PRODUCCION
+        ? ESTADOS_CELDA.REQUIERE_CREDITOS
+        : ESTADOS_CELDA.NO_PROBADO;
+    }
+
     if (cap.requisito === REQUISITOS.PLAN_PAGO) {
       return ESTADOS_CELDA.REQUIERE_PLAN_PAGO;
     }
@@ -630,51 +664,96 @@ const X = {
   autenticacion: "Bearer token de aplicacion (app-only). No necesita OAuth de usuario para lectura publica.",
 
   programasDeAcceso: [
-    "Portal de desarrolladores de X: crear proyecto y app, obtener bearer token.",
-    "El nivel gratuito historicamente NO cubre lectura de timelines de terceros; la lectura vive en los niveles de pago.",
+    "Portal de desarrolladores de X: crear proyecto y app, obtener bearer token. HECHO.",
+    "Cargar saldo o contratar un plan: la cuenta esta en Pay-Per-Use y devuelve 402. PENDIENTE.",
     "El archivo completo pertenece a los niveles superiores."
   ],
+
+  /*
+    -----------------------------------------------------------
+    MEDIDO EN X-REAL-01 (2026-08-28)
+    -----------------------------------------------------------
+
+    Una sola llamada real a `GET /2/users/by/username` con la
+    credencial ya configurada:
+
+        HTTP 402 Payment Required
+
+    Lo que eso dice y lo que no:
+
+      SI dice   que la credencial no fue rechazada. Un token
+                invalido devuelve 401, no 402.
+      NO dice   que los demas endpoints funcionen. No se
+                probaron: la secuencia se detuvo en la primera
+                llamada y no hubo reintentos.
+
+    Por eso `identidad`, `cuenta` y `followers` —las tres que
+    sirve ese endpoint— quedan MEDIDAS como bloqueadas por
+    saldo, y el resto queda NO_PROBADO. Inferir que tambien
+    estan cerradas es razonable; llamarlo medicion, no.
+    -----------------------------------------------------------
+  */
+  medicionReal: {
+    gate: "X-REAL-01",
+    fecha: "2026-08-28",
+    endpoint: "GET /2/users/by/username",
+    httpStatus: 402,
+    requests: 1,
+    reintentos: 0,
+    credencial: "aceptada: un token invalido devuelve 401, no 402",
+    conclusion: "X_API_CREDENTIAL_OK_BUT_BILLING_BLOCKED"
+  },
 
   capacidades: {
     identidad: c(
       DISP,
-      DOC,
-      "users/by/username: resuelve handle -> id SIN autorizacion del titular",
-      REQUISITOS.PLAN_PAGO
+      MEDIDO,
+      "users/by/username: resuelve handle -> id SIN autorizacion del titular. PROBADO en X-REAL-01: HTTP 402, cerrado por saldo",
+      REQUISITOS.CREDITOS
     ),
-    cuenta: c(DISP, DOC, "nombre, descripcion, fecha de creacion", REQUISITOS.PLAN_PAGO),
-    followers: c(DISP, DOC, "public_metrics.followers_count", REQUISITOS.PLAN_PAGO),
+    cuenta: c(
+      DISP,
+      MEDIDO,
+      "lo sirve el mismo endpoint que la identidad. PROBADO: HTTP 402",
+      REQUISITOS.CREDITOS
+    ),
+    followers: c(
+      DISP,
+      MEDIDO,
+      "public_metrics.followers_count, del mismo endpoint. PROBADO: HTTP 402",
+      REQUISITOS.CREDITOS
+    ),
     publicaciones: c(
       DISP,
       DOC,
-      "users/:id/tweets. Es el equivalente exacto de la lista de subidas de YouTube",
-      REQUISITOS.PLAN_PAGO
+      "users/:id/tweets. NO PROBADO: la secuencia se detuvo en la primera llamada",
+      REQUISITOS.CREDITOS
     ),
     views: c(
       DISP,
       DOC,
-      "public_metrics.impression_count. Su disponibilidad para publicaciones de terceros es el punto que hay que comprobar en la primera llamada real",
-      REQUISITOS.PLAN_PAGO
+      "public_metrics.impression_count. NO PROBADO. Su disponibilidad para terceros sigue sin comprobarse: hace falta saldo para llegar hasta ahi",
+      REQUISITOS.CREDITOS
     ),
-    likes: c(DISP, DOC, "public_metrics.like_count", REQUISITOS.PLAN_PAGO),
-    comments: c(DISP, DOC, "public_metrics.reply_count", REQUISITOS.PLAN_PAGO),
+    likes: c(DISP, DOC, "public_metrics.like_count. NO PROBADO", REQUISITOS.CREDITOS),
+    comments: c(DISP, DOC, "public_metrics.reply_count. NO PROBADO", REQUISITOS.CREDITOS),
     shares: c(
       DISP,
       DOC,
-      "retweet_count y quote_count, SEPARADOS: republicar y citar no son el mismo acto",
-      REQUISITOS.PLAN_PAGO
+      "retweet_count y quote_count, SEPARADOS: republicar y citar no son el mismo acto. NO PROBADO",
+      REQUISITOS.CREDITOS
     ),
     menciones: c(
       DISP,
       DOC,
-      "search/recent por mencion. Es la capacidad que ninguna otra plataforma ofrece para terceros, y la que hace posible la amplificacion medida",
-      REQUISITOS.PLAN_PAGO
+      "search/recent por mencion. Es la capacidad que ninguna otra plataforma ofrece para terceros. NO PROBADO: no se llego a ejecutar",
+      REQUISITOS.CREDITOS
     ),
-    busqueda: c(DISP, DOC, "search/recent cubre 7 dias", REQUISITOS.PLAN_PAGO),
+    busqueda: c(DISP, DOC, "search/recent cubre 7 dias. NO PROBADO", REQUISITOS.CREDITOS),
     historico: c(
       AUTZ,
       DOC,
-      "search/all da archivo completo y pertenece a los niveles superiores",
+      "search/all da archivo completo y pertenece a los niveles superiores. No es cuestion de saldo sino de nivel: aunque hubiera credito, este endpoint seguiria fuera",
       REQUISITOS.PLAN_PAGO
     ),
     url_verificable: c(DISP, DOC, "x.com/handle/status/ID es canonica y se construye sin API")
@@ -742,6 +821,7 @@ export function matrizDeCapacidades() {
       endpoints: p.endpoints || null,
       autenticacion: p.autenticacion || null,
       programasDeAcceso: p.programasDeAcceso || [],
+      medicionReal: p.medicionReal || null,
       apisEvaluadas: p.apisEvaluadas || null,
       credencial: p.credencial || null,
 

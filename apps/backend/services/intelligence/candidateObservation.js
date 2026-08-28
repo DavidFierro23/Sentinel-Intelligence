@@ -70,8 +70,114 @@ export const ESTADOS_OBSERVACION_REAL = Object.freeze({
 
   CUOTA_AGOTADA: "CUOTA_AGOTADA",
 
+  /*
+    La credencial vale y el acceso esta cerrado por facturacion.
+    Medido en X-REAL-01: HTTP 402 Payment Required con una cuenta
+    Pay-Per-Use a saldo cero.
+
+    Es distinto de CREDENCIAL_RECHAZADA —eso seria 401— y distinto
+    de PERMISOS_INSUFICIENTES —eso seria 403—. Confundirlos manda
+    a revisar el token cuando lo que falta es pagar.
+  */
+  BILLING_BLOQUEADO: "BILLING_BLOQUEADO",
+
+  /* 401: el token no vale. */
+  CREDENCIAL_RECHAZADA: "CREDENCIAL_RECHAZADA",
+
+  /* 403: el token vale y el plan no cubre este endpoint. */
+  PERMISOS_INSUFICIENTES: "PERMISOS_INSUFICIENTES",
+
   ERROR: "ERROR"
 });
+
+
+/*
+===========================================================
+CLASIFICAR UN BLOQUEO DE PROVEEDOR
+===========================================================
+
+Cuatro causas que se parecen en pantalla y no se arreglan igual:
+
+    401  el token no vale          → revisar credencial
+    402  hace falta pagar          → cargar saldo
+    403  el plan no lo cubre       → contratar otro nivel
+    429  demasiadas peticiones     → esperar
+
+MEDIDO EN X-REAL-01, y con una leccion. El adapter devolvio
+`motivo: "HTTP 402"` sin `httpStatus`, y mi primer clasificador
+—que solo miraba el campo numerico y unas palabras clave— lo
+etiqueto `ERROR`. La parada fue correcta, pero el diagnostico
+habria mandado a mirar el token cuando el problema era el saldo.
+
+Por eso ahora el codigo se lee TAMBIEN del texto: un adapter
+puede no exponer el campo, pero el numero esta ahi.
+===========================================================
+*/
+export function clasificarBloqueo(r) {
+  if (!r) return null;
+
+  const texto = String(r.motivo || "");
+
+  /* El campo si existe; si no, se saca del texto. */
+  const codigo =
+    r.httpStatus ?? Number((texto.match(/\b(4\d{2}|5\d{2})\b/) || [])[1]) ?? null;
+
+  const minusculas = texto.toLowerCase();
+
+  const hablaDePago =
+    /insufficient|credit|billing|payment required|saldo|usage cap|not enrolled|purchase/.test(
+      minusculas
+    );
+
+  if (codigo === 402 || hablaDePago) {
+    return {
+      tipo: ESTADOS_OBSERVACION_REAL.BILLING_BLOQUEADO,
+      httpStatus: codigo,
+      reintentable: false,
+      motivo:
+        "La credencial no fue rechazada: el acceso esta cerrado por facturacion. Reintentar no cambia nada y cargar saldo es una decision de una persona.",
+      accion: "cargar saldo o contratar un plan en el portal del proveedor"
+    };
+  }
+
+  if (codigo === 401 || r.estado === "CREDENCIAL_RECHAZADA") {
+    return {
+      tipo: ESTADOS_OBSERVACION_REAL.CREDENCIAL_RECHAZADA,
+      httpStatus: codigo,
+      reintentable: false,
+      motivo: "El proveedor rechazo la credencial.",
+      accion: "revisar la variable de entorno"
+    };
+  }
+
+  if (codigo === 403 || r.estado === "PLAN_INSUFICIENTE") {
+    return {
+      tipo: ESTADOS_OBSERVACION_REAL.PERMISOS_INSUFICIENTES,
+      httpStatus: codigo,
+      reintentable: false,
+      motivo: "El plan contratado no cubre este endpoint.",
+      accion: "contratar un nivel que lo incluya"
+    };
+  }
+
+  if (codigo === 429 || r.estado === "LIMITE_DE_PETICIONES") {
+    return {
+      tipo: ESTADOS_OBSERVACION_REAL.CUOTA_AGOTADA,
+      httpStatus: codigo,
+
+      /*
+        El unico reintentable de los cuatro, y aun asi no se
+        reintenta aqui: esperar lo decide quien programa la
+        siguiente observacion, no un bucle.
+      */
+      reintentable: true,
+      motivo: "Se superaron las peticiones permitidas.",
+      accion: "esperar a que se restablezca la ventana"
+    };
+  }
+
+  return null;
+}
 
 
 /*
@@ -342,6 +448,212 @@ export async function observarYouTube(entrada = {}) {
 
 /*
 ===========================================================
+OBSERVAR UNA CUENTA DE X
+===========================================================
+
+Dos llamadas: perfil y muestra de publicaciones. En X las
+metricas vienen EN el propio post, asi que no hay una tercera
+llamada como `videos.list` de YouTube.
+
+Un bloqueo del proveedor detiene la secuencia y NO se reintenta.
+Medido en X-REAL-01: la primera llamada devolvio 402 y la
+observacion se detuvo ahi.
+===========================================================
+*/
+export async function observarX(entrada = {}) {
+  const {
+    candidateId = null,
+    projectId = null,
+    cuenta = null,
+    maximoPublicaciones = 5,
+    observedAt = new Date().toISOString(),
+    fetchImpl = undefined
+  } = entrada;
+
+  const traza = { plataformaId: "x", llamadas: [], unidadesConsumidas: 0 };
+
+  const registrar = (endpoint, r) => {
+    traza.llamadas.push({
+      endpoint,
+      estado: r?.estado || "ERROR",
+
+      /* En X se cuentan LLAMADAS: no hay unidades como en YouTube. */
+      unidades: r?.llamadas ?? 0,
+      httpStatus: r?.httpStatus ?? null,
+      motivo: r?.motivo || null
+    });
+
+    traza.unidadesConsumidas += r?.llamadas ?? 0;
+  };
+
+  const salida = (estado, extra = {}) => ({
+    estado,
+    plataformaId: "x",
+    candidateId,
+    accountId: cuenta?.id || null,
+    canal: null,
+    publicaciones: [],
+    traza,
+    ...extra
+  });
+
+  if (!cuenta?.handle) {
+    return salida(ESTADOS_OBSERVACION_REAL.CUENTA_NO_RESUELTA, {
+      motivo: "la cuenta del expediente no trae handle"
+    });
+  }
+
+  const puerto = await resolverAdaptador("x");
+
+  if (
+    puerto.estado === ESTADOS_ADAPTADOR.ADAPTADOR_NO_DISPONIBLE ||
+    puerto.estado === ESTADOS_ADAPTADOR.SIN_CREDENCIAL
+  ) {
+    return salida(ESTADOS_OBSERVACION_REAL.NO_EJECUTABLE, {
+      motivo: puerto.motivo
+    });
+  }
+
+  const adapter = await import(puerto.adaptador.ruta);
+
+  const opciones = fetchImpl ? { fetch: fetchImpl } : {};
+
+  /* ---- 1 · handle -> cuenta ---- */
+  const rc = await adapter.resolverCuentaPorHandle(cuenta.handle, opciones);
+
+  registrar("GET /2/users/by/username", rc);
+
+  const bloqueo = clasificarBloqueo(rc);
+
+  if (bloqueo) {
+    return salida(bloqueo.tipo, {
+      bloqueo,
+      motivo: `${bloqueo.motivo} ${bloqueo.accion}.`
+    });
+  }
+
+  if (rc.estado !== "OK" || !rc.cuenta) {
+    return salida(ESTADOS_OBSERVACION_REAL.CUENTA_NO_RESUELTA, {
+      motivo:
+        rc.motivo ||
+        `el handle @${cuenta.handle} no resuelve a ninguna cuenta. NO significa que no exista: significa que ese handle no resuelve.`
+    });
+  }
+
+  const perfil = rc.cuenta;
+
+  const est = perfil.estadisticasPublicas || {};
+
+  const metricaDeCuenta = (nombre, valor) =>
+    crearSnapshotDeMetrica({
+      metrica: nombre,
+      value: valor,
+      observedAt,
+      provider: "x_api",
+      source: perfil.url,
+      availability:
+        valor == null ? DISPONIBILIDAD.NO_DISPONIBLE : DISPONIBILIDAD.DISPONIBLE,
+      motivo: valor == null ? "la API no incluyo esta metrica" : null
+    });
+
+  const metricasDeCuenta = [
+    metricaDeCuenta("followers", est.followers),
+    metricaDeCuenta("following", est.following)
+  ];
+
+  /* ---- 2 · muestra de publicaciones ---- */
+  const rp = await adapter.listarPublicaciones(perfil.userId, {
+    ...opciones,
+    handle: perfil.handle,
+    maximo: maximoPublicaciones,
+    observedAt
+  });
+
+  registrar("GET /2/users/:id/tweets", rp);
+
+  const bloqueo2 = clasificarBloqueo(rp);
+
+  if (bloqueo2) {
+    return salida(bloqueo2.tipo, {
+      canal: perfil,
+      metricasDeCuenta,
+      bloqueo: bloqueo2,
+      motivo: `${bloqueo2.motivo} ${bloqueo2.accion}.`
+    });
+  }
+
+  if (rp.estado !== "OK" || !rp.publicaciones.length) {
+    return salida(ESTADOS_OBSERVACION_REAL.SIN_PUBLICACIONES, {
+      canal: perfil,
+      metricasDeCuenta,
+      motivo:
+        rp.motivo ||
+        "la cuenta resuelve y no devuelve publicaciones en la ventana consultada"
+    });
+  }
+
+  /*
+    Traduccion al contrato comun. Un post de X y un video de
+    YouTube son la misma cosa: `PublicationObservation` con
+    `platformId` distinto.
+  */
+  const publicaciones = rp.publicaciones.map((ev) => {
+    const m = ev.x?.metricas || {};
+
+    const metricas = Object.entries(m).map(([nombre, v]) =>
+      crearSnapshotDeMetrica({
+        metrica: nombre,
+        value: v.value,
+        observedAt,
+        provider: "x_api",
+        source: ev.x.canonicalUrl,
+        availability:
+          v.availability === "DISPONIBLE"
+            ? DISPONIBILIDAD.DISPONIBLE
+            : DISPONIBILIDAD.NO_DISPONIBLE,
+        motivo: v.motivo
+      })
+    );
+
+    return crearPublicacionObservada({
+      candidateId,
+      projectId,
+      accountId: cuenta.id,
+      platformId: "x",
+
+      canonicalUrl: ev.x.canonicalUrl,
+
+      publishedAt: ev.publishedAt,
+      firstObservedAt: observedAt,
+      lastObservedAt: observedAt,
+
+      title: null,
+      text: ev.snippet || null,
+
+      metricas,
+      metricsObservedAt: observedAt,
+
+      provider: "x_api",
+      observationMethod: "x_api_v2",
+
+      /* El evidenceId lo produce el contrato de evidencia comun. */
+      evidenceId: ev.evidenceId
+    });
+  });
+
+  return salida(ESTADOS_OBSERVACION_REAL.OBSERVADA, {
+    canal: perfil,
+    metricasDeCuenta,
+    publicaciones,
+
+    notaIdentidad:
+      "La observacion NO altera la resolucion de identidad. Que una cuenta se pueda leer no dice de quien es: su pertenencia se sostiene con las senales de Account Resolution, no con el hecho de haberla consultado."
+  });
+}
+
+
+/*
+===========================================================
 OBSERVAR LO QUE SE PUEDA DE UN CANDIDATO
 ===========================================================
 
@@ -383,6 +695,23 @@ export async function observarCandidato(entrada = {}) {
             : cap.nota,
         capacidad: cap
       });
+
+      continue;
+    }
+
+    if (cuenta.plataformaId === "x") {
+      const r = await observarX({
+        candidateId,
+        projectId,
+        cuenta,
+        maximoPublicaciones,
+        observedAt,
+        fetchImpl
+      });
+
+      unidades += r.traza?.unidadesConsumidas || 0;
+
+      resultados.push(r);
 
       continue;
     }
@@ -430,6 +759,8 @@ export async function observarCandidato(entrada = {}) {
 
 export default {
   ESTADOS_OBSERVACION_REAL,
+  clasificarBloqueo,
   observarYouTube,
+  observarX,
   observarCandidato
 };

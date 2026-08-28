@@ -622,12 +622,33 @@ await t("cada celda declara COMO se sabe lo que dice", () => {
   );
 });
 
-await t("solo YouTube tiene capacidades medidas en produccion", () => {
+/*
+  Afinado en X-REAL-01. Ahora X tambien tiene celdas medidas,
+  pero medidas como BLOQUEADAS: la llamada real devolvio 402.
+  El invariante util no es «solo YouTube se midio» sino «solo
+  YouTube se midio FUNCIONANDO».
+*/
+await t("solo YouTube tiene capacidades medidas y funcionando", () => {
   const m = scm.matrizDeCapacidades();
 
-  const conMedidas = m.plataformas.filter((p) => p.medidas > 0);
+  const funcionando = m.plataformas.filter((p) =>
+    Object.values(p.capacidades).some((c) => scm.celdaDe(c) === "MEDIDO")
+  );
 
-  return conMedidas.length === 1 && conMedidas[0].plataformaId === "youtube";
+  return funcionando.length === 1 && funcionando[0].plataformaId === "youtube";
+});
+
+await t("y lo medido de X esta medido como bloqueado por saldo", () => {
+  const x = scm.matrizDeCapacidades().plataformas.find((p) => p.plataformaId === "x");
+
+  const medidas = Object.values(x.capacidades).filter(
+    (c) => c.verificacion === "MEDIDO_EN_PRODUCCION"
+  );
+
+  return (
+    medidas.length === 3 &&
+    medidas.every((c) => scm.celdaDe(c) === "REQUIERE_CREDITOS")
+  );
 });
 
 await t("TikTok, Facebook e Instagram no dan acceso a terceros", () => {
@@ -692,9 +713,15 @@ await t("hoy solo las menciones de YouTube son alcanzables", () => {
   return (
     alcanzables.length === 1 &&
     alcanzables[0].plataformaId === "youtube" &&
+    /*
+      X-REAL-01: las menciones de X pasan de «detras de un plan»
+      a NO_PROBADO. No se llegaron a pedir — la secuencia se
+      detuvo en la primera llamada— y no se puede llamar medido
+      a algo que no se intento.
+    */
     scm.celdaDe(
       m.plataformas.find((p) => p.plataformaId === "x").capacidades.menciones
-    ) === "REQUIERE_PLAN_PAGO"
+    ) === "NO_PROBADO"
   );
 });
 
@@ -707,10 +734,11 @@ await t("cada plataforma sin acceso declara una ruta concreta", () => {
   );
 });
 
-await t("el resumen cuenta bien las medidas: no eran cero", () => {
+await t("el resumen cuenta las medidas de las dos plataformas probadas", () => {
   const m = scm.matrizDeCapacidades();
 
-  return m.resumen.medidasEnProduccion === 9;
+  /* 9 de YouTube funcionando + 3 de X medidas como bloqueadas. */
+  return m.resumen.medidasEnProduccion === 12;
 });
 
 /*

@@ -4777,6 +4777,101 @@ estimarlos en un documento de decision seria peor que dejar el hueco.
 
 ---
 
+## 18-quatervicies. X-REAL-01 (2026-08-28)
+
+Commit `feat(candidate): validate real X intelligence`.
+
+**891 comprobaciones, 22 suites, 0 fallos.** Una sola llamada real, cero
+reintentos.
+
+### El resultado
+
+    GET /2/users/by/username/<handle del expediente>
+    → HTTP 402 Payment Required
+
+    X_API_CREDENTIAL_OK_BUT_BILLING_BLOCKED
+
+La cuenta esta en Pay-Per-Use con saldo cero. La secuencia se detuvo en la
+primera llamada: no se pidio el timeline, no se pidieron menciones, no hubo
+reintento.
+
+#### Lo que un 402 dice y lo que no
+
+    SI dice   que la credencial NO fue rechazada. Un token invalido
+              devuelve 401, no 402.
+    NO dice   que los demas endpoints funcionen. No se probaron.
+
+Esa distincion es la razon de que la matriz ahora tenga dos etiquetas donde
+antes tenia una: `REQUIERE_CREDITOS` para lo que se intento y fallo por saldo,
+y `NO_PROBADO` para lo que se infiere cerrado por lo mismo pero no se llego a
+pedir. Inferir es razonable; llamarlo medicion, no.
+
+### Un defecto propio que encontro la prueba
+
+El adapter devolvio `motivo: "HTTP 402"` **sin** el campo `httpStatus`, y mi
+primer clasificador —que solo miraba el campo numerico y unas palabras clave—
+lo etiqueto `ERROR`.
+
+La parada fue correcta: se detuvo y no reintento. Pero el diagnostico habria
+mandado a revisar el token cuando lo que faltaba era saldo. Ahora
+`clasificarBloqueo` lee el codigo **tambien del texto**, y separa cuatro causas
+que se parecen en pantalla y no se arreglan igual:
+
+| codigo | significa | accion | reintentable |
+|---|---|---|---|
+| 401 | el token no vale | revisar credencial | no |
+| 402 | hace falta pagar | cargar saldo | no |
+| 403 | el plan no lo cubre | contratar otro nivel | no |
+| 429 | demasiadas peticiones | esperar | si |
+
+Solo uno de los cuatro es reintentable, y aun asi no se reintenta aqui: esperar
+lo decide quien programa la siguiente observacion, no un bucle.
+
+### Columna de X, con lo medido y lo inferido
+
+| Capacidad | Celda | Como se sabe |
+|---|---|---|
+| identidad · cuenta · followers | `REQUIERE_CREDITOS` | **medido**: 402 |
+| publicaciones · views · likes · comments · shares · menciones · busqueda | `NO_PROBADO` | inferido |
+| historico | `REQUIERE_PLAN_PAGO` | otro nivel, no saldo |
+| url_verificable | `OFICIAL_DISPONIBLE` | se construye sin API |
+
+El archivo completo se deja aparte a proposito: aunque hubiera credito, ese
+endpoint seguiria fuera del nivel contratado. Son dos obstaculos distintos.
+
+### `observarX`
+
+Traduce X al MISMO contrato comun que YouTube. Un post de X y un video de
+YouTube son `PublicationObservation` con `platformId` distinto; no hay un
+modelo paralelo.
+
+Dos llamadas —perfil y timeline—, porque en X las metricas vienen EN el propio
+post y no hace falta una tercera como `videos.list`. Un bloqueo detiene la
+secuencia conservando lo ya leido: si el perfil salio bien y el timeline dio
+429, las metricas de cuenta no se tiran.
+
+### No se toco el adapter
+
+`xAdapter.js` tenia trabajo sin commitear de la linea de Media (MEDIA-PIECE-02:
+`resolverPosts` y la metrica `bookmarks`). **No se toco, no se stageo, no se
+revirtio.** La clasificacion de bloqueos vive por eso en
+`candidateObservation.js`, que es fichero propio — y ahi encaja igual de bien:
+es logica de observacion, no de transporte.
+
+### Riesgos y limitaciones
+
+- **Sin saldo no hay nada de X.** Ni perfil, ni publicaciones, ni menciones. Y
+  las menciones son la mitad que le falta a Candidate Intelligence: hoy solo
+  mide lo que publica el candidato.
+- **Siete capacidades siguen sin probar.** Que el 402 las cubra a todas es una
+  inferencia razonable, no un hecho medido.
+- **`impression_count` sigue sin comprobarse** para publicaciones de terceros.
+  Era el objetivo de la segunda llamada y no se llego.
+- **No se conoce el coste.** La cuenta es Pay-Per-Use y no consta cuanto cuesta
+  cada llamada: `COSTE_NO_RESUELTO`.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -4902,7 +4997,11 @@ resueltos y verificados.
 | Web declarada del candidato patron | 🔴 **no existe en el expediente**. Es la fuente `WEB_TO_ACCOUNT` que falta y la via de corroboracion mas barata que queda |
 | Cross-link desde paginas con JavaScript | 🔴 Facebook responde 200 y no entrega ni un `href`. Sin navegador no hay enlaces, y usar uno seria scraping evasivo |
 | **SOCIAL-PROVIDER-EVAL-01** | 🟢 **COMPLETADO** (§18-tervicies): matriz de 60 casillas con siete estados derivados, adapter de X completo y `docs/SOCIAL-PROVIDER-EVAL.md` |
-| **X_BEARER_TOKEN** | 🔴 **ACCION REQUERIDA DE DAVID**. Es el unico desbloqueo que depende de una decision nuestra y no de un tercero. Sin el, el adapter no hace ni una peticion |
+| **X_BEARER_TOKEN** | 🟢 **CONFIGURADO Y ACEPTADO**. Probado en X-REAL-01: la API devuelve 402, no 401, asi que la credencial no fue rechazada |
+| **Saldo de la cuenta X** | 🔴 **ACCION REQUERIDA DE DAVID**: la cuenta esta en Pay-Per-Use con saldo cero y devuelve HTTP 402. Es el unico bloqueo de X, y se resuelve con una decision nuestra |
+| Capacidades de X no probadas | 🔴 siete de doce quedaron `NO_PROBADO`: la secuencia se detuvo en la primera llamada. Se infieren cerradas por lo mismo, pero no se midieron |
+| `impression_count` de terceros en X | 🔴 sigue sin comprobarse. Era el objetivo de la segunda llamada y no se llego a ejecutar |
+| Coste por llamada de X | 🔴 `COSTE_NO_RESUELTO`. Pay-Per-Use sin precio conocido: no se estima |
 | Precio real del plan de X | 🔴 `null`. Depende del plan y ha cambiado varias veces: se verifica en el portal, no se estima |
 | Instagram Business Discovery | 🟡 **via identificada**: cuenta profesional propia + App Review de Meta. Coste de licencia 0, coste en tiempo de revision. Depende de una decision de Meta |
 | Facebook Page Public Content Access | 🟡 **via identificada** para paginas. Los PERFILES personales no los abre ningun permiso, y el candidato patron tiene perfil |
@@ -5243,6 +5342,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-28 | X-REAL-01 | Prueba real controlada de X con la credencial ya configurada. Una sola llamada, cero reintentos: `GET /2/users/by/username` devolvio HTTP 402 Payment Required. La cuenta esta en Pay-Per-Use con saldo cero, asi que la conclusion es X_API_CREDENTIAL_OK_BUT_BILLING_BLOCKED: un token invalido habria devuelto 401, de modo que la credencial no fue rechazada. La prueba encontro ademas un defecto propio: el adapter devolvio el codigo dentro del texto y sin campo `httpStatus`, y mi clasificador lo etiqueto ERROR — la parada fue correcta pero el diagnostico habria mandado a revisar el token en lugar del saldo. Ahora `clasificarBloqueo` lee el codigo tambien del texto y separa cuatro causas que se parecen y no se arreglan igual: 401 credencial, 402 saldo, 403 plan, 429 espera, con solo la ultima reintentable y aun asi sin bucle. La matriz gana dos etiquetas para no confundir medir con inferir: REQUIERE_CREDITOS para las tres capacidades que sirve el endpoint probado, NO_PROBADO para las siete que no se llegaron a pedir. `observarX` traduce X al mismo contrato comun que YouTube —un post y un video son PublicationObservation con platformId distinto— y un bloqueo detiene la secuencia conservando lo ya leido. No se toco `xAdapter.js`, que tenia trabajo sin commitear de la linea de Media. 891 pruebas, 0 fallos. Nueva §18-quatervicies. |
 | 2026-08-27 | SOCIAL-PROVIDER-EVAL-01 | Evaluacion de las vias reales para observar candidatos que no administramos en las cuatro plataformas pendientes. El hallazgo que reordena todo: «requiere autorizacion» eran dos cosas distintas —que la plataforma revise NUESTRA app, que es trabajo nuestro, y que el observado nos de permiso, que es imposible en inteligencia electoral—. Separarlas cambio el diagnostico de TikTok: no falta un permiso que pedir, es que ningun programa cubre el caso de uso. Matriz de 60 casillas con siete estados DERIVADOS de estado + verificacion + requisito, con un test que comprueba celda por celda que no hay etiqueta paralela desincronizada. Al precisarla salieron dos correcciones hacia peor: las menciones de YouTube son alcanzables hoy con la credencial que ya tenemos —resulta que es la unica plataforma donde lo son— y las metricas de TikTok pasan a REQUIERE_PROVEEDOR. Los dos tests que afirmaban lo anterior se reescribieron hacia un invariante mas fuerte: ninguna celda puede llamarse MEDIDO sin haberse medido. Adapter de X completo con la misma forma que el de YouTube, que sin credencial NO hace ni una peticion —no es que falle: no lo intenta, y hay un test por funcion contando llamadas—. Repost y cita separados, `impression_count` ausente marcado NO_INCLUIDA_POR_LA_API y no 0, la marca de verificado declarada explicitamente como no evidencia porque es una suscripcion de pago, y 403 distinguido de 429 porque uno se resuelve contratando y el otro esperando. `COSTE_POR_LLAMADA` en null: el precio depende del plan y estimarlo seria una linea de presupuesto inventada. `docs/SOCIAL-PROVIDER-EVAL.md` con shortlist de seis proveedores, ninguno contactado, todos los precios null y dos criterios eliminatorios: sin derechos de almacenamiento no hay modelo longitudinal, y sin URL canonica se incumple evidence-first. 842 pruebas, 0 fallos, cero llamadas reales. Nueva §18-tervicies. |
 | 2026-08-27 | P-CAND-03 Prueba real | Primera observacion REAL de plataforma: 3 unidades de cuota de 10.000. Se anaden al adapter existente `resolverCanalPorHandle`, `listarSubidas` y `resolverVideos` —las tres piezas que faltaban— en lugar de escribir un segundo cliente de YouTube. La via cuesta 3 unidades frente a las 100 de `search.list`, y sobre todo no interpreta nada: `forHandle` devuelve el canal de ESE handle o ninguno, mientras que buscar el nombre habria sido aceptar el criterio de relevancia de un buscador como evidencia de identidad. Canal resuelto con 26 suscriptores y 3 publicaciones con views, likes y comentarios reales; un `commentCount = 0` que es dato disponible y no `null`. Cross-link real ejecutado: sin web declarada, la unica fuente legible era Facebook, que responde 200 y no entrega ni un `href` porque se rellena con JavaScript. La ausencia de cross-links no es ausencia de identidad y se declara asi. Corregida la guarda de anticircularidad, que elegia el origen por una bandera mas laxa que el propio veredicto del resolvedor. Y dos defectos propios que encontro la prueba real: tres dimensiones de presencia mostraban 0 donde debia haber `null` —«miramos y no hay» en lugar de «no hay nada que mirar»—, y el historico decia «sin observaciones» teniendo nueve snapshots de metricas. Matriz de 60 celdas donde cada una declara si es medida o solo documentada: solo YouTube esta medida. Las dos cuentas de Instagram intactas. Observar YouTube NO ascendio su cuenta, que es el comportamiento correcto. 805 pruebas, 0 fallos. Nueva §18-duovicies. |
 | 2026-08-26 | P-CAND-02 Cross-Link | Se cierra el hueco declarado de V1: `enlacesCruzados` ya no llega vacio. Tres direcciones —WEB_TO_ACCOUNT, ACCOUNT_TO_ACCOUNT, EXTERNAL_REFERENCE_TO_ACCOUNT— con senal de resolucion distinta cada una, deduplicacion por `relationId` estable y `firstObservedAt` inmutable: cien observaciones del mismo enlace dan 25 puntos de solidez, no 100. Anticircularidad: una cuenta sin corroborar no puede corroborar a otra. Hallazgo de las pruebas: los enlaces relativos de una pagina social se resuelven a perfiles falsos —`facebook.com/contacto`— y habrian fabricado una cuenta corroborada por cada elemento del menu; se descartan por mismo dominio y se declara el descarte. Contrato evidence-first que RECHAZA afirmaciones sin cadena completa hasta la evidencia primaria; cuatro tipos de metrica declarados y ninguno disponible; ninguna etiqueta «viral», y la palabra invalida la afirmacion. Metricas como snapshots: 100k ayer y 150k hoy son dos observaciones. Puerto de adaptadores en lugar de duplicar el adaptador de YouTube que ya existe en la linea de ingesta; se detecta que le falta `videos.list?part=statistics`, asi que el rendimiento por publicacion no sera obtenible ni con credencial. Verificado end-to-end sin red: DECLARADA/0 pasa a CORROBORADA/25 y la solidez de identidad de 25 a 43. 766 pruebas, 0 fallos. Nueva §18-unvicies. |
