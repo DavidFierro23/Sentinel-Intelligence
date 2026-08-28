@@ -640,13 +640,50 @@ await t("solo las plataformas ejecutadas tienen capacidades medidas", () => {
     .sort()
     .join(",");
 
-  return conMedidas === "x,youtube";
+  return conMedidas === "instagram,x,youtube";
 });
 
-await t("Instagram, Facebook y TikTok siguen sin una sola medicion", () => {
+/*
+  Afinado en META-IG-REAL-01. Instagram ya tiene mediciones, pero
+  todas sobre NUESTRA cuenta. El invariante que decide si una
+  plataforma entra al benchmark no es «se midio» sino «se midio
+  sobre alguien que no controlamos».
+*/
+await t("solo YouTube y X estan medidos sobre TERCEROS", () => {
   const m = scm.matrizDeCapacidades();
 
-  return ["instagram", "facebook", "tiktok"].every(
+  const conTerceros = m.plataformas
+    .filter((p) =>
+      Object.values(p.capacidades).some(
+        (c) => scm.celdaDe(c) === "MEDIDO_TERCERO"
+      )
+    )
+    .map((p) => p.plataformaId)
+    .sort()
+    .join(",");
+
+  return conTerceros === "x,youtube";
+});
+
+await t("lo medido de Instagram es todo sobre la cuenta propia", () => {
+  const i = scm.matrizDeCapacidades().plataformas.find(
+    (p) => p.plataformaId === "instagram"
+  );
+
+  const medidas = Object.values(i.capacidades).filter(
+    (c) => c.verificacion === "MEDIDO_EN_PRODUCCION"
+  );
+
+  return (
+    medidas.length > 0 &&
+    medidas.every((c) => scm.celdaDe(c) === "MEDIDO_PROPIO")
+  );
+});
+
+await t("Facebook y TikTok siguen sin una sola medicion", () => {
+  const m = scm.matrizDeCapacidades();
+
+  return ["facebook", "tiktok"].every(
     (id) => m.plataformas.find((p) => p.plataformaId === id).medidas === 0
   );
 });
@@ -743,15 +780,18 @@ await t("cada plataforma sin acceso declara una ruta concreta", () => {
   );
 });
 
-await t("el resumen cuenta las medidas de las dos plataformas probadas", () => {
+await t("el resumen cuenta las medidas de las tres plataformas probadas", () => {
   const m = scm.matrizDeCapacidades();
 
-  const y = m.plataformas.find((p) => p.plataformaId === "youtube").medidas;
+  const de = (id) => m.plataformas.find((p) => p.plataformaId === id).medidas;
 
-  const x = m.plataformas.find((p) => p.plataformaId === "x").medidas;
-
-  /* 9 de YouTube + 9 de X, todas funcionando. */
-  return y === 9 && x === 9 && m.resumen.medidasEnProduccion === y + x;
+  /* 9 de YouTube + 9 de X sobre terceros, 8 de Instagram sobre la propia. */
+  return (
+    de("youtube") === 9 &&
+    de("x") === 9 &&
+    de("instagram") === 8 &&
+    m.resumen.medidasEnProduccion === de("youtube") + de("x") + de("instagram")
+  );
 });
 
 /*

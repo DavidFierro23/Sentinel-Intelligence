@@ -390,9 +390,13 @@ await t("la celda se DERIVA: no es un campo que pueda desincronizarse", () => {
 });
 
 await t("app review y autorizacion del titular NO se confunden", () => {
-  /* Instagram: lo revisa Meta. Facebook video: lo autoriza el titular. */
+  /*
+    Facebook publicaciones: lo revisa Meta, es trabajo nuestro.
+    Facebook video: lo autoriza el titular, y eso no lo podemos
+    conseguir de un candidato.
+  */
   return (
-    scm.celdaDe(scm.capacidad("instagram", "followers")) ===
+    scm.celdaDe(scm.capacidad("facebook", "publicaciones")) ===
       "REQUIERE_APP_REVIEW" &&
     scm.celdaDe(scm.capacidad("facebook", "views")) === "REQUIERE_AUTORIZACION"
   );
@@ -413,7 +417,7 @@ await t("X entrega metricas de terceros sin autorizacion del titular", () => {
   const xp = scm.PLATAFORMAS.find((p) => p.plataformaId === "x");
 
   const medidas = ["publicaciones", "views", "likes", "comments", "shares"].filter(
-    (k) => scm.celdaDe(xp.capacidades[k]) === "MEDIDO"
+    (k) => scm.celdaDe(xp.capacidades[k]) === "MEDIDO_TERCERO"
   );
 
   return (
@@ -473,8 +477,17 @@ await t("Instagram no da menciones de terceros por ninguna via", () => {
   return scm.celdaDe(scm.capacidad("instagram", "menciones")) === "NO_DISPONIBLE";
 });
 
-await t("las reproducciones de reels de terceros no son obtenibles", () => {
-  return scm.celdaDe(scm.capacidad("instagram", "views")) === "NO_DISPONIBLE";
+/*
+  Afinado en META-IG-REAL-01. `views` de Instagram si se midio,
+  pero sobre NUESTRA cuenta y como OWNER_INSIGHT. Para el
+  Instagram de un candidato sigue sin haber via, y eso es lo que
+  el test tiene que fijar.
+*/
+await t("las reproducciones de Instagram no son obtenibles de un tercero", () => {
+  return (
+    scm.celdaDe(scm.capacidad("instagram", "views")) === "MEDIDO_PROPIO" &&
+    scm.celdaDe(scm.capacidad("instagram", "views")) !== "MEDIDO_TERCERO"
+  );
 });
 
 

@@ -501,7 +501,13 @@ await t("el bloqueo anterior por saldo se conserva en el historial", () => {
   return !!previo && previo.conclusion === "X_API_CREDENTIAL_OK_BUT_BILLING_BLOCKED";
 });
 
-await t("lo que se ejecuto queda MEDIDO", () => {
+await t("lo que se ejecuto queda MEDIDO_TERCERO", () => {
+  /*
+    Renombrado en META-IG-REAL-01: `MEDIDO` a secas se dividio en
+    MEDIDO_TERCERO y MEDIDO_PROPIO. Lo de X se midio sobre
+    cuentas de candidatos, asi que es del primero — y es el unico
+    que habilita el benchmark.
+  */
   return [
     "identidad",
     "cuenta",
@@ -511,7 +517,7 @@ await t("lo que se ejecuto queda MEDIDO", () => {
     "likes",
     "comments",
     "shares"
-  ].every((k) => scm.celdaDe(scm.capacidad("x", k)) === "MEDIDO");
+  ].every((k) => scm.celdaDe(scm.capacidad("x", k)) === "MEDIDO_TERCERO");
 });
 
 await t("y lo que NO se ejecuto sigue en NO_PROBADO", () => {

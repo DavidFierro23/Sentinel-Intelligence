@@ -83,6 +83,31 @@ export const ALCANCES = Object.freeze({
 
 /*
 -----------------------------------------------------------
+SOBRE QUE SE MIDIO — META-IG-REAL-01
+
+La distincion que hizo falta el dia que Instagram funciono.
+
+`vocero593_` devolvio perfil, publicaciones e insights sin un
+fallo. Con la matriz anterior, eso habria puesto a Instagram en
+MEDIDO y lo habria dejado entrar al benchmark multicandidato.
+
+Y habria sido falso: se midio NUESTRA cuenta. Ninguno de los
+siete candidatos nos va a dar un token.
+
+    MEDIDO_PROPIO    funciona sobre una cuenta que administramos
+    MEDIDO_TERCERO   funciona sobre una cuenta que no controlamos
+
+Solo la segunda sirve para Candidate Intelligence.
+-----------------------------------------------------------
+*/
+export const ALCANCE_MEDICION = Object.freeze({
+  PROPIA: "PROPIA",
+  TERCERO: "TERCERO"
+});
+
+
+/*
+-----------------------------------------------------------
 QUE FALTA EXACTAMENTE — SOCIAL-PROVIDER-EVAL-01
 -----------------------------------------------------------
 
@@ -146,7 +171,20 @@ que alguien pueda dejar desincronizado.
 -----------------------------------------------------------
 */
 export const ESTADOS_CELDA = Object.freeze({
-  MEDIDO: "MEDIDO",
+  /*
+    Medido sobre una cuenta que NO controlamos. Es el unico que
+    habilita el benchmark multicandidato.
+  */
+  MEDIDO: "MEDIDO_TERCERO",
+
+  /*
+    Medido, pero sobre una cuenta propia. Prueba que la
+    integracion funciona; no prueba que sirva para observar a un
+    candidato.
+  */
+  MEDIDO_PROPIO: "MEDIDO_PROPIO",
+
+  REQUIERE_BUSINESS_VERIFICATION: "REQUIERE_BUSINESS_VERIFICATION",
   OFICIAL_DISPONIBLE: "OFICIAL_DISPONIBLE",
   REQUIERE_AUTORIZACION: "REQUIERE_AUTORIZACION",
   REQUIERE_APP_REVIEW: "REQUIERE_APP_REVIEW",
@@ -207,7 +245,14 @@ export function celdaDe(cap) {
     }
 
     if (cap.verificacion === VERIFICACION.MEDIDO_EN_PRODUCCION) {
-      return ESTADOS_CELDA.MEDIDO;
+      /*
+        Medir la cuenta propia NO es medir a un candidato. La
+        etiqueta lo separa para que nadie meta una plataforma al
+        benchmark por haber probado con su propia cuenta.
+      */
+      return cap.alcanceMedicion === ALCANCE_MEDICION.PROPIA
+        ? ESTADOS_CELDA.MEDIDO_PROPIO
+        : ESTADOS_CELDA.MEDIDO;
     }
 
     /*
@@ -272,10 +317,21 @@ export const CAPACIDADES = Object.freeze([
   quien se asume del titular, que es el caso peor y por tanto el
   que no conviene suponer a la ligera.
 */
-const c = (estado, verificacion, nota, requisito = null) => ({
+const c = (estado, verificacion, nota, requisito = null, alcance = null) => ({
   estado,
   verificacion,
   nota,
+
+  /*
+    Sobre que se midio. Solo tiene sentido cuando la verificacion
+    es MEDIDO_EN_PRODUCCION; por defecto se asume TERCERO, que es
+    el caso de YouTube y X.
+  */
+  alcanceMedicion:
+    alcance ||
+    (verificacion === VERIFICACION.MEDIDO_EN_PRODUCCION
+      ? ALCANCE_MEDICION.TERCERO
+      : null),
   requisito:
     requisito ||
     (estado === ESTADOS_CAPACIDAD.DISPONIBLE
@@ -572,6 +628,84 @@ const INSTAGRAM = {
     "Exige cuenta profesional vinculada a una pagina de Facebook Y el token del titular. Existe `business_discovery`, que permite a una cuenta profesional consultar datos publicos de OTRA cuenta profesional: es el unico resquicio real para terceros, y sigue necesitando una cuenta profesional propia con app revisada por Meta.",
 
   /*
+    -----------------------------------------------------------
+    MEDIDO EN META-IG-REAL-01 (2026-08-28)
+    -----------------------------------------------------------
+
+    Cuatro llamadas reales con la app «Sentinel Intelligence» y
+    la cuenta profesional propia `vocero593_`.
+
+    ETAPA A — todo funciono:
+
+        GET graph.instagram.com/v23.0/me            200
+        GET graph.instagram.com/v23.0/me/media      200
+        GET graph.instagram.com/v23.0/{id}/insights 200
+
+    Perfil completo, cinco publicaciones con permalink y
+    timestamp, y los cinco insights pedidos —reach, saved,
+    shares, total_interactions, views— devueltos sin excepcion.
+
+    ETAPA B — bloqueada:
+
+        GET graph.facebook.com/v23.0/{ig}?business_discovery
+        400, codigo 190, «Cannot parse access token»
+
+    Y aqui esta lo que importa: el mismo token acababa de
+    funcionar. No es una credencial invalida —eso mandaria a
+    regenerarla, y seria perder el tiempo—: es un token de
+    Instagram Login pedido a un host que solo entiende los de
+    Facebook Login.
+
+    CONCLUSION. Instagram esta MEDIDO_PROPIO y NO_PROBADO para
+    terceros. Que nuestra cuenta funcione entera no acerca ni un
+    paso a observar la de un candidato.
+    -----------------------------------------------------------
+  */
+  medicionReal: {
+    gate: "META-IG-REAL-01",
+    fecha: "2026-08-28",
+    cuentaProbada: "cuenta profesional propia",
+    requests: 4,
+    reintentos: 0,
+
+    etapaA: {
+      resultado: "APROBADO",
+      endpoints: [
+        { endpoint: "GET graph.instagram.com/me", httpStatus: 200 },
+        { endpoint: "GET graph.instagram.com/me/media", httpStatus: 200 },
+        { endpoint: "GET graph.instagram.com/{id}/insights", httpStatus: 200 }
+      ],
+      publicMetrics: ["like_count", "comments_count"],
+      ownerInsights: ["reach", "saved", "shares", "total_interactions", "views"]
+    },
+
+    etapaB: {
+      resultado: "BLOQUEADO",
+      endpoint: "GET graph.facebook.com/{ig}?business_discovery",
+      httpStatus: 400,
+      codigoMeta: 190,
+      causa:
+        "token de Instagram Login enviado a un host que solo acepta Facebook Login",
+      noEs: "no es una credencial invalida: la misma acababa de funcionar",
+      requisitoFaltante: [
+        "Facebook Login for Business",
+        "pagina de Facebook vinculada",
+        "App Review de instagram_basic e instagram_manage_insights",
+        "Business Verification"
+      ]
+    },
+
+    conclusion: "MEDIDO_PROPIO, terceros NO_PROBADO",
+
+    advertencia:
+      "Medir la cuenta propia no habilita el benchmark multicandidato. Los insights son OWNER_INSIGHT y no existirian para el Instagram de un candidato.",
+
+    noSeProbo: [
+      "REELS: las cinco publicaciones de la muestra eran IMAGE, asi que las metricas propias de reel siguen sin comprobarse"
+    ]
+  },
+
+  /*
     BUSINESS DISCOVERY ES LA PIEZA CLAVE, y conviene entender que
     autoriza y que no.
 
@@ -600,33 +734,62 @@ const INSTAGRAM = {
   ],
 
   capacidades: {
-    identidad: c(DISP, DOC, "el handle se lee de la URL publica con SD-1A, sin API"),
+    identidad: c(
+      DISP,
+      MEDIDO,
+      "MEDIDO sobre cuenta propia: /me devolvio id, username, name y account_type. Para un tercero, el handle solo se lee de la URL con SD-1A",
+      REQUISITOS.CREDENCIAL,
+      ALCANCE_MEDICION.PROPIA
+    ),
     cuenta: c(
-      AUTZ,
-      DOC,
-      "business_discovery: nombre, biografia y foto de otra cuenta PROFESIONAL. No de una personal",
-      REQUISITOS.APP_REVIEW
+      DISP,
+      MEDIDO,
+      "MEDIDO sobre cuenta propia. Para un tercero haria falta business_discovery, que esta bloqueado",
+      REQUISITOS.CREDENCIAL,
+      ALCANCE_MEDICION.PROPIA
     ),
     followers: c(
-      AUTZ,
-      DOC,
-      "business_discovery: followers_count de cuentas profesionales",
-      REQUISITOS.APP_REVIEW
+      DISP,
+      MEDIDO,
+      "followers_count y follows_count. MEDIDO sobre cuenta propia; para un tercero, business_discovery",
+      REQUISITOS.CREDENCIAL,
+      ALCANCE_MEDICION.PROPIA
     ),
     publicaciones: c(
-      AUTZ,
-      DOC,
-      "business_discovery: media reciente con permalink y timestamp",
-      REQUISITOS.APP_REVIEW
+      DISP,
+      MEDIDO,
+      "/me/media con permalink, timestamp y media_type. MEDIDO sobre cuenta propia",
+      REQUISITOS.CREDENCIAL,
+      ALCANCE_MEDICION.PROPIA
     ),
     views: c(
-      NOPE,
-      DOC,
-      "las reproducciones de reels son metrica de insights y los insights son de la cuenta PROPIA. Para un tercero no hay via"
+      DISP,
+      MEDIDO,
+      "`views` llego por /insights. Es OWNER_INSIGHT: existe porque administramos la cuenta y NO existiria para un candidato",
+      REQUISITOS.CREDENCIAL,
+      ALCANCE_MEDICION.PROPIA
     ),
-    likes: c(AUTZ, DOC, "like_count via business_discovery", REQUISITOS.APP_REVIEW),
-    comments: c(AUTZ, DOC, "comments_count via business_discovery", REQUISITOS.APP_REVIEW),
-    shares: c(NOPE, DOC, "no expuesto para terceros por ninguna via"),
+    likes: c(
+      DISP,
+      MEDIDO,
+      "like_count como campo de la publicacion. PUBLIC_METRIC, medido sobre cuenta propia",
+      REQUISITOS.CREDENCIAL,
+      ALCANCE_MEDICION.PROPIA
+    ),
+    comments: c(
+      DISP,
+      MEDIDO,
+      "comments_count como campo de la publicacion. PUBLIC_METRIC, medido sobre cuenta propia",
+      REQUISITOS.CREDENCIAL,
+      ALCANCE_MEDICION.PROPIA
+    ),
+    shares: c(
+      DISP,
+      MEDIDO,
+      "`shares` llego por /insights. OWNER_INSIGHT: no existe para terceros por ninguna via",
+      REQUISITOS.CREDENCIAL,
+      ALCANCE_MEDICION.PROPIA
+    ),
     menciones: c(
       NOPE,
       DOC,
@@ -638,8 +801,11 @@ const INSTAGRAM = {
   },
 
   rutaConcreta: [
-    "Crear una cuenta profesional propia de Sentinel con app revisada por Meta y usar business_discovery. Cubre solo cuentas profesionales del objetivo, que en un candidato con cuenta de campana es lo habitual.",
-    "O proveedor con licencia (INSTAGRAM-PROVIDER-EVAL-01)."
+    "HECHO: app creada, cuenta profesional propia conectada y token de Instagram Login funcionando.",
+    "PENDIENTE: montar Facebook Login for Business y vincular una pagina de Facebook. El token actual no sirve para business_discovery.",
+    "PENDIENTE: App Review de instagram_basic e instagram_manage_insights, y Business Verification.",
+    "Solo entonces business_discovery, y solo sobre cuentas PROFESIONALES del objetivo.",
+    "Alternativa: proveedor con licencia (INSTAGRAM-PROVIDER-EVAL-01)."
   ]
 };
 

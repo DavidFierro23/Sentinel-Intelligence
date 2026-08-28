@@ -5091,6 +5091,108 @@ de 25 USD y la API no devuelve consumo por llamada.
 
 ---
 
+## 18-septemvicies. META-IG-REAL-01 (2026-08-28)
+
+Commit `feat(candidate): validate real Instagram capabilities`.
+
+**967 comprobaciones, 24 suites, 0 fallos.** 4 requests reales, cero
+reintentos.
+
+### El resultado en una linea
+
+Instagram funciona **entero** sobre nuestra propia cuenta y **no llega** a la de
+un candidato.
+
+### Etapa A — cuenta propia: todo verde
+
+    GET graph.instagram.com/v23.0/me            200
+    GET graph.instagram.com/v23.0/me/media      200
+    GET graph.instagram.com/v23.0/{id}/insights 200
+
+Perfil completo —id, username, name, `account_type: BUSINESS`, seguidores,
+seguidos, numero de publicaciones—: **los ocho campos pedidos volvieron**.
+
+Cinco publicaciones con `permalink` y `timestamp`, todas IMAGE. Y los cinco
+insights pedidos —`reach`, `saved`, `shares`, `total_interactions`, `views`—
+devueltos sin excepcion.
+
+### Etapa B — tercero: bloqueada
+
+    GET graph.facebook.com/v23.0/{ig}?business_discovery(...)
+    400 · codigo 190 · «Invalid OAuth access token - Cannot parse access token»
+
+#### El diagnostico que cambia la accion
+
+Leido literalmente, ese error manda a regenerar el token. Y seria perder la
+tarde: **el mismo token acababa de funcionar** tres veces contra
+`graph.instagram.com`.
+
+    El sintoma dice «credencial». La causa es «flujo».
+
+El token pertenece a Instagram Login; `business_discovery` vive en
+`graph.facebook.com`, que solo acepta tokens de Facebook Login. Por eso el
+adapter no lo clasifica como `CREDENCIAL_RECHAZADA` sino como
+`NO_SOPORTADO_POR_ESTA_CONFIGURACION`, con el requisito exacto que falta.
+
+### La distincion que hizo falta ese dia
+
+`vocero593_` respondio a todo sin un fallo. Con la matriz anterior eso habria
+puesto Instagram en `MEDIDO` y lo habria dejado entrar al benchmark
+multicandidato.
+
+Y habria sido falso: se midio NUESTRA cuenta. Ninguno de los siete candidatos
+nos va a dar un token.
+
+    MEDIDO_PROPIO    funciona sobre una cuenta que administramos
+    MEDIDO_TERCERO   funciona sobre una cuenta que no controlamos
+
+Solo la segunda habilita el benchmark. La matriz ahora las separa en las cinco
+plataformas, y quedo asi:
+
+| | medido sobre terceros | medido sobre cuenta propia |
+|---|---|---|
+| YouTube | 9 | 0 |
+| X | 9 | 0 |
+| **Instagram** | **0** | **8** |
+| Facebook | 0 | 0 |
+| TikTok | 0 | 0 |
+
+### PUBLIC_METRIC frente a OWNER_INSIGHT
+
+Cada metrica declara su alcance, y no es un detalle cosmetico:
+
+    like_count, comments_count    PUBLIC_METRIC   los ve cualquiera
+    reach, saved, shares, views   OWNER_INSIGHT   solo el que administra
+
+Los cinco insights que obtuvimos **no existirian** para el Instagram de un
+candidato. Presentarlos algun dia como «datos publicos del candidato» seria el
+error caro de este modulo, y por eso la etiqueta viaja con cada cifra.
+
+### Lo que NO se persistio
+
+`vocero593_` **no es un candidato**. Guardar sus publicaciones en el Lake habria
+metido datos de una cuenta propia en el corpus de inteligencia electoral, asi
+que no se persistio nada: la etapa A demuestra capacidad, no aporta expediente.
+
+### El token no aparece en ningun sitio
+
+Viaja en la query porque la API lo exige, y por eso ninguna URL sale del adapter
+sin pasar por `sanitizar()`. Lo que se registra es la RUTA. Hay cuatro tests
+dedicados a esto, incluido el caso en que Meta devuelve la peticion completa
+dentro del mensaje de error.
+
+### Riesgos y limitaciones
+
+- **Instagram no entra al benchmark.** Cero capacidades sobre terceros.
+- **Los REELS no se probaron**: las cinco publicaciones de la muestra eran
+  IMAGE, asi que las metricas propias de reel siguen sin comprobarse.
+- **Facebook Login es un camino largo**: pagina vinculada, App Review y
+  Business Verification, y la concesion la decide Meta, no nosotros.
+- Y aun consiguiendolo, `business_discovery` solo alcanza cuentas
+  **profesionales**. Un candidato con perfil personal seguiria fuera.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -5231,7 +5333,11 @@ resueltos y verificados.
 | Coste por llamada de X | 🔴 `COSTE_NO_RESUELTO`. 2 requests gastadas de 25 USD; X no devolvio consumo en la respuesta y no se estima |
 | Archivo completo de X | 🔴 `search/all` sigue fuera: es cuestion de nivel, no de saldo |
 | Precio real del plan de X | 🔴 `null`. Depende del plan y ha cambiado varias veces: se verifica en el portal, no se estima |
-| Instagram Business Discovery | 🟡 **via identificada**: cuenta profesional propia + App Review de Meta. Coste de licencia 0, coste en tiempo de revision. Depende de una decision de Meta |
+| **Instagram cuenta propia** | 🟢 **MEDIDO_PROPIO** (§18-septemvicies): perfil, publicaciones e insights funcionando. 8 capacidades |
+| **Instagram terceros** | 🔴 **BLOQUEADO**: `business_discovery` devuelve 400/190 porque el token es de Instagram Login y el endpoint exige Facebook Login. **Instagram NO entra al benchmark multicandidato** |
+| Facebook Login for Business | 🔴 **ACCION REQUERIDA**: es el requisito real para llegar a terceros en Instagram. Pagina vinculada + App Review + Business Verification |
+| REELS de Instagram | 🔴 `NO_PROBADO`: las cinco publicaciones de la muestra eran IMAGE |
+| Instagram Business Discovery | 🟡 **via identificada y medida como bloqueada**. Aun consiguiendola, solo alcanza cuentas PROFESIONALES: un candidato con perfil personal seguiria fuera |
 | Facebook Page Public Content Access | 🟡 **via identificada** para paginas. Los PERFILES personales no los abre ningun permiso, y el candidato patron tiene perfil |
 | TikTok | 🔴 **ningun programa oficial cubre el caso de uso**. Display API exige login del titular, Research API no es elegible para uso comercial, Commercial Content API solo cubre publicidad. Unica via: proveedor con licencia |
 | Registrar `x_api` en `providerAudit.js` | 🔴 fichero de Terminal 2. El adapter existe y su matriz de proveedores todavia no lo lista |
@@ -5570,6 +5676,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-28 | META-IG-REAL-01 | Primera prueba real de Instagram con la app propia y una cuenta profesional conectada. Cuatro requests, cero reintentos. La etapa A salio entera: perfil con los ocho campos pedidos, cinco publicaciones con permalink y timestamp, y los cinco insights —reach, saved, shares, total_interactions, views— devueltos sin excepcion. La etapa B se bloqueo: `business_discovery` respondio 400 con codigo 190, «Cannot parse access token». Leido literalmente eso manda a regenerar el token, y seria perder la tarde: el mismo token acababa de funcionar tres veces contra el otro host. El sintoma dice credencial y la causa es flujo — el token es de Instagram Login y ese endpoint solo acepta Facebook Login—, asi que se clasifica NO_SOPORTADO_POR_ESTA_CONFIGURACION con el requisito exacto que falta. El hallazgo de fondo fue otro: que nuestra cuenta respondiera a todo habria puesto Instagram en MEDIDO con la matriz anterior, y lo habria dejado entrar al benchmark multicandidato siendo falso, porque ninguno de los siete candidatos nos va a dar un token. La matriz ahora separa MEDIDO_PROPIO de MEDIDO_TERCERO en las cinco plataformas: Instagram tiene 8 propias y 0 de terceros; YouTube y X tienen 9 de terceros cada uno. Cada metrica declara ademas si es PUBLIC_METRIC u OWNER_INSIGHT, porque los cinco insights obtenidos no existirian para el Instagram de un candidato. No se persistio nada: `vocero593_` no es un candidato y meter sus publicaciones en el corpus habria contaminado el expediente. Cuatro tests dedicados a que el token no se filtre, incluido el caso en que Meta devuelve la peticion entera dentro del error. 967 pruebas, 0 fallos. Nueva §18-septemvicies. |
 | 2026-08-28 | P-CAND-BENCH-01 | Primera linea base real T0 de los siete candidatos del proyecto, en X y YouTube. 10 requests de X y 6 unidades de YouTube: exactamente lo planificado. Lloret no se volvio a observar —sus datos eran de horas antes y repetirlos habria costado 5 llamadas para no aprender nada—, asi que su T0 son las observaciones de X-REAL-01 y P-CAND-03 con sus instantes reales. La regla de los retweets, aplicada a siete candidatos, dejo ver tres perfiles que una media unica habria borrado: Marcelo Cabrera republica 4 de 5 y no tiene rendimiento propio que medir —«—», no 0—; Pedro Palacios responde 4 de 5, que es conversacion y no publicacion; y solo Vega y Yaku tienen originales suficientes para comparar. La cobertura se expresa «2/5 plataformas objetivo medidas» y no en porcentaje, porque un 40 % supondria que las cinco plataformas pesan igual y no hay metodologia que lo sostenga. Cinco de siete candidatos quedan PARCIALMENTE_COMPARABLE: compararlos globalmente los perjudicaria por un hueco nuestro. Un defecto propio que encontro el expediente real: las publicaciones anteriores al contrato no traen `tipoPublicacion`, y `undefined` no es NO_DETERMINADO, asi que las cinco de Lloret se contaban en el total y desaparecian del desglose mostrando `orig: 0` —que se lee como «no publica nada propio»—. Ahora los buckets suman siempre el total y se declara que la columna esta vacia por desconocimiento. Tambien aparecio que Paul Carrasco tiene un channelId y no un handle, y que Yaku devolvio 4 publicaciones y no 5: el tamano de muestra se declara por candidato. Sin IPID, sin ranking, sin ganador: las observaciones son por plataforma y momentum es HISTORICO_INSUFICIENTE. 933 pruebas, 0 fallos. Nueva §18-sexvicies. |
 | 2026-08-28 | X-REAL-01 reanudado | Cargado el credito, se reanudo la prueba donde quedo el 402. Dos llamadas, dos HTTP 200: perfil real con 29.413 seguidores y cinco publicaciones con seis metricas cada una. Las dos que estaban en duda —`impression_count` y `bookmark_count`— llegaron, y no hizo falta un nivel superior. El hallazgo con mas consecuencias no fue una cifra sino un detalle de contrato: tres de las cinco publicaciones eran retweets, y en un retweet X devuelve likes, replies y quotes a 0 porque las reacciones pertenecen al post original. No son ceros reales de la cuenta. Con esta misma muestra la media de likes pasa de 76 a 190 al filtrar los retweets: dos veces y media de diferencia, y el riesgo concreto para el benchmark multicandidato. `normalizarPost` ya marca `esRepost` desde `referenced_tweets`, y el aviso viaja dentro de la medicion para que no se olvide. El Lake guarda ahora 8 publicaciones del mismo candidato —3 de YouTube y 5 de X— en el mismo contrato y con 39 snapshots: que un post y un video sean la misma cosa con platformId distinto deja de ser una afirmacion y pasa a estar medido. Las 24 series quedan en HISTORICO_INSUFICIENTE y no se hizo una segunda llamada para fabricar dos puntos. Nueve de doce capacidades de X medidas; menciones y busqueda siguen NO_PROBADO por presupuesto, y no se llaman disponibles por no haberse intentado. El 402 anterior se conserva en el historial de la medicion. 897 pruebas, 0 fallos. Nueva §18-quinvicies. |
 | 2026-08-28 | X-REAL-01 | Prueba real controlada de X con la credencial ya configurada. Una sola llamada, cero reintentos: `GET /2/users/by/username` devolvio HTTP 402 Payment Required. La cuenta esta en Pay-Per-Use con saldo cero, asi que la conclusion es X_API_CREDENTIAL_OK_BUT_BILLING_BLOCKED: un token invalido habria devuelto 401, de modo que la credencial no fue rechazada. La prueba encontro ademas un defecto propio: el adapter devolvio el codigo dentro del texto y sin campo `httpStatus`, y mi clasificador lo etiqueto ERROR — la parada fue correcta pero el diagnostico habria mandado a revisar el token en lugar del saldo. Ahora `clasificarBloqueo` lee el codigo tambien del texto y separa cuatro causas que se parecen y no se arreglan igual: 401 credencial, 402 saldo, 403 plan, 429 espera, con solo la ultima reintentable y aun asi sin bucle. La matriz gana dos etiquetas para no confundir medir con inferir: REQUIERE_CREDITOS para las tres capacidades que sirve el endpoint probado, NO_PROBADO para las siete que no se llegaron a pedir. `observarX` traduce X al mismo contrato comun que YouTube —un post y un video son PublicationObservation con platformId distinto— y un bloqueo detiene la secuencia conservando lo ya leido. No se toco `xAdapter.js`, que tenia trabajo sin commitear de la linea de Media. 891 pruebas, 0 fallos. Nueva §18-quatervicies. |
