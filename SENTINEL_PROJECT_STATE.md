@@ -5295,6 +5295,122 @@ cuesta minutos y cambia la decision.
 
 ---
 
+## 18-undetricies. P-CAND-FB-MULTI-ASSET-01 (2026-08-28)
+
+Commit `fix(candidate): preserve multiple Facebook assets`.
+
+**1007 comprobaciones, 25 suites, 0 fallos.** Sin red, sin cuota.
+
+### El caso
+
+Juan Cristobal Lloret tiene **dos activos de Facebook** declarados por el
+analista. Y tambien dos de Instagram.
+
+### La regla, ahora explicita
+
+    UN CANDIDATO PUEDE TENER N ACTIVOS POR PLATAFORMA.
+
+Perfil, pagina, pagina de campana, pagina historica. Encontrar uno no significa
+haberlos encontrado todos, y ninguno sustituye a otro.
+
+### El modelo 1:N ya funcionaba
+
+Los dos activos sobreviven las tres capas —`cuentasReferencia`, expediente
+consolidado y ficha— y la interfaz ya los pinta: `p.cuentas.map(...)` recorre
+todas las cuentas de cada plataforma, no la primera.
+
+La clave de identidad del activo es `plataforma + handle normalizado`. Dos
+handles distintos son dos activos, aunque compartan candidato, plataforma y
+nombre.
+
+**No hizo falta corregir nada de persistencia ni de interfaz.**
+
+### El defecto que si aparecio, en discovery
+
+En la propagacion de handles:
+
+```
+/* Plataformas que ya tienen cuenta atribuida: no se tocan. */
+if (yaResueltas.has(adaptador.plataformaId)) { omitir }
+```
+
+La intencion era buena —no gastar presupuesto repreguntando por algo resuelto—
+pero cerraba de mas: en cuanto Facebook tenia **una** cuenta atribuida, la
+propagacion dejaba de buscar en Facebook **entera**. El segundo activo no se
+buscaba nunca por esa via.
+
+Corregido: se omite el **par** `plataforma:handle`, no la plataforma. Se
+conserva el ahorro de no repreguntar lo mismo y desaparece el cierre falso.
+
+Es un arreglo local, de una linea conceptual, dentro del planificador que ya
+existia. No se subio ningun tope y el truncamiento se sigue declarando.
+
+### Clasificacion: UNKNOWN, y es la respuesta correcta
+
+`candidateAssets.js` clasifica un activo de Facebook **solo con lo persistido**.
+
+    /profile.php?id=   PERFIL
+    /people/           PERFIL
+    /pages/  /pg/      PAGINA
+    og:type            decide, si existe
+
+Las dos URLs de Lloret son de **vanidad** —`facebook.com/nombre`—, y esa forma
+la usan tanto los perfiles como las paginas. Asi que las dos quedan `UNKNOWN`.
+
+No es pereza: inventar el tipo llevaria a esperar de un perfil algo que ninguna
+API va a dar nunca. El modulo declara ademas **como se sabria**: leyendo su
+`og:type`, resolviendo el id con la API que hoy no tenemos para terceros, o que
+el analista lo declare.
+
+### Elegibilidad Meta: por activo, y no es medicion
+
+| Tipo | Elegibilidad |
+|---|---|
+| `FACEBOOK_PAGE` | `POTENCIALMENTE_ELEGIBLE_META` via Page Public Content Access |
+| `FACEBOOK_PROFILE` | `NO_ELEGIBLE_META_PUBLIC_PAGE_API` |
+| `UNKNOWN` | `INDETERMINADA` |
+
+Un candidato no es «elegible para Meta»: lo son o no sus activos, uno por uno.
+Una pagina elegible **no** vuelve elegible al perfil del mismo candidato.
+
+Y lo que mas facil se confunde: `POTENCIALMENTE_ELEGIBLE` **no es**
+`MEDIDO_TERCERO` y **no habilita el benchmark**. `habilitaBenchmark("facebook")`
+sigue devolviendo `false`.
+
+### Relacion con el candidato: no se regala oficialidad
+
+    senal independiente   → OFFICIAL, VERIFICADA
+    algun proveedor       → ASSOCIATED, NO_VERIFICADA
+    lo dijo el analista   → DECLARED_BY_ANALYST, NO_VERIFICADA
+
+Tener mas seguidores no asciende a nadie. Hay un test que lo fija.
+
+Estado real de los dos activos de Lloret hoy: uno `ASSOCIATED` y otro
+`DECLARED_BY_ANALYST`, los dos `NO_VERIFICADA`.
+
+### Activo principal: deliberadamente `null`
+
+No se elige uno automaticamente. `primaryForDisplay` y `primaryForObservation`
+son decisiones distintas y ninguna se deduce del numero de seguidores. Elegir
+por seguidores es exactamente lo que hace desaparecer al otro de la vista.
+
+### Gap menor, no corregido
+
+El formulario de **alta** admite una sola URL por plataforma. No es una
+restriccion del modelo —por «Editar identidad» se anaden las que hagan falta, y
+asi se cargaron las dos de Lloret— pero conviene saberlo.
+
+### Riesgos
+
+- **Los dos activos de Facebook siguen sin tipificar.** Hasta que se lea su
+  `og:type` no se sabe cual es pagina, y por tanto no se sabe si alguno es
+  elegible para Meta.
+- **Instagram tambien tiene dos activos** con el mismo problema pendiente.
+- El tope de propagacion sigue siendo 4: abrir la plataforma no garantiza que el
+  segundo handle entre en el plan, solo que ya no se descarta por principio.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -5439,6 +5555,10 @@ resueltos y verificados.
 | **Instagram terceros** | 🔴 **BLOQUEADO**: `business_discovery` devuelve 400/190 porque el token es de Instagram Login y el endpoint exige Facebook Login. **Instagram NO entra al benchmark multicandidato** |
 | Facebook Login for Business | 🔴 **ACCION REQUERIDA** y **confirmada con documentacion oficial** (§18-duodetricies): `business_discovery` exige Facebook User access token, Advanced Access, App Review y Business Verification |
 | **Cuentas personales en Meta** | 🔴 **INALCANZABLES POR VIA OFICIAL**, ni ahora ni tras la revision. Afecta al candidato patron, que tiene perfil personal de Facebook |
+| **Multi-activo por plataforma** | 🟢 **VERIFICADO** (§18-undetricies): el modelo 1:N funciona en persistencia, dominio e interfaz. Lloret tiene 2 activos de Facebook y 2 de Instagram |
+| Cierre de discovery por plataforma | 🟢 **CORREGIDO**: la propagacion omitia la plataforma entera al encontrar una cuenta; ahora omite el par `plataforma:handle` |
+| Tipificacion perfil/pagina de Facebook | 🔴 los dos activos de Lloret son URLs de vanidad y quedan `UNKNOWN`. Sin el tipo no se puede decidir su elegibilidad para Meta |
+| Formulario de alta con una URL por plataforma | 🟡 **gap menor**: no es restriccion del modelo, se anaden por «Editar identidad» |
 | Recuento profesional vs personal de los 7 candidatos | 🔴 **dato que falta antes de invertir en App Review**. Si la mayoria son personales, la via oficial rinde poco |
 | `habilitaBenchmark()` | 🟢 la regla MEDIDO_TERCERO es ahora una funcion, no una convencion |
 | REELS de Instagram | 🔴 `NO_PROBADO`: las cinco publicaciones de la muestra eran IMAGE |
@@ -5781,6 +5901,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-28 | P-CAND-FB-MULTI-ASSET-01 | Verificado con el expediente real que un candidato puede tener N activos por plataforma: Lloret tiene dos de Facebook y dos de Instagram, y los dos sobreviven persistencia, expediente, ficha e interfaz. La clave de identidad es plataforma + handle normalizado, asi que dos handles distintos son dos activos aunque compartan candidato, plataforma y nombre; no hizo falta corregir nada de persistencia ni de UI. El defecto aparecio en discovery: la propagacion de handles omitia la PLATAFORMA entera en cuanto tenia una cuenta atribuida, asi que el segundo activo de Facebook no se buscaba nunca por esa via. Corregido para omitir el par plataforma:handle, que conserva el ahorro de no repreguntar lo mismo y elimina el cierre falso. Nuevo `candidateAssets.js` que clasifica un activo solo con lo persistido: `/profile.php?id=` y `/people/` son perfil, `/pages/` y `/pg/` son pagina, y `og:type` decide si existe. Las dos URLs de Lloret son de vanidad y quedan UNKNOWN, que es la respuesta correcta: adivinar llevaria a esperar de un perfil algo que ninguna API entrega. La elegibilidad Meta se evalua POR ACTIVO —una pagina elegible no vuelve elegible al perfil del mismo candidato— y se declara que POTENCIALMENTE_ELEGIBLE no es MEDIDO_TERCERO ni habilita el benchmark. La relacion no se regala: solo con senal independiente se llega a OFFICIAL, y tener mas seguidores no asciende a nadie. El activo principal queda deliberadamente en null. 1007 pruebas, 0 fallos. Nueva §18-undetricies. |
 | 2026-08-28 | META-PUBLIC-ACCESS-01 | Gate documental sobre la via oficial de Meta para terceros: cero requests, cero tokens, nada configurado. Confirmada con documentacion oficial la cadena completa —Advanced Access exige Business Verification, y `business_discovery` exige un Facebook User access token con Pagina vinculada, permisos y App Review—, lo que explica con fuente el error 190 del gate anterior: el host no sabe leer un token que no es suyo. Documentado lo que `business_discovery` SI devolveria de un tercero —username, name, followers_count, media_count, media, likes, comments y view_count— y lo que NO: reach, impressions, saved y shares no aparecen para terceros, asi que los cinco insights que obtuvimos de nuestra cuenta no existirian para un candidato. Page Public Content Access sigue vigente y Meta lista «analizar publicaciones e interaccion en Paginas» como caso admitido. La respuesta que decide la cobertura: las cuentas personales de Instagram y los perfiles personales de Facebook son inalcanzables por via oficial, y el candidato patron tiene precisamente un perfil personal. Prueba real NO ejecutada por decision: no tenemos el tipo de token requerido y probar a ciegas habria gastado una llamada para confirmar lo que la documentacion ya dice. Se anade `habilitaBenchmark()`, que convierte en funcion la regla de que solo MEDIDO_TERCERO habilita: ni medir la cuenta propia ni documentar la via de Meta ascienden una plataforma. Recomendacion: ruta hibrida, con el recuento de cuentas profesionales frente a personales como el dato que falta antes de invertir semanas en App Review. 975 pruebas, 0 fallos. Nueva §18-duodetricies y `docs/META-PUBLIC-ACCESS.md`. |
 | 2026-08-28 | META-IG-REAL-01 | Primera prueba real de Instagram con la app propia y una cuenta profesional conectada. Cuatro requests, cero reintentos. La etapa A salio entera: perfil con los ocho campos pedidos, cinco publicaciones con permalink y timestamp, y los cinco insights —reach, saved, shares, total_interactions, views— devueltos sin excepcion. La etapa B se bloqueo: `business_discovery` respondio 400 con codigo 190, «Cannot parse access token». Leido literalmente eso manda a regenerar el token, y seria perder la tarde: el mismo token acababa de funcionar tres veces contra el otro host. El sintoma dice credencial y la causa es flujo — el token es de Instagram Login y ese endpoint solo acepta Facebook Login—, asi que se clasifica NO_SOPORTADO_POR_ESTA_CONFIGURACION con el requisito exacto que falta. El hallazgo de fondo fue otro: que nuestra cuenta respondiera a todo habria puesto Instagram en MEDIDO con la matriz anterior, y lo habria dejado entrar al benchmark multicandidato siendo falso, porque ninguno de los siete candidatos nos va a dar un token. La matriz ahora separa MEDIDO_PROPIO de MEDIDO_TERCERO en las cinco plataformas: Instagram tiene 8 propias y 0 de terceros; YouTube y X tienen 9 de terceros cada uno. Cada metrica declara ademas si es PUBLIC_METRIC u OWNER_INSIGHT, porque los cinco insights obtenidos no existirian para el Instagram de un candidato. No se persistio nada: `vocero593_` no es un candidato y meter sus publicaciones en el corpus habria contaminado el expediente. Cuatro tests dedicados a que el token no se filtre, incluido el caso en que Meta devuelve la peticion entera dentro del error. 967 pruebas, 0 fallos. Nueva §18-septemvicies. |
 | 2026-08-28 | P-CAND-BENCH-01 | Primera linea base real T0 de los siete candidatos del proyecto, en X y YouTube. 10 requests de X y 6 unidades de YouTube: exactamente lo planificado. Lloret no se volvio a observar —sus datos eran de horas antes y repetirlos habria costado 5 llamadas para no aprender nada—, asi que su T0 son las observaciones de X-REAL-01 y P-CAND-03 con sus instantes reales. La regla de los retweets, aplicada a siete candidatos, dejo ver tres perfiles que una media unica habria borrado: Marcelo Cabrera republica 4 de 5 y no tiene rendimiento propio que medir —«—», no 0—; Pedro Palacios responde 4 de 5, que es conversacion y no publicacion; y solo Vega y Yaku tienen originales suficientes para comparar. La cobertura se expresa «2/5 plataformas objetivo medidas» y no en porcentaje, porque un 40 % supondria que las cinco plataformas pesan igual y no hay metodologia que lo sostenga. Cinco de siete candidatos quedan PARCIALMENTE_COMPARABLE: compararlos globalmente los perjudicaria por un hueco nuestro. Un defecto propio que encontro el expediente real: las publicaciones anteriores al contrato no traen `tipoPublicacion`, y `undefined` no es NO_DETERMINADO, asi que las cinco de Lloret se contaban en el total y desaparecian del desglose mostrando `orig: 0` —que se lee como «no publica nada propio»—. Ahora los buckets suman siempre el total y se declara que la columna esta vacia por desconocimiento. Tambien aparecio que Paul Carrasco tiene un channelId y no un handle, y que Yaku devolvio 4 publicaciones y no 5: el tamano de muestra se declara por candidato. Sin IPID, sin ranking, sin ganador: las observaciones son por plataforma y momentum es HISTORICO_INSUFICIENTE. 933 pruebas, 0 fallos. Nueva §18-sexvicies. |

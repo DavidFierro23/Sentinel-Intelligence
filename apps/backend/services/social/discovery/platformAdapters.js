@@ -598,12 +598,38 @@ export function planificarConsultasDerivadas(perfil, opciones = {}) {
   */
   const semillas = semillasDeHandle(perfil);
 
-  /* Plataformas que ya tienen cuenta atribuida: no se tocan. */
+  /*
+    ---------------------------------------------------------
+    QUE SE OMITE: EL PAR, NO LA PLATAFORMA
+    ---------------------------------------------------------
+
+    Antes se omitia la PLATAFORMA entera en cuanto tenia una
+    cuenta atribuida. La intencion era buena —no gastar
+    presupuesto preguntando por algo ya resuelto— pero cerraba
+    demasiado.
+
+    Encontrado con un caso real: un candidato con perfil Y pagina
+    de Facebook. En cuanto se atribuia el primero, la propagacion
+    dejaba de preguntar por Facebook, y el segundo activo no se
+    buscaba nunca por esta via.
+
+    Un candidato puede tener N activos por plataforma —perfil,
+    pagina, pagina de campana— y encontrar uno no significa
+    haberlos encontrado todos.
+
+    Lo que si sigue siendo tirar presupuesto es repreguntar por el
+    MISMO handle en la MISMA plataforma. Eso es lo que se omite
+    ahora: el par exacto, no la plataforma.
+    ---------------------------------------------------------
+  */
   const yaResueltas = new Set(
     semillas
       .filter((x) => x.atribuida)
-      .flatMap((x) => x.plataformasOrigen || [])
-      .filter(Boolean)
+      .flatMap((x) =>
+        (x.plataformasOrigen || [])
+          .filter(Boolean)
+          .map((p) => `${p}:${normalizarTexto(String(x.handle || ""))}`)
+      )
   );
 
   const propagadas = [];
@@ -612,7 +638,9 @@ export function planificarConsultasDerivadas(perfil, opciones = {}) {
 
   semillas.forEach((semilla) => {
     adaptadores.forEach((adaptador) => {
-      if (yaResueltas.has(adaptador.plataformaId)) {
+      const par = `${adaptador.plataformaId}:${normalizarTexto(String(semilla.handle || ""))}`;
+
+      if (yaResueltas.has(par)) {
         omitidasPorResueltas.push(
           `${adaptador.plataformaId}:${semilla.handle}`
         );
