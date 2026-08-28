@@ -5411,6 +5411,98 @@ asi se cargaron las dos de Lloret— pero conviene saberlo.
 
 ---
 
+## 18-tricies. META-COVERAGE-AUDIT-01 (2026-08-28)
+
+Commit `feat(candidate): audit Meta candidate eligibility`.
+
+**1015 comprobaciones, 25 suites, 0 fallos.** 26 lecturas de metadata publica,
+cero cuota de proveedor, cero tokens.
+
+Detalle completo en `docs/META-COVERAGE-AUDIT.md`.
+
+### El control que salvo la auditoria
+
+La primera pasada clasifico **once de once** activos de Facebook como
+`FACEBOOK_PROFILE`, con confianza MEDIA. Demasiado limpio.
+
+Se probo el clasificador contra tres paginas que no admiten discusion —Meta,
+BBC News y NASA—: **las tres salieron «perfil»**. Los tokens usados como senal
+—`userID`, `profile_id`, `entity_type`— estan en el armazon que Facebook sirve
+sin sesion, en cualquier URL. Eran plantilla.
+
+    0 % de acierto con confianza MEDIA.
+
+La senal se retiro y los once volvieron a `UNKNOWN`, que era la respuesta
+honesta. Sin ese control, este gate habria concluido «los 7 usan perfiles
+personales, Meta no cubre a nadie, no invertir»: firme, accionable y falsa.
+
+Un clasificador que acierta el 0 % con confianza alta es peor que uno que dice
+«no lo se»: el segundo deja el hueco a la vista.
+
+### Inventario real
+
+**23 activos Meta**: 12 de Instagram en los 7 candidatos, 11 de Facebook en 6.
+
+**Nueve casos de multi-activo**: 4 candidatos con mas de un Instagram, 5 con mas
+de un Facebook. El modelo 1:N no es teorico — lo usa la mayoria del universo
+real.
+
+### Clasificacion: 0 de 23
+
+Las 23 URLs devolvieron HTTP 200 y ninguna dio senal que discrimine.
+
+| | Instagram | Facebook |
+|---|---|---|
+| confirmadas elegibles | 0 | 0 |
+| confirmadas no elegibles | 0 | 0 |
+| `NO_CLASIFICADA` | 12 | 11 |
+| tasa de clasificacion | **0 %** | **0 %** |
+
+Facebook: todas son URLs de vanidad y el HTML sin sesion devuelve
+`og:type=video.other`, que no distingue. Instagram: `og:type=profile` aparece
+casi siempre, pero no separa Business/Creator de personal, que es justo lo que
+decide la elegibilidad.
+
+### Cobertura Meta
+
+    confirmadamente cubribles     0/7      0 %
+    cobertura DESCONOCIDA         7/7    100 %
+    confirmadamente fuera         0/7      0 %
+
+Los tres numeros son distintos y ninguno se lee por otro. **`UNKNOWN` no se suma
+a `NO`**: no haber demostrado que una cuenta es profesional no demuestra que sea
+personal.
+
+Comparabilidad: **INDETERMINADA** — el umbral interno la fija cuando mas del
+30 % de los candidatos dependen de activos sin clasificar; aqui dependen el
+100 %.
+
+### Decision: META-INVESTIGAR-MAS
+
+La cobertura no es baja: es **desconocida**. Invertir ahora seria apostar y
+descartar ahora seria igual de infundado.
+
+Lo que falta cuesta minutos —clasificar 23 activos— frente a semanas de App
+Review y Business Verification cuya duracion no consta. Y el coste de esperar es
+cero: X y YouTube ya sostienen el benchmark.
+
+### Lo que este gate NO cambio
+
+`habilitaBenchmark()` sigue igual: YouTube y X en `true`, Instagram, Facebook y
+TikTok en `false`. Auditar cobertura no es medir, y hay tests que lo fijan.
+
+### Riesgos
+
+- **No se resolvio ninguna clasificacion.** Este gate describe con precision lo
+  que no sabemos.
+- El HTML publico de Facebook **no distingue** perfil de pagina sin sesion:
+  comprobado con control, no supuesto.
+- Los perfiles personales no los cubre ninguna via oficial, asi que si la
+  clasificacion resultara mayoritariamente personal, el proveedor seria la unica
+  ruta.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -5557,7 +5649,11 @@ resueltos y verificados.
 | **Cuentas personales en Meta** | 🔴 **INALCANZABLES POR VIA OFICIAL**, ni ahora ni tras la revision. Afecta al candidato patron, que tiene perfil personal de Facebook |
 | **Multi-activo por plataforma** | 🟢 **VERIFICADO** (§18-undetricies): el modelo 1:N funciona en persistencia, dominio e interfaz. Lloret tiene 2 activos de Facebook y 2 de Instagram |
 | Cierre de discovery por plataforma | 🟢 **CORREGIDO**: la propagacion omitia la plataforma entera al encontrar una cuenta; ahora omite el par `plataforma:handle` |
-| Tipificacion perfil/pagina de Facebook | 🔴 los dos activos de Lloret son URLs de vanidad y quedan `UNKNOWN`. Sin el tipo no se puede decidir su elegibilidad para Meta |
+| **Tipificacion de los 23 activos Meta** | 🔴 **0 de 23 clasificados** (§18-tricies). El HTML publico no distingue perfil de pagina ni Business de personal. Es el dato que bloquea la decision sobre Meta |
+| **Cobertura Meta** | 🔴 **DESCONOCIDA 7/7**. No es baja: es que no se pudo determinar. `UNKNOWN` no se cuenta como `NO` |
+| Clasificacion por HTML publico de Facebook | 🟢 **descartada con control**: paginas conocidas salian como «perfil». La senal era plantilla del armazon sin sesion |
+| `P-CAND-UX-MULTI-ASSET-INPUT` | 🟡 **backlog**: el alta admite una URL por plataforma; se anaden mas por «Editar identidad» |
+| `P-CAND-ASSET-DISCOVERY-02` | 🟢 **no hace falta abrirlo**: 23 activos y 9 casos de multi-activo sugieren que el discovery funciona tras la correccion anterior |
 | Formulario de alta con una URL por plataforma | 🟡 **gap menor**: no es restriccion del modelo, se anaden por «Editar identidad» |
 | Recuento profesional vs personal de los 7 candidatos | 🔴 **dato que falta antes de invertir en App Review**. Si la mayoria son personales, la via oficial rinde poco |
 | `habilitaBenchmark()` | 🟢 la regla MEDIDO_TERCERO es ahora una funcion, no una convencion |
@@ -5901,6 +5997,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-28 | META-COVERAGE-AUDIT-01 | Auditoria de la cobertura potencial de Meta sobre los siete candidatos reales, antes de invertir en App Review. El hallazgo no fueron los numeros sino un control: la primera pasada clasifico once de once activos de Facebook como perfiles personales con confianza media, y al probar el mismo clasificador contra Meta, BBC News y NASA —paginas sin discusion— las tres salieron tambien «perfil». Los tokens usados como senal estan en el armazon que Facebook sirve sin sesion en cualquier URL: eran plantilla, 0 % de acierto con confianza media. Se retiro la senal y los once volvieron a UNKNOWN. Sin ese control el gate habria concluido «los 7 usan perfiles personales, Meta no cubre a nadie, no invertir»: firme, accionable y falsa. Inventario real: 23 activos Meta —12 de Instagram en los 7 candidatos y 11 de Facebook en 6—, con nueve casos de multi-activo, asi que el modelo 1:N lo usa la mayoria del universo. Clasificacion: 0 de 23. Facebook son todas URLs de vanidad y el HTML sin sesion devuelve og:type=video.other, que no distingue; Instagram devuelve og:type=profile, que no separa Business de personal. Cobertura confirmada 0/7, DESCONOCIDA 7/7, confirmadamente fuera 0/7 — y UNKNOWN no se suma a NO. Comparabilidad INDETERMINADA. Decision META-INVESTIGAR-MAS: la cobertura no es baja sino desconocida, lo que falta cuesta minutos frente a semanas de revision, y el coste de esperar es cero porque X y YouTube ya sostienen el benchmark. `habilitaBenchmark()` sin cambios, con tests que fijan que auditar no es medir. 1015 pruebas, 0 fallos. Nueva §18-tricies y `docs/META-COVERAGE-AUDIT.md`. |
 | 2026-08-28 | P-CAND-FB-MULTI-ASSET-01 | Verificado con el expediente real que un candidato puede tener N activos por plataforma: Lloret tiene dos de Facebook y dos de Instagram, y los dos sobreviven persistencia, expediente, ficha e interfaz. La clave de identidad es plataforma + handle normalizado, asi que dos handles distintos son dos activos aunque compartan candidato, plataforma y nombre; no hizo falta corregir nada de persistencia ni de UI. El defecto aparecio en discovery: la propagacion de handles omitia la PLATAFORMA entera en cuanto tenia una cuenta atribuida, asi que el segundo activo de Facebook no se buscaba nunca por esa via. Corregido para omitir el par plataforma:handle, que conserva el ahorro de no repreguntar lo mismo y elimina el cierre falso. Nuevo `candidateAssets.js` que clasifica un activo solo con lo persistido: `/profile.php?id=` y `/people/` son perfil, `/pages/` y `/pg/` son pagina, y `og:type` decide si existe. Las dos URLs de Lloret son de vanidad y quedan UNKNOWN, que es la respuesta correcta: adivinar llevaria a esperar de un perfil algo que ninguna API entrega. La elegibilidad Meta se evalua POR ACTIVO —una pagina elegible no vuelve elegible al perfil del mismo candidato— y se declara que POTENCIALMENTE_ELEGIBLE no es MEDIDO_TERCERO ni habilita el benchmark. La relacion no se regala: solo con senal independiente se llega a OFFICIAL, y tener mas seguidores no asciende a nadie. El activo principal queda deliberadamente en null. 1007 pruebas, 0 fallos. Nueva §18-undetricies. |
 | 2026-08-28 | META-PUBLIC-ACCESS-01 | Gate documental sobre la via oficial de Meta para terceros: cero requests, cero tokens, nada configurado. Confirmada con documentacion oficial la cadena completa —Advanced Access exige Business Verification, y `business_discovery` exige un Facebook User access token con Pagina vinculada, permisos y App Review—, lo que explica con fuente el error 190 del gate anterior: el host no sabe leer un token que no es suyo. Documentado lo que `business_discovery` SI devolveria de un tercero —username, name, followers_count, media_count, media, likes, comments y view_count— y lo que NO: reach, impressions, saved y shares no aparecen para terceros, asi que los cinco insights que obtuvimos de nuestra cuenta no existirian para un candidato. Page Public Content Access sigue vigente y Meta lista «analizar publicaciones e interaccion en Paginas» como caso admitido. La respuesta que decide la cobertura: las cuentas personales de Instagram y los perfiles personales de Facebook son inalcanzables por via oficial, y el candidato patron tiene precisamente un perfil personal. Prueba real NO ejecutada por decision: no tenemos el tipo de token requerido y probar a ciegas habria gastado una llamada para confirmar lo que la documentacion ya dice. Se anade `habilitaBenchmark()`, que convierte en funcion la regla de que solo MEDIDO_TERCERO habilita: ni medir la cuenta propia ni documentar la via de Meta ascienden una plataforma. Recomendacion: ruta hibrida, con el recuento de cuentas profesionales frente a personales como el dato que falta antes de invertir semanas en App Review. 975 pruebas, 0 fallos. Nueva §18-duodetricies y `docs/META-PUBLIC-ACCESS.md`. |
 | 2026-08-28 | META-IG-REAL-01 | Primera prueba real de Instagram con la app propia y una cuenta profesional conectada. Cuatro requests, cero reintentos. La etapa A salio entera: perfil con los ocho campos pedidos, cinco publicaciones con permalink y timestamp, y los cinco insights —reach, saved, shares, total_interactions, views— devueltos sin excepcion. La etapa B se bloqueo: `business_discovery` respondio 400 con codigo 190, «Cannot parse access token». Leido literalmente eso manda a regenerar el token, y seria perder la tarde: el mismo token acababa de funcionar tres veces contra el otro host. El sintoma dice credencial y la causa es flujo — el token es de Instagram Login y ese endpoint solo acepta Facebook Login—, asi que se clasifica NO_SOPORTADO_POR_ESTA_CONFIGURACION con el requisito exacto que falta. El hallazgo de fondo fue otro: que nuestra cuenta respondiera a todo habria puesto Instagram en MEDIDO con la matriz anterior, y lo habria dejado entrar al benchmark multicandidato siendo falso, porque ninguno de los siete candidatos nos va a dar un token. La matriz ahora separa MEDIDO_PROPIO de MEDIDO_TERCERO en las cinco plataformas: Instagram tiene 8 propias y 0 de terceros; YouTube y X tienen 9 de terceros cada uno. Cada metrica declara ademas si es PUBLIC_METRIC u OWNER_INSIGHT, porque los cinco insights obtenidos no existirian para el Instagram de un candidato. No se persistio nada: `vocero593_` no es un candidato y meter sus publicaciones en el corpus habria contaminado el expediente. Cuatro tests dedicados a que el token no se filtre, incluido el caso en que Meta devuelve la peticion entera dentro del error. 967 pruebas, 0 fallos. Nueva §18-septemvicies. |

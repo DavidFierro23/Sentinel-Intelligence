@@ -525,7 +525,75 @@ await t("Facebook deja de estar cerrado: sin competencia, se propaga", () => {
 
 /*
 ===========================================================
-6 · LA REGLA NO SE DEBILITA
+6 · EL CLASIFICADOR NO INVENTA UN TIPO
+===========================================================
+
+META-COVERAGE-AUDIT-01 encontro esto por un control. El
+clasificador daba once perfiles de once activos reales, con
+confianza MEDIA. Sonaba demasiado limpio.
+
+Se probo contra paginas conocidas —Meta, BBC News, NASA— y las
+tres salieron «perfil». Los tokens que se estaban usando estan
+en el armazon que Facebook sirve sin sesion, en cualquier URL:
+eran plantilla, no senal.
+
+Un clasificador que acierta el 0 % con confianza alta es peor
+que uno que dice «no lo se».
+===========================================================
+*/
+bloque("el HTML publico de Facebook no distingue perfil de pagina");
+
+await t("el armazon sin sesion NO produce una clasificacion", () => {
+  /* Lo que Facebook devuelve a un visitante sin sesion. */
+  const armazon = `
+    <meta property="og:type" content="video.other"/>
+    <link rel="canonical" href="https://www.facebook.com/algo"/>
+    <script>{"userID":"0","profile_id":null}</script>
+  `;
+
+  const t2 = ca.tipoDesdeSenales(ca.senalesDeHtmlFacebook(armazon));
+
+  return t2.assetType === ca.TIPOS_ACTIVO.UNKNOWN && t2.confidence === "NINGUNA";
+});
+
+await t("og:type=website tampoco decide: lo usan las dos", () => {
+  const t2 = ca.tipoDesdeSenales(
+    ca.senalesDeHtmlFacebook('<meta property="og:type" content="website"/>')
+  );
+
+  return t2.assetType === ca.TIPOS_ACTIVO.UNKNOWN;
+});
+
+await t("og:type=profile SI decide, con confianza alta", () => {
+  const t2 = ca.tipoDesdeSenales(
+    ca.senalesDeHtmlFacebook('<meta property="og:type" content="profile"/>')
+  );
+
+  return (
+    t2.assetType === ca.TIPOS_ACTIVO.FACEBOOK_PROFILE && t2.confidence === "ALTA"
+  );
+});
+
+await t("un canonical con /pages/ decide pagina", () => {
+  const t2 = ca.tipoDesdeSenales(
+    ca.senalesDeHtmlFacebook(
+      '<link rel="canonical" href="https://www.facebook.com/pages/Algo/123"/>'
+    )
+  );
+
+  return t2.assetType === ca.TIPOS_ACTIVO.FACEBOOK_PAGE;
+});
+
+await t("y el UNKNOWN explica que se comprobo con un control", () => {
+  const t2 = ca.tipoDesdeSenales(ca.senalesDeHtmlFacebook("<html></html>"));
+
+  return t2.comprobado.includes("control");
+});
+
+
+/*
+===========================================================
+7 · LA REGLA NO SE DEBILITA
 ===========================================================
 */
 bloque("elegibilidad no es medicion");
@@ -548,6 +616,47 @@ await t("el motor de activos lo dice por escrito", () => {
   const r = ca.activosDeCandidato({ candidateId: "x", cuentas: [] });
 
   return r.elegibilidadNoEsMedicion.includes("no habilita el benchmark");
+});
+
+/*
+  META-COVERAGE-AUDIT-01: auditar cobertura NO es medir. Aunque
+  el audit encontrara activos potencialmente elegibles, nada de
+  eso habilita el benchmark.
+*/
+await t("auditar cobertura no cambia habilitaBenchmark", () => {
+  return (
+    scm.habilitaBenchmark("instagram").habilita === false &&
+    scm.habilitaBenchmark("facebook").habilita === false &&
+    scm.habilitaBenchmark("youtube").habilita === true &&
+    scm.habilitaBenchmark("x").habilita === true
+  );
+});
+
+await t("UNKNOWN no cuenta ni como elegible ni como no elegible", () => {
+  const e = ca.elegibilidadMeta(ca.TIPOS_ACTIVO.UNKNOWN);
+
+  return (
+    e.estado === "INDETERMINADA" &&
+    e.estado !== "POTENCIALMENTE_ELEGIBLE_META" &&
+    e.estado !== "NO_ELEGIBLE_META_PUBLIC_PAGE_API"
+  );
+});
+
+await t("varios activos de un candidato no lo cuentan varias veces", () => {
+  const r = ca.activosDeCandidato({
+    candidateId: "uno-solo",
+    cuentas: [
+      { id: "facebook:a", plataformaId: "facebook", handle: "a", url: "https://www.facebook.com/a" },
+      { id: "facebook:b", plataformaId: "facebook", handle: "b", url: "https://www.facebook.com/b" },
+      { id: "instagram:c", plataformaId: "instagram", handle: "c", url: "https://www.instagram.com/c" }
+    ]
+  });
+
+  /* Tres activos, UN candidato. */
+  return (
+    r.total === 3 &&
+    new Set(r.activos.map((a) => a.candidateId)).size === 1
+  );
 });
 
 

@@ -199,6 +199,134 @@ export function clasificarActivoFacebook(cuenta = {}) {
 
 /*
 ===========================================================
+LEER EL TIPO DE UNA PAGINA PUBLICA
+
+Extrae de un HTML publico las senales que SI deciden. No hay
+red aqui: recibe el HTML y devuelve senales, para que se pueda
+probar sin salir a internet.
+
+    og:type = profile     PERFIL
+    og:type = website     no decide: lo usan las dos
+    al_ios / al_android   a veces declaran `page` o `profile`
+
+Facebook sirve a un visitante sin sesion una pagina reducida, y
+puede no traer nada. Eso no es un fallo: es la respuesta, y se
+registra como tal.
+===========================================================
+*/
+export function senalesDeHtmlFacebook(html) {
+  const texto = String(html || "");
+
+  const meta = (clave) => {
+    const re = new RegExp(
+      `<meta[^>]+(?:property|name)\s*=\s*["']${clave}["'][^>]*content\s*=\s*["']([^"']*)["']`,
+      "i"
+    );
+
+    const m = texto.match(re);
+
+    return m ? m[1].trim() : null;
+  };
+
+  const ogType = meta("og:type");
+
+  const senales = [];
+
+  if (ogType) senales.push({ clave: "og:type", valor: ogType });
+
+  /*
+    `profile.php?id=` dentro de la propia pagina, en el enlace
+    canonico, delata un perfil aunque la URL de entrada sea de
+    vanidad.
+  */
+  const canonical =
+    (texto.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i) || [])[1] ||
+    meta("og:url");
+
+  if (canonical) senales.push({ clave: "canonical", valor: canonical });
+
+  /*
+    -----------------------------------------------------------
+    SENALES QUE PARECIAN SERVIR Y NO SERVIAN
+    -----------------------------------------------------------
+
+    Aqui habia dos marcadores mas: se buscaba `page_id` o
+    `entity_type: PAGE` para las paginas, y `userID`,
+    `profile_id` o `entity_type: USER` para los perfiles.
+
+    Sobre los once activos reales del proyecto dieron un
+    resultado sospechosamente limpio: once perfiles, cero
+    paginas. Un control lo desmonto en tres peticiones —las
+    paginas de Meta, BBC News y NASA, que son paginas sin
+    discusion, salieron tambien como «perfil»—.
+
+    Esos tokens estan en el armazon que Facebook sirve a un
+    visitante sin sesion, en cualquier URL. No son una senal:
+    son plantilla.
+
+    Se retiran. Un clasificador que acierta el 0 % con una
+    confianza del 100 % es peor que uno que dice «no lo se»: el
+    segundo deja el hueco a la vista, y el primero lo tapa con
+    una respuesta que nadie va a volver a comprobar.
+    -----------------------------------------------------------
+  */
+
+  return {
+    senales,
+    ogType,
+    canonical,
+    huboHtml: texto.length > 0,
+    utilizable: senales.length > 0
+  };
+}
+
+
+/*
+  Traduce esas senales a un tipo, o reconoce que no alcanzan.
+*/
+export function tipoDesdeSenales(lectura = {}) {
+  const og = String(lectura.ogType || "").toLowerCase();
+
+  const canonical = String(lectura.canonical || "").toLowerCase();
+
+  if (og === "profile" || /profile\.php\?id=|\/people\//.test(canonical)) {
+    return {
+      assetType: TIPOS_ACTIVO.FACEBOOK_PROFILE,
+      confidence: "ALTA",
+      evidencia: og === "profile" ? "og:type=profile" : `canonical=${canonical}`
+    };
+  }
+
+  if (/\/pages\//.test(canonical)) {
+    return {
+      assetType: TIPOS_ACTIVO.FACEBOOK_PAGE,
+      confidence: "ALTA",
+      evidencia: `canonical=${canonical}`
+    };
+  }
+
+  /*
+    `og:type=website` lo usan tanto perfiles como paginas, asi
+    que no decide. Reconocerlo evita el error de tomarlo por
+    senal.
+  */
+  return {
+    assetType: TIPOS_ACTIVO.UNKNOWN,
+    confidence: "NINGUNA",
+    evidencia: lectura.huboHtml
+      ? og
+        ? `og:type=${og}, que no distingue perfil de pagina`
+        : "la pagina respondio y no expone metadata que distinga perfil de pagina"
+      : "no se obtuvo HTML",
+
+    comprobado:
+      "Verificado con un control: paginas conocidas y perfiles devuelven el mismo armazon sin sesion. Sin `og:type=profile` o un canonical explicito, el HTML publico de Facebook no distingue."
+  };
+}
+
+
+/*
+===========================================================
 RELACION Y VERIFICACION
 
 Una cuenta declarada por el analista y sin corroborar es
@@ -404,6 +532,8 @@ export function activosDeCandidato(entrada = {}) {
 
 export default {
   TIPOS_ACTIVO,
+  senalesDeHtmlFacebook,
+  tipoDesdeSenales,
   RELACION,
   VERIFICACION_ACTIVO,
   ELEGIBILIDAD_META,

@@ -1,0 +1,231 @@
+# META-COVERAGE-AUDIT-01
+
+Auditoría de la cobertura **potencial** que Meta oficial podría aportar a los
+siete candidatos reales, antes de invertir en Business Verification y App
+Review.
+
+**Fecha:** 2026-08-28 · **Proyecto:** Elecciones Alcaldía Cuenca 2027
+**Naturaleza:** auditoría. No habilita Meta, no es `MEDIDO_TERCERO`.
+
+---
+
+## Metodología
+
+1. Inventario de activos leído de la persistencia real, no de supuestos.
+2. Un intento de clasificación por activo con **metadata pública**: una petición
+   HTTP por URL, sin login, sin cookies, sin scraping agresivo.
+3. **Un control** sobre páginas conocidas para comprobar que el clasificador
+   discrimina de verdad.
+4. Sin evidencia suficiente → `NO_CLASIFICADA`. Obligatorio.
+
+El paso 3 es el que salvó esta auditoría. Conviene leerlo antes que los números.
+
+---
+
+## El control que cambió el resultado
+
+La primera pasada clasificó **once de once** activos de Facebook como
+`FACEBOOK_PROFILE`, con confianza MEDIA. Un resultado demasiado limpio.
+
+Se probó el mismo clasificador contra tres páginas que no admiten discusión:
+
+| URL de control | Es | Dijo el clasificador |
+|---|---|---|
+| `facebook.com/Meta` | Página | `FACEBOOK_PROFILE` (MEDIA) |
+| `facebook.com/bbcnews` | Página | `FACEBOOK_PROFILE` (MEDIA) |
+| `facebook.com/NASA` | Página | `FACEBOOK_PROFILE` (MEDIA) |
+
+**0 % de acierto con confianza media.** Los tokens que se usaban como señal
+—`userID`, `profile_id`, `entity_type`— están en el armazón que Facebook sirve a
+cualquier visitante sin sesión, en cualquier URL. Eran plantilla.
+
+La señal se retiró. Los once activos volvieron a `UNKNOWN`, que era la respuesta
+honesta desde el principio.
+
+Sin ese control, esta auditoría habría concluido *«los 7 candidatos usan perfiles
+personales, Meta no cubre a nadie, no invertir»*. Una conclusión firme, accionable
+y falsa.
+
+---
+
+## Inventario real
+
+| Candidato | Activos | Plataformas | IG | FB |
+|---|---|---|---|---|
+| Paúl Carrasco Carpio | 6 | 5 | 1 | 2 |
+| Juan Cristóbal Lloret | 9 | 7 | 2 | 2 |
+| Pedro Palacios Ullauri | 8 | 5 | 1 | 2 |
+| Juan Carlos Vega | 5 | 4 | 1 | **0** |
+| Yaku Pérez | 7 | 5 | 2 | 2 |
+| Marcelo Cabrera Palacios | 7 | 4 | 3 | 2 |
+| Leonardo Morales | 6 | 5 | 2 | 1 |
+
+**12 activos de Instagram** en 7 candidatos · **11 de Facebook** en 6.
+
+Multi-activo: **4 candidatos** con más de un Instagram, **5** con más de un
+Facebook. El modelo 1:N no es teórico: lo usa la mayoría del universo real.
+
+---
+
+## Clasificación
+
+Las 23 URLs devolvieron **HTTP 200**. Ninguna dio una señal que discrimine.
+
+| | Instagram | Facebook |
+|---|---|---|
+| profesional / página confirmada | **0** | **0** |
+| personal / perfil confirmado | **0** | **0** |
+| `NO_CLASIFICADA` | **12** | **11** |
+| sin cuenta | 0 candidatos | 1 candidato |
+| **tasa de clasificación** | **0 / 12 = 0 %** | **0 / 11 = 0 %** |
+
+### Por qué Facebook no se deja clasificar
+
+Todas las URLs son de vanidad —`facebook.com/nombre`—, que usan tanto los
+perfiles como las páginas. El HTML sin sesión devuelve `og:type=video.other` en
+la práctica totalidad de los casos, y ese valor no distingue nada.
+
+### Por qué Instagram tampoco
+
+`og:type=profile` aparece en casi todos, pero eso solo dice «es un perfil de
+Instagram»: **no** distingue una cuenta *Business/Creator* de una personal, que
+es justo lo que decide la elegibilidad.
+
+### Los dos Facebook de Lloret
+
+| Activo | Tipo | Evidencia |
+|---|---|---|
+| `facebook:juancristobal.lloretvaldivieso` | `UNKNOWN` | HTTP 200, `og:type=video.other`, no discrimina |
+| `facebook:jotalloretv` | `UNKNOWN` | HTTP 200, `og:type=video.other`, no discrimina |
+
+Siguen siendo **dos activos distintos**, no deduplicados. Cuál es la página
+sigue sin resolverse por vía pública.
+
+---
+
+## Cobertura Meta
+
+| | candidatos | % |
+|---|---|---|
+| **confirmadamente cubribles** | **0 / 7** | **0 %** |
+| **cobertura desconocida** | **7 / 7** | **100 %** |
+| confirmadamente fuera | 0 / 7 | 0 % |
+
+Los tres números son distintos y ninguno se puede leer por otro. **`UNKNOWN` no
+se suma a `NO`.** Que no hayamos podido demostrar que una cuenta es profesional
+no demuestra que sea personal.
+
+### Escenarios
+
+**Conservador** — solo lo confirmado: Meta aporta **0 candidatos**.
+
+**Pendiente** — 23 activos sin clasificar podrían cambiar el resultado por
+completo. El rango real va de 0 a 7 candidatos, y hoy no se puede estrechar.
+
+**No-Meta** — con la evidencia actual, **ningún candidato** está confirmadamente
+fuera. No hay base para descartar Meta ni para adoptarlo.
+
+---
+
+## SOCIAL_COVERAGE_GAP
+
+| Candidato | Instagram | Facebook | TikTok |
+|---|---|---|---|
+| Paúl Carrasco | NO_CLASIFICADO | NO_CLASIFICADO | NO_PROBADO |
+| J. C. Lloret | NO_CLASIFICADO | NO_CLASIFICADO | NO_PROBADO |
+| Pedro Palacios | NO_CLASIFICADO | NO_CLASIFICADO | NO_PROBADO |
+| Juan Carlos Vega | NO_CLASIFICADO | **NO_CUENTA** | NO_PROBADO |
+| Yaku Pérez | NO_CLASIFICADO | NO_CLASIFICADO | NO_PROBADO |
+| Marcelo Cabrera | NO_CLASIFICADO | NO_CLASIFICADO | NO_PROBADO |
+| Leonardo Morales | NO_CLASIFICADO | NO_CLASIFICADO | NO_PROBADO |
+
+---
+
+## Comparabilidad multicandidato
+
+**INDETERMINADA.**
+
+Umbral interno de Sentinel: es `INDETERMINADA` cuando más del 30 % de los
+candidatos dependen de activos Meta sin clasificar. Aquí dependen el **100 %**.
+
+> Estos umbrales son internos de Sentinel. No son un estándar académico ni de
+> Meta.
+
+---
+
+## Valor incremental sobre X + YouTube
+
+Hoy medimos a terceros en X y YouTube. Meta añadiría, **si la clasificación
+resultara favorable**:
+
+- una superficie más para los 7 candidatos con Instagram
+- una más para los 6 con Facebook
+- y sobre todo, cobertura donde hoy hay poca: cinco de los siete están en 1/5
+  plataformas en la línea base T0
+
+Pero **ese «si» es todo el problema**. Con 0 % de clasificación, el valor
+incremental de Meta no es bajo: es **desconocido**. Y una inversión en App
+Review y Business Verification hecha sobre un valor desconocido es una apuesta,
+no una decisión.
+
+Lo que sí se puede afirmar: incluso con Meta aprobado, sus métricas de terceros
+serían menos de las que ya obtenemos de X —sin reach, sin saves, sin shares— y
+no cubrirían a nadie con cuenta personal.
+
+---
+
+## Decisión de inversión
+
+### META-INVESTIGAR-MAS
+
+Cinco razones:
+
+1. **La cobertura es desconocida, no baja.** 0 % confirmado y 100 % sin
+   clasificar. Invertir ahora sería apostar; descartar ahora sería igual de
+   infundado.
+2. **Lo que falta cuesta minutos, no semanas.** La clasificación de 23 activos
+   la resuelve el analista mirando las cuentas, o una lectura autenticada de
+   nuestra propia sesión —que este gate no hace y no debe hacer—.
+3. **App Review y Business Verification son irreversibles en tiempo.** Se tarda
+   lo que Meta tarde, y no consta cuánto. Conviene entrar sabiendo a qué.
+4. **El coste de esperar es cero.** X y YouTube ya sostienen el benchmark; no
+   hay nada bloqueado por Meta.
+5. **El dato que falta es barato y decisivo.** Si la mayoría resultan personales,
+   Meta oficial se descarta con fundamento y la conversación pasa a proveedor. Si
+   resultan profesionales, la inversión se justifica sola.
+
+### ¿Hace falta proveedor comercial?
+
+**INDETERMINADO**, y por plataforma:
+
+- **Instagram** — indeterminado: depende de cuántas cuentas sean profesionales.
+- **Facebook** — indeterminado por lo mismo, con un matiz: los perfiles
+  personales no los cubre ninguna vía oficial, así que ahí el proveedor sería la
+  **única** opción.
+- **TikTok** — `NO_PROBADO`, y ya documentado en SOCIAL-PROVIDER-EVAL-01 como la
+  única plataforma sin vía oficial para un producto comercial. Ahí el proveedor
+  es la única ruta conocida.
+
+---
+
+## Gaps registrados
+
+**`P-CAND-ASSET-DISCOVERY-02`** — no se abre. Durante la auditoría no aparecieron
+señales nuevas de activos faltantes: la corrección de
+`P-CAND-FB-MULTI-ASSET-01` ya eliminó el cierre por plataforma, y el inventario
+—23 activos Meta en 7 candidatos, con 9 casos de multi-activo— sugiere que el
+descubrimiento está funcionando.
+
+**`P-CAND-UX-MULTI-ASSET-INPUT`** — registrado. El formulario de alta admite una
+URL por plataforma; se añaden más por «Editar identidad». No se corrige aquí.
+
+---
+
+## Limitaciones
+
+- **Ninguna clasificación se resolvió.** Este documento describe lo que no
+  sabemos con precisión, que es distinto de describir lo que hay.
+- **El HTML público de Facebook no distingue perfil de página** para un visitante
+  sin sesión. Comprobado con control, no supuesto.
+- **Instagram no expone Business/Creator** en su HTML público.
+- No se generaron tokens, no se tocó Meta, no se inició ninguna revisión.
