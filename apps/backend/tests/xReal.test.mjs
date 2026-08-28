@@ -477,26 +477,81 @@ await t("una segunda observacion acumula sin sustituir", async () => {
 */
 bloque("la matriz no confunde medir con inferir");
 
-await t("la medicion real de X queda registrada con su codigo", () => {
+await t("la medicion real de X registra las dos llamadas y su codigo", () => {
   const x = scm.matrizDeCapacidades().plataformas.find((p) => p.plataformaId === "x");
 
   return (
-    x.medicionReal.httpStatus === 402 &&
-    x.medicionReal.requests === 1 &&
+    x.medicionReal.requests === 2 &&
     x.medicionReal.reintentos === 0 &&
-    x.medicionReal.conclusion === "X_API_CREDENTIAL_OK_BUT_BILLING_BLOCKED"
+    x.medicionReal.endpoints.every((e) => e.httpStatus === 200) &&
+    x.medicionReal.conclusion === "OPERATIVO"
   );
 });
 
-await t("lo que sirve el endpoint probado queda REQUIERE_CREDITOS", () => {
-  return ["identidad", "cuenta", "followers"].every(
-    (k) => scm.celdaDe(scm.capacidad("x", k)) === "REQUIERE_CREDITOS"
-  );
+/*
+  El 402 anterior NO se borra. Es la unica prueba de que un
+  Payment Required significaba saldo y no credencial, y esa
+  leccion vale mas que el estado actual.
+*/
+await t("el bloqueo anterior por saldo se conserva en el historial", () => {
+  const x = scm.matrizDeCapacidades().plataformas.find((p) => p.plataformaId === "x");
+
+  const previo = x.medicionReal.historial.find((h) => h.httpStatus === 402);
+
+  return !!previo && previo.conclusion === "X_API_CREDENTIAL_OK_BUT_BILLING_BLOCKED";
 });
 
-await t("y lo que no se llego a pedir queda NO_PROBADO", () => {
-  return ["publicaciones", "views", "likes", "comments", "menciones"].every(
+await t("lo que se ejecuto queda MEDIDO", () => {
+  return [
+    "identidad",
+    "cuenta",
+    "followers",
+    "publicaciones",
+    "views",
+    "likes",
+    "comments",
+    "shares"
+  ].every((k) => scm.celdaDe(scm.capacidad("x", k)) === "MEDIDO");
+});
+
+await t("y lo que NO se ejecuto sigue en NO_PROBADO", () => {
+  return ["menciones", "busqueda"].every(
     (k) => scm.celdaDe(scm.capacidad("x", k)) === "NO_PROBADO"
+  );
+});
+
+/*
+  Las dos que estaban en duda antes de pagar. Llegaron las dos, y
+  eso se registra explicitamente: era la incognita del gate.
+*/
+await t("impression_count y bookmark_count quedaron confirmadas", () => {
+  const x = scm.matrizDeCapacidades().plataformas.find((p) => p.plataformaId === "x");
+
+  return (
+    x.medicionReal.metricasConfirmadas.includes("impression_count") &&
+    x.medicionReal.metricasConfirmadas.includes("bookmark_count")
+  );
+});
+
+/*
+  El hallazgo con mas consecuencias del gate: en un retweet las
+  reacciones son del post original, asi que valen 0. Promediarlos
+  con publicaciones propias hunde cualquier media.
+*/
+await t("el aviso sobre retweets queda registrado con la medicion", () => {
+  const x = scm.matrizDeCapacidades().plataformas.find((p) => p.plataformaId === "x");
+
+  return (
+    /retweet/i.test(x.medicionReal.avisoRetweets) &&
+    /esRepost/.test(x.medicionReal.avisoRetweets)
+  );
+});
+
+await t("`listed_count` se declara no capturado por NOSOTROS, no ausente en X", () => {
+  const x = scm.matrizDeCapacidades().plataformas.find((p) => p.plataformaId === "x");
+
+  return x.medicionReal.noCapturadoPorNuestroNormalizador.some((n) =>
+    n.includes("listed_count")
   );
 });
 
@@ -510,12 +565,9 @@ await t("NO_PROBADO nunca se etiqueta como medido", () => {
   );
 });
 
-await t("ninguna capacidad de X aparece como disponible hoy", () => {
-  const x = scm.PLATAFORMAS.find((p) => p.plataformaId === "x");
-
-  return !Object.entries(x.capacidades).some(
-    ([k, c]) => k !== "url_verificable" && ["MEDIDO", "OFICIAL_DISPONIBLE"].includes(scm.celdaDe(c))
-  );
+await t("el archivo completo sigue fuera aunque haya saldo", () => {
+  /* `search/all` es cuestion de nivel, no de credito. */
+  return scm.celdaDe(scm.capacidad("x", "historico")) === "REQUIERE_PLAN_PAGO";
 });
 
 await t("el archivo completo sigue siendo cuestion de plan, no de saldo", () => {

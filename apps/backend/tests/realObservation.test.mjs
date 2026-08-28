@@ -623,31 +623,40 @@ await t("cada celda declara COMO se sabe lo que dice", () => {
 });
 
 /*
-  Afinado en X-REAL-01. Ahora X tambien tiene celdas medidas,
-  pero medidas como BLOQUEADAS: la llamada real devolvio 402.
-  El invariante util no es «solo YouTube se midio» sino «solo
-  YouTube se midio FUNCIONANDO».
+  Reescrito dos veces por la realidad, que es como debe ser.
+  Primero X no estaba medida; luego se midio bloqueada por saldo
+  (402); ahora, con credito cargado, se midio FUNCIONANDO.
+
+  El invariante que sobrevive a los tres momentos: solo se
+  llaman medidas las plataformas contra las que se ejecuto de
+  verdad. Meta y TikTok nunca se han tocado.
 */
-await t("solo YouTube tiene capacidades medidas y funcionando", () => {
+await t("solo las plataformas ejecutadas tienen capacidades medidas", () => {
   const m = scm.matrizDeCapacidades();
 
-  const funcionando = m.plataformas.filter((p) =>
-    Object.values(p.capacidades).some((c) => scm.celdaDe(c) === "MEDIDO")
-  );
+  const conMedidas = m.plataformas
+    .filter((p) => p.medidas > 0)
+    .map((p) => p.plataformaId)
+    .sort()
+    .join(",");
 
-  return funcionando.length === 1 && funcionando[0].plataformaId === "youtube";
+  return conMedidas === "x,youtube";
 });
 
-await t("y lo medido de X esta medido como bloqueado por saldo", () => {
+await t("Instagram, Facebook y TikTok siguen sin una sola medicion", () => {
+  const m = scm.matrizDeCapacidades();
+
+  return ["instagram", "facebook", "tiktok"].every(
+    (id) => m.plataformas.find((p) => p.plataformaId === id).medidas === 0
+  );
+});
+
+await t("X guarda el 402 anterior en su historial: no se borra la leccion", () => {
   const x = scm.matrizDeCapacidades().plataformas.find((p) => p.plataformaId === "x");
 
-  const medidas = Object.values(x.capacidades).filter(
-    (c) => c.verificacion === "MEDIDO_EN_PRODUCCION"
-  );
-
   return (
-    medidas.length === 3 &&
-    medidas.every((c) => scm.celdaDe(c) === "REQUIERE_CREDITOS")
+    x.medicionReal.conclusion === "OPERATIVO" &&
+    x.medicionReal.historial.some((h) => h.httpStatus === 402)
   );
 });
 
@@ -737,8 +746,12 @@ await t("cada plataforma sin acceso declara una ruta concreta", () => {
 await t("el resumen cuenta las medidas de las dos plataformas probadas", () => {
   const m = scm.matrizDeCapacidades();
 
-  /* 9 de YouTube funcionando + 3 de X medidas como bloqueadas. */
-  return m.resumen.medidasEnProduccion === 12;
+  const y = m.plataformas.find((p) => p.plataformaId === "youtube").medidas;
+
+  const x = m.plataformas.find((p) => p.plataformaId === "x").medidas;
+
+  /* 9 de YouTube + 9 de X, todas funcionando. */
+  return y === 9 && x === 9 && m.resumen.medidasEnProduccion === y + x;
 });
 
 /*

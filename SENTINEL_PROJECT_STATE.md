@@ -4872,6 +4872,110 @@ es logica de observacion, no de transporte.
 
 ---
 
+## 18-quinvicies. X-REAL-01 reanudado — X operativo (2026-08-28)
+
+Commit `feat(candidate): real X observation with live metrics`.
+
+**897 comprobaciones, 22 suites, 0 fallos.** Dos llamadas reales, cero
+reintentos.
+
+Cargado el credito, se reanudo exactamente donde quedo el 402.
+
+    GET /2/users/by/username   → HTTP 200
+    GET /2/users/:id/tweets    → HTTP 200
+
+### Perfil real
+
+    id            242787369
+    username      @jotalloretv          (del expediente, no de una busqueda)
+    name          Jota Lloret Valdivieso
+    created_at    2011-01-25
+    followers     29.413
+    following     2.458
+    tweet_count   25.317
+    verified      false
+
+`listed_count` **no se capturo**, y conviene decirlo bien: no es que X no lo
+devuelva, es que nuestro normalizador no lo mapea. La diferencia importa —una
+cosa es un limite de la fuente y otra un hueco nuestro—.
+
+### Las dos metricas que estaban en duda LLEGARON
+
+`impression_count` y `bookmark_count`, en las cinco publicaciones. Eran la
+incognita del gate y no hizo falta un nivel superior.
+
+Seis metricas por publicacion, todas `DISPONIBLE`: likes, reposts, comments,
+quotes, views y bookmarks.
+
+### El hallazgo con mas consecuencias
+
+**Tres de las cinco publicaciones eran retweets.** Y en un retweet X devuelve:
+
+    like_count    0
+    reply_count   0
+    quote_count   0
+    retweet_count 7      ← si trae valor
+    impression_count 72  ← si trae valor
+
+Las reacciones pertenecen al post original, no al acto de republicar. **No son
+ceros reales de esa cuenta.**
+
+Promediar retweets con publicaciones propias hunde cualquier media de
+interaccion y haria parecer inactiva a una cuenta que en realidad amplifica
+mucho. Con estos cinco posts, la media de likes sale 76 contando los retweets y
+**190 sin ellos**: dos veces y media de diferencia por un detalle de contrato.
+
+`normalizarPost` ya marca `esRepost`, `esCita` y `esRespuesta` desde
+`referenced_tweets`. El filtro existe; hay que usarlo ANTES de cualquier
+promedio, y el aviso viaja dentro de `medicionReal` para que no se olvide al
+construir el benchmark.
+
+### Contrato comun, comprobado
+
+El Lake guarda ahora **8 publicaciones del mismo candidato: 3 de YouTube y 5 de
+X**, en el mismo `PublicationObservation`, con 39 snapshots de metricas. Un post
+de X y un video de YouTube son la misma cosa con `platformId` distinto: no hay
+modelo paralelo, y ahora esta medido y no solo afirmado.
+
+Relectura desde el Lake verificada: `publicationId`, `candidateId`, `accountId`,
+`platformId`, `canonicalUrl`, `publishedAt`, `firstObservedAt`,
+`lastObservedAt`, `evidenceId`, `provider` y las seis metricas con su instante.
+
+Las 24 series de metricas quedan en `HISTORICO_INSUFICIENTE`: una sola
+observacion. No se fabrico tendencia y no se hizo una segunda llamada para
+inventar dos puntos.
+
+### Columna de X
+
+| Capacidad | Celda |
+|---|---|
+| identidad · cuenta · followers | **MEDIDO** |
+| publicaciones · views · likes · comments · shares | **MEDIDO** |
+| url_verificable | **MEDIDO** |
+| menciones · busqueda | `NO_PROBADO` |
+| historico | `REQUIERE_PLAN_PAGO` |
+
+Nueve de doce medidas. Las menciones **no se probaron**: quedaban fuera del
+presupuesto de este gate, y no se llaman disponibles por no haberse intentado.
+El archivo completo sigue fuera aunque haya saldo: `search/all` es cuestion de
+nivel, no de credito.
+
+El 402 anterior **se conserva** en `medicionReal.historial`. Es la unica prueba
+de que un Payment Required significaba saldo y no credencial, y esa leccion vale
+mas que el estado actual.
+
+### Riesgos y limitaciones
+
+- **Los retweets contaminan cualquier promedio** si no se filtran. Es el riesgo
+  concreto para el benchmark multicandidato.
+- **Las menciones siguen sin probar**, y son la mitad que le falta a Candidate
+  Intelligence: hoy solo mide lo que publica el candidato.
+- **No se conoce el coste por llamada.** Se gastaron 2 requests de un saldo de
+  25 USD; X no devolvio informacion de consumo en la respuesta y no se estima.
+- Una sola observacion: la serie temporal empieza en la segunda.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -4998,10 +5102,14 @@ resueltos y verificados.
 | Cross-link desde paginas con JavaScript | 🔴 Facebook responde 200 y no entrega ni un `href`. Sin navegador no hay enlaces, y usar uno seria scraping evasivo |
 | **SOCIAL-PROVIDER-EVAL-01** | 🟢 **COMPLETADO** (§18-tervicies): matriz de 60 casillas con siete estados derivados, adapter de X completo y `docs/SOCIAL-PROVIDER-EVAL.md` |
 | **X_BEARER_TOKEN** | 🟢 **CONFIGURADO Y ACEPTADO**. Probado en X-REAL-01: la API devuelve 402, no 401, asi que la credencial no fue rechazada |
-| **Saldo de la cuenta X** | 🔴 **ACCION REQUERIDA DE DAVID**: la cuenta esta en Pay-Per-Use con saldo cero y devuelve HTTP 402. Es el unico bloqueo de X, y se resuelve con una decision nuestra |
-| Capacidades de X no probadas | 🔴 siete de doce quedaron `NO_PROBADO`: la secuencia se detuvo en la primera llamada. Se infieren cerradas por lo mismo, pero no se midieron |
-| `impression_count` de terceros en X | 🔴 sigue sin comprobarse. Era el objetivo de la segunda llamada y no se llego a ejecutar |
-| Coste por llamada de X | 🔴 `COSTE_NO_RESUELTO`. Pay-Per-Use sin precio conocido: no se estima |
+| **Saldo de la cuenta X** | 🟢 **RESUELTO**: cargado credito, el 402 desaparecio y las dos llamadas devuelven 200 |
+| **X operativo** | 🟢 **MEDIDO** (§18-quinvicies): 9 de 12 capacidades. Perfil, publicaciones y las seis metricas por publicacion |
+| `impression_count` y `bookmark_count` de terceros | 🟢 **CONFIRMADAS**: llegaron en las cinco publicaciones. Era la incognita del gate |
+| **Retweets en los promedios** | 🔴 **RIESGO ABIERTO para el benchmark**: en un retweet, likes/replies/quotes valen 0 porque son del post original. Con la muestra real, la media de likes pasa de 76 a 190 al filtrarlos. Usar `esRepost` ANTES de promediar |
+| Menciones de X | 🔴 `NO_PROBADO`. `search/recent` quedaba fuera del presupuesto de este gate. Es la mitad que le falta a Candidate Intelligence |
+| `listed_count` de X | 🔴 no lo mapea nuestro normalizador. Hueco propio, no limite de la fuente |
+| Coste por llamada de X | 🔴 `COSTE_NO_RESUELTO`. 2 requests gastadas de 25 USD; X no devolvio consumo en la respuesta y no se estima |
+| Archivo completo de X | 🔴 `search/all` sigue fuera: es cuestion de nivel, no de saldo |
 | Precio real del plan de X | 🔴 `null`. Depende del plan y ha cambiado varias veces: se verifica en el portal, no se estima |
 | Instagram Business Discovery | 🟡 **via identificada**: cuenta profesional propia + App Review de Meta. Coste de licencia 0, coste en tiempo de revision. Depende de una decision de Meta |
 | Facebook Page Public Content Access | 🟡 **via identificada** para paginas. Los PERFILES personales no los abre ningun permiso, y el candidato patron tiene perfil |
@@ -5342,6 +5450,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-28 | X-REAL-01 reanudado | Cargado el credito, se reanudo la prueba donde quedo el 402. Dos llamadas, dos HTTP 200: perfil real con 29.413 seguidores y cinco publicaciones con seis metricas cada una. Las dos que estaban en duda —`impression_count` y `bookmark_count`— llegaron, y no hizo falta un nivel superior. El hallazgo con mas consecuencias no fue una cifra sino un detalle de contrato: tres de las cinco publicaciones eran retweets, y en un retweet X devuelve likes, replies y quotes a 0 porque las reacciones pertenecen al post original. No son ceros reales de la cuenta. Con esta misma muestra la media de likes pasa de 76 a 190 al filtrar los retweets: dos veces y media de diferencia, y el riesgo concreto para el benchmark multicandidato. `normalizarPost` ya marca `esRepost` desde `referenced_tweets`, y el aviso viaja dentro de la medicion para que no se olvide. El Lake guarda ahora 8 publicaciones del mismo candidato —3 de YouTube y 5 de X— en el mismo contrato y con 39 snapshots: que un post y un video sean la misma cosa con platformId distinto deja de ser una afirmacion y pasa a estar medido. Las 24 series quedan en HISTORICO_INSUFICIENTE y no se hizo una segunda llamada para fabricar dos puntos. Nueve de doce capacidades de X medidas; menciones y busqueda siguen NO_PROBADO por presupuesto, y no se llaman disponibles por no haberse intentado. El 402 anterior se conserva en el historial de la medicion. 897 pruebas, 0 fallos. Nueva §18-quinvicies. |
 | 2026-08-28 | X-REAL-01 | Prueba real controlada de X con la credencial ya configurada. Una sola llamada, cero reintentos: `GET /2/users/by/username` devolvio HTTP 402 Payment Required. La cuenta esta en Pay-Per-Use con saldo cero, asi que la conclusion es X_API_CREDENTIAL_OK_BUT_BILLING_BLOCKED: un token invalido habria devuelto 401, de modo que la credencial no fue rechazada. La prueba encontro ademas un defecto propio: el adapter devolvio el codigo dentro del texto y sin campo `httpStatus`, y mi clasificador lo etiqueto ERROR — la parada fue correcta pero el diagnostico habria mandado a revisar el token en lugar del saldo. Ahora `clasificarBloqueo` lee el codigo tambien del texto y separa cuatro causas que se parecen y no se arreglan igual: 401 credencial, 402 saldo, 403 plan, 429 espera, con solo la ultima reintentable y aun asi sin bucle. La matriz gana dos etiquetas para no confundir medir con inferir: REQUIERE_CREDITOS para las tres capacidades que sirve el endpoint probado, NO_PROBADO para las siete que no se llegaron a pedir. `observarX` traduce X al mismo contrato comun que YouTube —un post y un video son PublicationObservation con platformId distinto— y un bloqueo detiene la secuencia conservando lo ya leido. No se toco `xAdapter.js`, que tenia trabajo sin commitear de la linea de Media. 891 pruebas, 0 fallos. Nueva §18-quatervicies. |
 | 2026-08-27 | SOCIAL-PROVIDER-EVAL-01 | Evaluacion de las vias reales para observar candidatos que no administramos en las cuatro plataformas pendientes. El hallazgo que reordena todo: «requiere autorizacion» eran dos cosas distintas —que la plataforma revise NUESTRA app, que es trabajo nuestro, y que el observado nos de permiso, que es imposible en inteligencia electoral—. Separarlas cambio el diagnostico de TikTok: no falta un permiso que pedir, es que ningun programa cubre el caso de uso. Matriz de 60 casillas con siete estados DERIVADOS de estado + verificacion + requisito, con un test que comprueba celda por celda que no hay etiqueta paralela desincronizada. Al precisarla salieron dos correcciones hacia peor: las menciones de YouTube son alcanzables hoy con la credencial que ya tenemos —resulta que es la unica plataforma donde lo son— y las metricas de TikTok pasan a REQUIERE_PROVEEDOR. Los dos tests que afirmaban lo anterior se reescribieron hacia un invariante mas fuerte: ninguna celda puede llamarse MEDIDO sin haberse medido. Adapter de X completo con la misma forma que el de YouTube, que sin credencial NO hace ni una peticion —no es que falle: no lo intenta, y hay un test por funcion contando llamadas—. Repost y cita separados, `impression_count` ausente marcado NO_INCLUIDA_POR_LA_API y no 0, la marca de verificado declarada explicitamente como no evidencia porque es una suscripcion de pago, y 403 distinguido de 429 porque uno se resuelve contratando y el otro esperando. `COSTE_POR_LLAMADA` en null: el precio depende del plan y estimarlo seria una linea de presupuesto inventada. `docs/SOCIAL-PROVIDER-EVAL.md` con shortlist de seis proveedores, ninguno contactado, todos los precios null y dos criterios eliminatorios: sin derechos de almacenamiento no hay modelo longitudinal, y sin URL canonica se incumple evidence-first. 842 pruebas, 0 fallos, cero llamadas reales. Nueva §18-tervicies. |
 | 2026-08-27 | P-CAND-03 Prueba real | Primera observacion REAL de plataforma: 3 unidades de cuota de 10.000. Se anaden al adapter existente `resolverCanalPorHandle`, `listarSubidas` y `resolverVideos` —las tres piezas que faltaban— en lugar de escribir un segundo cliente de YouTube. La via cuesta 3 unidades frente a las 100 de `search.list`, y sobre todo no interpreta nada: `forHandle` devuelve el canal de ESE handle o ninguno, mientras que buscar el nombre habria sido aceptar el criterio de relevancia de un buscador como evidencia de identidad. Canal resuelto con 26 suscriptores y 3 publicaciones con views, likes y comentarios reales; un `commentCount = 0` que es dato disponible y no `null`. Cross-link real ejecutado: sin web declarada, la unica fuente legible era Facebook, que responde 200 y no entrega ni un `href` porque se rellena con JavaScript. La ausencia de cross-links no es ausencia de identidad y se declara asi. Corregida la guarda de anticircularidad, que elegia el origen por una bandera mas laxa que el propio veredicto del resolvedor. Y dos defectos propios que encontro la prueba real: tres dimensiones de presencia mostraban 0 donde debia haber `null` —«miramos y no hay» en lugar de «no hay nada que mirar»—, y el historico decia «sin observaciones» teniendo nueve snapshots de metricas. Matriz de 60 celdas donde cada una declara si es medida o solo documentada: solo YouTube esta medida. Las dos cuentas de Instagram intactas. Observar YouTube NO ascendio su cuenta, que es el comportamiento correcto. 805 pruebas, 0 fallos. Nueva §18-duovicies. |

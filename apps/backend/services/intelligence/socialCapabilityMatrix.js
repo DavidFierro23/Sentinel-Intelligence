@@ -206,9 +206,22 @@ export function celdaDe(cap) {
       return ESTADOS_CELDA.REQUIERE_APP_REVIEW;
     }
 
-    return cap.verificacion === VERIFICACION.MEDIDO_EN_PRODUCCION
-      ? ESTADOS_CELDA.MEDIDO
-      : ESTADOS_CELDA.OFICIAL_DISPONIBLE;
+    if (cap.verificacion === VERIFICACION.MEDIDO_EN_PRODUCCION) {
+      return ESTADOS_CELDA.MEDIDO;
+    }
+
+    /*
+      Existe, tenemos con que pedirlo y NO se pidio. Distinto de
+      OFICIAL_DISPONIBLE, que se reserva para lo que solo consta
+      en la documentacion de una plataforma que no hemos tocado.
+      Aqui el acceso funciona y esta capacidad concreta sigue sin
+      comprobarse.
+    */
+    if (cap.verificacion === VERIFICACION.NO_VERIFICADO) {
+      return ESTADOS_CELDA.NO_PROBADO;
+    }
+
+    return ESTADOS_CELDA.OFICIAL_DISPONIBLE;
   }
 
   /* REQUIERE_AUTORIZACION: depende de QUIEN tiene que autorizar. */
@@ -280,6 +293,8 @@ const NOPE = ESTADOS_CAPACIDAD.NO_DISPONIBLE;
 const PROV = ESTADOS_CAPACIDAD.REQUIERE_PROVEEDOR_EXTERNO;
 
 const MEDIDO = VERIFICACION.MEDIDO_EN_PRODUCCION;
+
+const NOVER = VERIFICACION.NO_VERIFICADO;
 const DOC = VERIFICACION.DOCUMENTADO;
 
 
@@ -665,8 +680,8 @@ const X = {
 
   programasDeAcceso: [
     "Portal de desarrolladores de X: crear proyecto y app, obtener bearer token. HECHO.",
-    "Cargar saldo o contratar un plan: la cuenta esta en Pay-Per-Use y devuelve 402. PENDIENTE.",
-    "El archivo completo pertenece a los niveles superiores."
+    "Cargar saldo en la cuenta Pay-Per-Use. HECHO: el 402 desaparecio y las dos llamadas devolvieron 200.",
+    "El archivo completo (`search/all`) pertenece a los niveles superiores y sigue fuera."
   ],
 
   /*
@@ -696,67 +711,143 @@ const X = {
   medicionReal: {
     gate: "X-REAL-01",
     fecha: "2026-08-28",
-    endpoint: "GET /2/users/by/username",
-    httpStatus: 402,
-    requests: 1,
+    requests: 2,
     reintentos: 0,
-    credencial: "aceptada: un token invalido devuelve 401, no 402",
-    conclusion: "X_API_CREDENTIAL_OK_BUT_BILLING_BLOCKED"
+
+    endpoints: [
+      { endpoint: "GET /2/users/by/username", httpStatus: 200 },
+      { endpoint: "GET /2/users/:id/tweets", httpStatus: 200 }
+    ],
+
+    conclusion: "OPERATIVO",
+
+    /*
+      El bloqueo anterior y su resolucion, conservados: sin esto
+      se perderia la unica prueba de que un 402 significaba saldo
+      y no credencial.
+    */
+    historial: [
+      {
+        fecha: "2026-08-28",
+        httpStatus: 402,
+        conclusion: "X_API_CREDENTIAL_OK_BUT_BILLING_BLOCKED",
+        nota: "Pay-Per-Use con saldo cero. Se resolvio cargando credito; la credencial nunca fue el problema."
+      }
+    ],
+
+    /*
+      -----------------------------------------------------------
+      LO QUE APRENDIO LA MEDICION
+      -----------------------------------------------------------
+
+      Las dos metricas que estaban en duda LLEGARON:
+      `impression_count` y `bookmark_count`, en las cinco
+      publicaciones. No hizo falta un nivel superior.
+
+      Y aparecio un aviso que importa mas que las cifras: TRES DE
+      LAS CINCO publicaciones eran retweets. En un retweet, X
+      devuelve `like_count: 0`, `reply_count: 0` y `quote_count:
+      0` —las reacciones pertenecen al post original, no al acto
+      de republicar— mientras `retweet_count` y `impression_count`
+      si traen valor.
+
+      Promediar retweets con publicaciones propias hunde
+      cualquier media de interaccion y haria parecer inactiva a
+      una cuenta que solo amplifica mucho. `normalizarPost` marca
+      `esRepost`, `esCita` y `esRespuesta` a partir de
+      `referenced_tweets`: el filtro existe y hay que usarlo
+      ANTES de cualquier promedio.
+      -----------------------------------------------------------
+    */
+    avisoRetweets:
+      "En un retweet, likes, replies y quotes valen 0 porque las reacciones son del post original. No se pueden promediar con publicaciones propias: usar `esRepost` para separarlos.",
+
+    metricasConfirmadas: [
+      "like_count",
+      "retweet_count",
+      "reply_count",
+      "quote_count",
+      "impression_count",
+      "bookmark_count"
+    ],
+
+    noCapturadoPorNuestroNormalizador: [
+      "listed_count: X puede devolverlo en public_metrics y nuestro normalizador no lo mapea. No es que la API no lo de."
+    ]
   },
 
   capacidades: {
     identidad: c(
       DISP,
       MEDIDO,
-      "users/by/username: resuelve handle -> id SIN autorizacion del titular. PROBADO en X-REAL-01: HTTP 402, cerrado por saldo",
-      REQUISITOS.CREDITOS
+      "users/by/username resuelve handle -> id SIN autorizacion del titular. MEDIDO: HTTP 200",
+      REQUISITOS.CREDENCIAL
     ),
     cuenta: c(
       DISP,
       MEDIDO,
-      "lo sirve el mismo endpoint que la identidad. PROBADO: HTTP 402",
-      REQUISITOS.CREDITOS
+      "nombre, descripcion y fecha de creacion, del mismo endpoint. MEDIDO: HTTP 200",
+      REQUISITOS.CREDENCIAL
     ),
     followers: c(
       DISP,
       MEDIDO,
-      "public_metrics.followers_count, del mismo endpoint. PROBADO: HTTP 402",
-      REQUISITOS.CREDITOS
+      "followers_count, following_count y tweet_count. MEDIDO: HTTP 200. `listed_count` no lo mapea nuestro normalizador",
+      REQUISITOS.CREDENCIAL
     ),
     publicaciones: c(
       DISP,
-      DOC,
-      "users/:id/tweets. NO PROBADO: la secuencia se detuvo en la primera llamada",
-      REQUISITOS.CREDITOS
+      MEDIDO,
+      "users/:id/tweets. MEDIDO: HTTP 200, muestra de 5 publicaciones con fecha y URL canonica",
+      REQUISITOS.CREDENCIAL
     ),
     views: c(
       DISP,
-      DOC,
-      "public_metrics.impression_count. NO PROBADO. Su disponibilidad para terceros sigue sin comprobarse: hace falta saldo para llegar hasta ahi",
-      REQUISITOS.CREDITOS
+      MEDIDO,
+      "impression_count. MEDIDO: llego en las cinco publicaciones de un tercero. Era la duda principal y quedo resuelta",
+      REQUISITOS.CREDENCIAL
     ),
-    likes: c(DISP, DOC, "public_metrics.like_count. NO PROBADO", REQUISITOS.CREDITOS),
-    comments: c(DISP, DOC, "public_metrics.reply_count. NO PROBADO", REQUISITOS.CREDITOS),
+    likes: c(
+      DISP,
+      MEDIDO,
+      "like_count. MEDIDO. OJO: en un retweet vale 0 porque las reacciones son del post original",
+      REQUISITOS.CREDENCIAL
+    ),
+    comments: c(
+      DISP,
+      MEDIDO,
+      "reply_count. MEDIDO. En un retweet vale 0 por el mismo motivo",
+      REQUISITOS.CREDENCIAL
+    ),
     shares: c(
       DISP,
-      DOC,
-      "retweet_count y quote_count, SEPARADOS: republicar y citar no son el mismo acto. NO PROBADO",
-      REQUISITOS.CREDITOS
+      MEDIDO,
+      "retweet_count y quote_count, SEPARADOS: republicar y citar no son el mismo acto. MEDIDOS los dos",
+      REQUISITOS.CREDENCIAL
     ),
     menciones: c(
       DISP,
-      DOC,
-      "search/recent por mencion. Es la capacidad que ninguna otra plataforma ofrece para terceros. NO PROBADO: no se llego a ejecutar",
-      REQUISITOS.CREDITOS
+      NOVER,
+      "search/recent por mencion. La capacidad que ninguna otra plataforma ofrece para terceros. NO SE PROBO: quedaba fuera del presupuesto de este gate",
+      REQUISITOS.CREDENCIAL
     ),
-    busqueda: c(DISP, DOC, "search/recent cubre 7 dias. NO PROBADO", REQUISITOS.CREDITOS),
+    busqueda: c(
+      DISP,
+      NOVER,
+      "search/recent cubre 7 dias. NO SE PROBO",
+      REQUISITOS.CREDENCIAL
+    ),
     historico: c(
       AUTZ,
       DOC,
       "search/all da archivo completo y pertenece a los niveles superiores. No es cuestion de saldo sino de nivel: aunque hubiera credito, este endpoint seguiria fuera",
       REQUISITOS.PLAN_PAGO
     ),
-    url_verificable: c(DISP, DOC, "x.com/handle/status/ID es canonica y se construye sin API")
+    url_verificable: c(
+      DISP,
+      MEDIDO,
+      "x.com/handle/status/ID. MEDIDA: las cinco URLs se construyeron y quedaron persistidas como evidencia"
+    )
   },
 
   rutaConcreta: [

@@ -399,19 +399,38 @@ await t("app review y autorizacion del titular NO se confunden", () => {
 });
 
 /*
-  Corregido con la medicion de X-REAL-01. Antes se decia «detras
-  de un plan de pago»; la llamada real devolvio 402, asi que el
-  plan existe y lo que falta es saldo. Y de las doce capacidades,
-  solo tres se probaron: el resto es NO_PROBADO.
+  Tercera version de este test, y las tres veces por la misma
+  razon: la realidad se midio y cambio la respuesta. Primero se
+  supuso «detras de un plan»; luego se midio un 402 y resulto ser
+  saldo; despues se cargo credito y quedo OPERATIVO.
+
+  Lo que se comprueba ahora es lo que de verdad importa para el
+  benchmark: X entrega metricas de publicaciones de TERCEROS sin
+  autorizacion del titular, que es lo que ninguna otra plataforma
+  del grupo hace.
 */
-await t("X esta cerrado por saldo, no por falta de plan", () => {
+await t("X entrega metricas de terceros sin autorizacion del titular", () => {
   const xp = scm.PLATAFORMAS.find((p) => p.plataformaId === "x");
 
-  const cerradas = Object.values(xp.capacidades).filter((c) =>
-    ["REQUIERE_CREDITOS", "NO_PROBADO"].includes(scm.celdaDe(c))
+  const medidas = ["publicaciones", "views", "likes", "comments", "shares"].filter(
+    (k) => scm.celdaDe(xp.capacidades[k]) === "MEDIDO"
   );
 
-  return cerradas.length >= 10 && xp.medicionReal.httpStatus === 402;
+  return (
+    medidas.length === 5 &&
+    xp.terceros === true &&
+    xp.autorizacionDelTitular === false &&
+    xp.medicionReal.conclusion === "OPERATIVO"
+  );
+});
+
+await t("y el aviso de retweets viaja con la medicion", () => {
+  const xp = scm.PLATAFORMAS.find((p) => p.plataformaId === "x");
+
+  return (
+    xp.medicionReal.avisoRetweets.includes("no se pueden promediar") ||
+    xp.medicionReal.avisoRetweets.includes("No se pueden promediar")
+  );
 });
 
 await t("TikTok entero exige proveedor externo", () => {
