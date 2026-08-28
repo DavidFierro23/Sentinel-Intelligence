@@ -5193,6 +5193,108 @@ dentro del mensaje de error.
 
 ---
 
+## 18-duodetricies. META-PUBLIC-ACCESS-01 (2026-08-28)
+
+Commit `docs(candidate): assess official Meta public access`.
+
+**975 comprobaciones, 24 suites, 0 fallos.** Gate documental: cero requests
+reales, cero tokens generados, nada configurado en Meta.
+
+Detalle completo con fuentes en `docs/META-PUBLIC-ACCESS.md`.
+
+### La cadena, confirmada con documentacion oficial
+
+> Para leer a un tercero hace falta **Advanced Access**; Advanced Access exige
+> **Business Verification**; y el endpoint que sirve a terceros vive en el flujo
+> de **Facebook Login**, no en el que tenemos.
+
+Los tres eslabones estan documentados y ninguno es opcional.
+
+### Lo demostrado
+
+El error 190 de META-IG-REAL-01 queda explicado con fuente: la referencia
+oficial de `business_discovery` exige un **Facebook User access token**, y
+nuestro token es de Instagram Login. `Cannot parse access token` es literalmente
+eso — el host no sabe leer un token que no es suyo—, no una credencial invalida.
+
+### Lo documentado, que no es lo mismo que medido
+
+`business_discovery` **sigue vigente** y devolveria de un tercero: `username`,
+`name`, `followers_count`, `media_count`, `media`, y `like_count`,
+`comments_count` y `view_count` por publicacion.
+
+**No** devolveria `reach`, `impressions`, `saved` ni `shares`: no aparecen
+documentados para terceros. Los cinco insights que obtuvimos de nuestra cuenta
+son `OWNER_INSIGHT` y no existirian para un candidato.
+
+`Page Public Content Access` tambien sigue vigente, y Meta lista explicitamente
+como caso admitido «analizar o mostrar publicaciones e interaccion en Paginas»,
+que es literalmente lo nuestro.
+
+### La respuesta que decide la cobertura
+
+| Plataforma | Tipo de cuenta | ¿Via oficial sin autorizacion? |
+|---|---|---|
+| Instagram | Business / Creator | **si**, con la cadena completa |
+| Instagram | **personal** | **NO** |
+| Facebook | **Pagina** | **si**, con PPCA |
+| Facebook | **perfil personal** | **NO** |
+
+Y el candidato patron tiene **perfil personal** de Facebook. Por la via oficial
+de Meta es inalcanzable, hoy y despues de cualquier revision. Esto no se arregla
+con dinero ni con tiempo: es una decision de producto de Meta.
+
+### Lo no demostrado
+
+Nada se probo contra la red. `PRUEBA_REAL_NO_EJECUTADA — REQUIERE CONFIGURACION
+PREVIA`: no tenemos el tipo de token que exige `business_discovery`, y probar a
+ciegas habria gastado una llamada para confirmar lo que la documentacion ya
+dice.
+
+### La regla, ahora ejecutable
+
+META-IG-REAL-01 enseno lo facil que es que una plataforma ascienda sola. Este
+gate anade el riesgo contrario: documentar lo que Meta PODRIA dar y que eso
+cuente como capacidad.
+
+`habilitaBenchmark(plataformaId)` responde con una funcion en lugar de una
+convencion:
+
+    youtube    habilita=true    9 capacidades sobre terceros
+    x          habilita=true    9 capacidades sobre terceros
+    instagram  habilita=false   solo 8 sobre nuestra propia cuenta
+    facebook   habilita=false   ninguna
+    tiktok     habilita=false   ninguna
+
+Ni medir lo propio ni leer la documentacion habilitan. Solo `MEDIDO_TERCERO`.
+
+### Recomendacion: RUTA HIBRIDA
+
+- **Seguir con Meta oficial** para cuentas **profesionales**: la via existe, es
+  legitima y no cuesta licencia.
+- **Evaluar proveedor comercial** solo para lo que la via oficial no cubre
+  —cuentas y perfiles personales—, con presupuesto en mano y no antes.
+- **No bloquear** el benchmark esperando a Meta: YouTube y X ya lo sostienen sin
+  revision ni verificacion.
+
+### El dato que falta antes de invertir semanas
+
+Cuantos de los siete candidatos usan cuenta **profesional** y cuantos
+**personal**, en Instagram y en Facebook. Si la mayoria son personales, la via
+oficial rinde poco y la conversacion se vuelve sobre proveedor. Ese recuento
+cuesta minutos y cambia la decision.
+
+### Riesgos
+
+- **El coste no es dinero, es dependencia.** App Review y Business Verification
+  los concede Meta y pueden denegarse o cambiar de criterio. No se afirma que
+  vayan a aprobarse: aqui solo se evalua viabilidad.
+- **Lo obtenible de un tercero es bastante menos** que lo visto en la cuenta
+  propia: ni reach, ni saves, ni shares.
+- No consta cuanto tarda la revision, y no se estima.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -5335,7 +5437,10 @@ resueltos y verificados.
 | Precio real del plan de X | 🔴 `null`. Depende del plan y ha cambiado varias veces: se verifica en el portal, no se estima |
 | **Instagram cuenta propia** | 🟢 **MEDIDO_PROPIO** (§18-septemvicies): perfil, publicaciones e insights funcionando. 8 capacidades |
 | **Instagram terceros** | 🔴 **BLOQUEADO**: `business_discovery` devuelve 400/190 porque el token es de Instagram Login y el endpoint exige Facebook Login. **Instagram NO entra al benchmark multicandidato** |
-| Facebook Login for Business | 🔴 **ACCION REQUERIDA**: es el requisito real para llegar a terceros en Instagram. Pagina vinculada + App Review + Business Verification |
+| Facebook Login for Business | 🔴 **ACCION REQUERIDA** y **confirmada con documentacion oficial** (§18-duodetricies): `business_discovery` exige Facebook User access token, Advanced Access, App Review y Business Verification |
+| **Cuentas personales en Meta** | 🔴 **INALCANZABLES POR VIA OFICIAL**, ni ahora ni tras la revision. Afecta al candidato patron, que tiene perfil personal de Facebook |
+| Recuento profesional vs personal de los 7 candidatos | 🔴 **dato que falta antes de invertir en App Review**. Si la mayoria son personales, la via oficial rinde poco |
+| `habilitaBenchmark()` | 🟢 la regla MEDIDO_TERCERO es ahora una funcion, no una convencion |
 | REELS de Instagram | 🔴 `NO_PROBADO`: las cinco publicaciones de la muestra eran IMAGE |
 | Instagram Business Discovery | 🟡 **via identificada y medida como bloqueada**. Aun consiguiendola, solo alcanza cuentas PROFESIONALES: un candidato con perfil personal seguiria fuera |
 | Facebook Page Public Content Access | 🟡 **via identificada** para paginas. Los PERFILES personales no los abre ningun permiso, y el candidato patron tiene perfil |
@@ -5676,6 +5781,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-28 | META-PUBLIC-ACCESS-01 | Gate documental sobre la via oficial de Meta para terceros: cero requests, cero tokens, nada configurado. Confirmada con documentacion oficial la cadena completa —Advanced Access exige Business Verification, y `business_discovery` exige un Facebook User access token con Pagina vinculada, permisos y App Review—, lo que explica con fuente el error 190 del gate anterior: el host no sabe leer un token que no es suyo. Documentado lo que `business_discovery` SI devolveria de un tercero —username, name, followers_count, media_count, media, likes, comments y view_count— y lo que NO: reach, impressions, saved y shares no aparecen para terceros, asi que los cinco insights que obtuvimos de nuestra cuenta no existirian para un candidato. Page Public Content Access sigue vigente y Meta lista «analizar publicaciones e interaccion en Paginas» como caso admitido. La respuesta que decide la cobertura: las cuentas personales de Instagram y los perfiles personales de Facebook son inalcanzables por via oficial, y el candidato patron tiene precisamente un perfil personal. Prueba real NO ejecutada por decision: no tenemos el tipo de token requerido y probar a ciegas habria gastado una llamada para confirmar lo que la documentacion ya dice. Se anade `habilitaBenchmark()`, que convierte en funcion la regla de que solo MEDIDO_TERCERO habilita: ni medir la cuenta propia ni documentar la via de Meta ascienden una plataforma. Recomendacion: ruta hibrida, con el recuento de cuentas profesionales frente a personales como el dato que falta antes de invertir semanas en App Review. 975 pruebas, 0 fallos. Nueva §18-duodetricies y `docs/META-PUBLIC-ACCESS.md`. |
 | 2026-08-28 | META-IG-REAL-01 | Primera prueba real de Instagram con la app propia y una cuenta profesional conectada. Cuatro requests, cero reintentos. La etapa A salio entera: perfil con los ocho campos pedidos, cinco publicaciones con permalink y timestamp, y los cinco insights —reach, saved, shares, total_interactions, views— devueltos sin excepcion. La etapa B se bloqueo: `business_discovery` respondio 400 con codigo 190, «Cannot parse access token». Leido literalmente eso manda a regenerar el token, y seria perder la tarde: el mismo token acababa de funcionar tres veces contra el otro host. El sintoma dice credencial y la causa es flujo — el token es de Instagram Login y ese endpoint solo acepta Facebook Login—, asi que se clasifica NO_SOPORTADO_POR_ESTA_CONFIGURACION con el requisito exacto que falta. El hallazgo de fondo fue otro: que nuestra cuenta respondiera a todo habria puesto Instagram en MEDIDO con la matriz anterior, y lo habria dejado entrar al benchmark multicandidato siendo falso, porque ninguno de los siete candidatos nos va a dar un token. La matriz ahora separa MEDIDO_PROPIO de MEDIDO_TERCERO en las cinco plataformas: Instagram tiene 8 propias y 0 de terceros; YouTube y X tienen 9 de terceros cada uno. Cada metrica declara ademas si es PUBLIC_METRIC u OWNER_INSIGHT, porque los cinco insights obtenidos no existirian para el Instagram de un candidato. No se persistio nada: `vocero593_` no es un candidato y meter sus publicaciones en el corpus habria contaminado el expediente. Cuatro tests dedicados a que el token no se filtre, incluido el caso en que Meta devuelve la peticion entera dentro del error. 967 pruebas, 0 fallos. Nueva §18-septemvicies. |
 | 2026-08-28 | P-CAND-BENCH-01 | Primera linea base real T0 de los siete candidatos del proyecto, en X y YouTube. 10 requests de X y 6 unidades de YouTube: exactamente lo planificado. Lloret no se volvio a observar —sus datos eran de horas antes y repetirlos habria costado 5 llamadas para no aprender nada—, asi que su T0 son las observaciones de X-REAL-01 y P-CAND-03 con sus instantes reales. La regla de los retweets, aplicada a siete candidatos, dejo ver tres perfiles que una media unica habria borrado: Marcelo Cabrera republica 4 de 5 y no tiene rendimiento propio que medir —«—», no 0—; Pedro Palacios responde 4 de 5, que es conversacion y no publicacion; y solo Vega y Yaku tienen originales suficientes para comparar. La cobertura se expresa «2/5 plataformas objetivo medidas» y no en porcentaje, porque un 40 % supondria que las cinco plataformas pesan igual y no hay metodologia que lo sostenga. Cinco de siete candidatos quedan PARCIALMENTE_COMPARABLE: compararlos globalmente los perjudicaria por un hueco nuestro. Un defecto propio que encontro el expediente real: las publicaciones anteriores al contrato no traen `tipoPublicacion`, y `undefined` no es NO_DETERMINADO, asi que las cinco de Lloret se contaban en el total y desaparecian del desglose mostrando `orig: 0` —que se lee como «no publica nada propio»—. Ahora los buckets suman siempre el total y se declara que la columna esta vacia por desconocimiento. Tambien aparecio que Paul Carrasco tiene un channelId y no un handle, y que Yaku devolvio 4 publicaciones y no 5: el tamano de muestra se declara por candidato. Sin IPID, sin ranking, sin ganador: las observaciones son por plataforma y momentum es HISTORICO_INSUFICIENTE. 933 pruebas, 0 fallos. Nueva §18-sexvicies. |
 | 2026-08-28 | X-REAL-01 reanudado | Cargado el credito, se reanudo la prueba donde quedo el 402. Dos llamadas, dos HTTP 200: perfil real con 29.413 seguidores y cinco publicaciones con seis metricas cada una. Las dos que estaban en duda —`impression_count` y `bookmark_count`— llegaron, y no hizo falta un nivel superior. El hallazgo con mas consecuencias no fue una cifra sino un detalle de contrato: tres de las cinco publicaciones eran retweets, y en un retweet X devuelve likes, replies y quotes a 0 porque las reacciones pertenecen al post original. No son ceros reales de la cuenta. Con esta misma muestra la media de likes pasa de 76 a 190 al filtrar los retweets: dos veces y media de diferencia, y el riesgo concreto para el benchmark multicandidato. `normalizarPost` ya marca `esRepost` desde `referenced_tweets`, y el aviso viaja dentro de la medicion para que no se olvide. El Lake guarda ahora 8 publicaciones del mismo candidato —3 de YouTube y 5 de X— en el mismo contrato y con 39 snapshots: que un post y un video sean la misma cosa con platformId distinto deja de ser una afirmacion y pasa a estar medido. Las 24 series quedan en HISTORICO_INSUFICIENTE y no se hizo una segunda llamada para fabricar dos puntos. Nueve de doce capacidades de X medidas; menciones y busqueda siguen NO_PROBADO por presupuesto, y no se llaman disponibles por no haberse intentado. El 402 anterior se conserva en el historial de la medicion. 897 pruebas, 0 fallos. Nueva §18-quinvicies. |

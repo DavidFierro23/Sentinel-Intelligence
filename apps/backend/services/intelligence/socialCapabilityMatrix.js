@@ -270,10 +270,11 @@ export function celdaDe(cap) {
   }
 
   /* REQUIERE_AUTORIZACION: depende de QUIEN tiene que autorizar. */
-  if (
-    cap.requisito === REQUISITOS.APP_REVIEW ||
-    cap.requisito === REQUISITOS.BUSINESS_VERIFICATION
-  ) {
+  if (cap.requisito === REQUISITOS.BUSINESS_VERIFICATION) {
+    return ESTADOS_CELDA.REQUIERE_BUSINESS_VERIFICATION;
+  }
+
+  if (cap.requisito === REQUISITOS.APP_REVIEW) {
     return ESTADOS_CELDA.REQUIERE_APP_REVIEW;
   }
 
@@ -552,6 +553,46 @@ const FACEBOOK = {
   autenticacion:
     "Token de app con Page Public Content Access para terceros; token de la pagina si es propia.",
 
+  viaOficialTerceros: {
+    existe: true,
+    feature: "Page Public Content Access",
+    estado: "vigente: no aparece deprecado ni renombrado",
+
+    accesoRequerido: "Advanced Access",
+    appReview: true,
+    businessVerification: true,
+
+    casoDeUsoAdmitido:
+      "analizar o mostrar publicaciones e interaccion en Paginas: Meta lo lista explicitamente",
+
+    enModoDesarrollo:
+      "solo alcanza Paginas de administradores, desarrolladores o testers de la app",
+
+    perfilPersonal: {
+      alcanzable: false,
+      motivo:
+        "ninguna via oficial abre un perfil personal de Facebook. Y el candidato patron tiene perfil, no Pagina."
+    },
+
+    devuelveDeTerceros: [
+      "identidad y nombre de la Pagina",
+      "fan_count",
+      "posts / feed",
+      "videos",
+      "comentarios publicos"
+    ],
+
+    noDevuelveDeTerceros: [
+      "reacciones y shares: no documentados como accesibles por PPCA",
+      "reels: no documentado",
+      "video views e insights: son PAGE-ADMIN DATA, exigen token de administrador",
+      "cualquier campo que incluya informacion de usuarios exige Page access token"
+    ],
+
+    documentado: "2026-08-28",
+    fuente: "docs/META-PUBLIC-ACCESS.md"
+  },
+
   programasDeAcceso: [
     "Meta for Developers: crear app y solicitar App Review del permiso Page Public Content Access.",
     "Business Verification de la empresa.",
@@ -798,6 +839,58 @@ const INSTAGRAM = {
     busqueda: c(NOPE, DOC, "sin busqueda publica por API"),
     historico: c(NOPE, DOC, "ninguna via entrega serie temporal"),
     url_verificable: c(DISP, DOC, "instagram.com/p/ID es canonica")
+  },
+
+  /*
+    Lo DOCUMENTADO en META-PUBLIC-ACCESS-01, que es distinto de
+    lo medido. Ver docs/META-PUBLIC-ACCESS.md para las fuentes.
+  */
+  viaOficialTerceros: {
+    existe: true,
+    endpoint: "GET graph.facebook.com/{nuestro-ig-user-id}?fields=business_discovery.username(OBJETIVO){...}",
+    tokenRequerido: "Facebook User access token",
+    flujoRequerido: "Instagram API con Facebook Login for Business",
+    paginaVinculada: true,
+
+    permisos: [
+      "instagram_basic",
+      "instagram_manage_insights",
+      "pages_read_engagement",
+      "ads_management o ads_read si el rol vino por Business Manager"
+    ],
+
+    accesoRequerido: "Advanced Access",
+    appReview: true,
+    businessVerification: true,
+
+    tiposDeCuentaAlcanzables: ["BUSINESS", "CREATOR"],
+
+    /*
+      La respuesta que decide la cobertura del producto.
+    */
+    cuentaPersonal: {
+      alcanzable: false,
+      motivo:
+        "business_discovery solo soporta cuentas Business o Creator. Una cuenta personal no es alcanzable por ninguna via oficial, ni ahora ni despues de la revision."
+    },
+
+    devuelveDeTerceros: [
+      "username",
+      "name",
+      "followers_count",
+      "media_count",
+      "media",
+      "like_count y comments_count por publicacion",
+      "view_count en media"
+    ],
+
+    noDevuelveDeTerceros: [
+      "reach, impressions, saved, shares: no aparecen documentados para terceros, son OWNER_INSIGHT",
+      "histórico: ninguna API entrega serie temporal; la construye Sentinel con snapshots"
+    ],
+
+    documentado: "2026-08-28",
+    fuente: "docs/META-PUBLIC-ACCESS.md"
   },
 
   rutaConcreta: [
@@ -1079,6 +1172,10 @@ export function matrizDeCapacidades() {
       autenticacion: p.autenticacion || null,
       programasDeAcceso: p.programasDeAcceso || [],
       medicionReal: p.medicionReal || null,
+      viaOficialTerceros: p.viaOficialTerceros || null,
+
+      /* La regla, resuelta, para que la interfaz no la reinvente. */
+      benchmark: habilitaBenchmark(p.plataformaId),
       apisEvaluadas: p.apisEvaluadas || null,
       credencial: p.credencial || null,
 
@@ -1154,8 +1251,66 @@ export function capacidad(plataformaId, capacidadId) {
 }
 
 
+/*
+===========================================================
+QUE HABILITA EL BENCHMARK MULTICANDIDATO
+===========================================================
+
+La regla, escrita como funcion en lugar de como convencion.
+
+META-IG-REAL-01 enseno lo facil que es equivocarse: Instagram
+respondio a todo sobre nuestra cuenta y, con la matriz de
+entonces, habria entrado al benchmark. META-PUBLIC-ACCESS-01
+anadio documentacion oficial sobre lo que Instagram PODRIA dar de
+terceros — y documentar tampoco habilita.
+
+    Solo MEDIDO_TERCERO habilita. Ni medir lo propio, ni leer la
+    documentacion de Meta.
+
+Mientras esto sea una funcion y no una costumbre, nadie puede
+saltarselo sin verlo.
+===========================================================
+*/
+export function habilitaBenchmark(plataformaId) {
+  const p = PLATAFORMAS.find((x) => x.plataformaId === plataformaId);
+
+  if (!p) {
+    return {
+      habilita: false,
+      motivo: `plataforma ${plataformaId} no contemplada en la matriz`
+    };
+  }
+
+  const terceros = Object.entries(p.capacidades).filter(
+    ([, c]) => celdaDe(c) === ESTADOS_CELDA.MEDIDO
+  );
+
+  const propias = Object.values(p.capacidades).filter(
+    (c) => celdaDe(c) === ESTADOS_CELDA.MEDIDO_PROPIO
+  );
+
+  if (terceros.length) {
+    return {
+      habilita: true,
+      capacidades: terceros.map(([k]) => k),
+      motivo: `${terceros.length} capacidad(es) medidas sobre cuentas que no controlamos`
+    };
+  }
+
+  return {
+    habilita: false,
+    capacidades: [],
+    medidasSobreCuentaPropia: propias.length,
+    motivo: propias.length
+      ? `Solo hay mediciones sobre nuestra propia cuenta (${propias.length}). Ningun candidato nos va a dar un token, asi que eso no sirve para observarlos.`
+      : "No hay ninguna capacidad medida sobre terceros."
+  };
+}
+
+
 export default {
   ESTADOS_CAPACIDAD,
+  habilitaBenchmark,
   VERIFICACION,
   ALCANCES,
   CAPACIDADES,

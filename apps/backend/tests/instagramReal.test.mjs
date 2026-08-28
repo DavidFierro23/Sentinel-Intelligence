@@ -525,6 +525,88 @@ await t("la ruta concreta separa lo hecho de lo pendiente", () => {
 });
 
 
+/*
+===========================================================
+6 · META-PUBLIC-ACCESS-01: DOCUMENTAR NO ES MEDIR
+===========================================================
+*/
+bloque("la documentacion no habilita el benchmark");
+
+await t("la regla es una funcion, no una convencion", () => {
+  return typeof scm.habilitaBenchmark === "function";
+});
+
+await t("YouTube y X habilitan; Instagram, Facebook y TikTok no", () => {
+  return (
+    scm.habilitaBenchmark("youtube").habilita === true &&
+    scm.habilitaBenchmark("x").habilita === true &&
+    scm.habilitaBenchmark("instagram").habilita === false &&
+    scm.habilitaBenchmark("facebook").habilita === false &&
+    scm.habilitaBenchmark("tiktok").habilita === false
+  );
+});
+
+await t("y explica que medir la cuenta propia no cuenta", () => {
+  const b = scm.habilitaBenchmark("instagram");
+
+  return (
+    b.medidasSobreCuentaPropia === 8 &&
+    b.motivo.includes("Ningun candidato nos va a dar un token")
+  );
+});
+
+/*
+  El riesgo concreto de este gate: documentar la via oficial de
+  Meta y que eso, por si solo, ascienda la plataforma.
+*/
+await t("documentar la via de terceros NO asciende Instagram", () => {
+  const i = scm.PLATAFORMAS.find((p) => p.plataformaId === "instagram");
+
+  return (
+    i.viaOficialTerceros.existe === true &&
+    scm.habilitaBenchmark("instagram").habilita === false
+  );
+});
+
+await t("la via oficial declara la cadena completa de requisitos", () => {
+  const v = scm.PLATAFORMAS.find((p) => p.plataformaId === "instagram")
+    .viaOficialTerceros;
+
+  return (
+    v.tokenRequerido === "Facebook User access token" &&
+    v.accesoRequerido === "Advanced Access" &&
+    v.appReview === true &&
+    v.businessVerification === true &&
+    v.paginaVinculada === true
+  );
+});
+
+await t("y que una cuenta personal NO es alcanzable por ninguna via", () => {
+  const ig = scm.PLATAFORMAS.find((p) => p.plataformaId === "instagram");
+
+  const fb = scm.PLATAFORMAS.find((p) => p.plataformaId === "facebook");
+
+  return (
+    ig.viaOficialTerceros.cuentaPersonal.alcanzable === false &&
+    fb.viaOficialTerceros.perfilPersonal.alcanzable === false
+  );
+});
+
+await t("los insights de terceros se declaran NO obtenibles", () => {
+  const v = scm.PLATAFORMAS.find((p) => p.plataformaId === "instagram")
+    .viaOficialTerceros;
+
+  return v.noDevuelveDeTerceros.some((x) => /reach|impressions|saved/.test(x));
+});
+
+await t("Page Public Content Access se declara vigente, no deprecado", () => {
+  const v = scm.PLATAFORMAS.find((p) => p.plataformaId === "facebook")
+    .viaOficialTerceros;
+
+  return v.feature === "Page Public Content Access" && v.estado.includes("vigente");
+});
+
+
 /* ---------------------------------------------------------
    RESULTADO
 --------------------------------------------------------- */
