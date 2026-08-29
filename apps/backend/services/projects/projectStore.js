@@ -3054,6 +3054,116 @@ completa de metricas en lugar de quedarse con la ultima.
 */
 const PREFIJO_PUBLICACION = "publicaciones-";
 
+
+/*
+===========================================================
+TIPO DE ACTIVO DECLARADO POR EL ANALISTA
+===========================================================
+
+P-CAND-ASSET-TYPE-DECLARE-01.
+
+Serie aparte, y la razon importa: la alternativa era guardar
+el tipo dentro de `cuentasReferencia`, que es donde vive la
+identidad de la cuenta. Habria funcionado, y cada vez que
+alguien clasificara un activo estaria reescribiendo el registro
+que sostiene su identidad —su URL, su handle, su estado— por
+un campo que no tiene nada que ver.
+
+Aqui una declaracion no puede alterar la identidad ni por
+accidente: son entidades distintas del Lake. Y se gana el
+historial gratis, que es lo que se quiere de una clasificacion
+hecha a mano: quien dijo que, cuando, y que dijo antes.
+
+Un lote por guardado. Al leer se conserva la ultima por
+activo, sin borrar las anteriores.
+===========================================================
+*/
+const PREFIJO_TIPO_ACTIVO = "tipoactivo-";
+
+export async function guardarDeclaracionesDeTipo(
+  proyectoId,
+  candidatoId,
+  declaraciones = [],
+  contexto = {}
+) {
+  const cuando = contexto.declaradoEn || new Date().toISOString();
+
+  const entidad = `${PREFIJO_TIPO_ACTIVO}${candidatoId}-${cuando}`;
+
+  try {
+    const r = await escribirEnLake(
+      {
+        entidad,
+        tipoEntidad: TIPO_EXPEDIENTE,
+        tenantId: TENANT,
+        proyectoId,
+        fuente: SUBMOTOR,
+        linaje: linaje("declarar_tipo_de_activo"),
+        datos: {
+          candidatoId,
+          declaradoEn: cuando,
+          declaradoPor: contexto.declaradoPor || "analista",
+          total: declaraciones.length,
+          declaraciones
+        }
+      },
+      {}
+    );
+
+    return { entidad, escrito: r?.escrito === true, total: declaraciones.length };
+  } catch (e) {
+    return { entidad, escrito: false, motivo: e?.message || "fallo de escritura" };
+  }
+}
+
+
+export async function declaracionesDeTipoDe(proyectoId, candidatoId) {
+  const lotes = await leerSerie(
+    proyectoId,
+    `${PREFIJO_TIPO_ACTIVO}${candidatoId}-`
+  );
+
+  /*
+    Del mas antiguo al mas nuevo: la ultima declaracion manda.
+    Se ordena por `declaradoEn` explicitamente en lugar de
+    confiar en el orden de `leerSerie`, que ordena por otros
+    campos de fecha que estos registros no tienen.
+  */
+  const cronologico = [...lotes].sort((x, y) =>
+    String(x.declaradoEn || "").localeCompare(String(y.declaradoEn || ""))
+  );
+
+  const vigentes = new Map();
+
+  const historial = [];
+
+  for (const lote of cronologico) {
+    for (const d of lote.declaraciones || []) {
+      if (!d?.assetId) continue;
+
+      const conFecha = {
+        ...d,
+        declaredAt: d.declaredAt || lote.declaradoEn || null
+      };
+
+      historial.push(conFecha);
+
+      vigentes.set(String(d.assetId), conFecha);
+    }
+  }
+
+  return {
+    declaraciones: [...vigentes.values()],
+    total: vigentes.size,
+    historial,
+    lotes: lotes.length,
+
+    nota: lotes.length
+      ? "Tipo declarado por el analista, no verificado contra ninguna API. Se conserva la ultima declaracion por activo y el historial completo."
+      : "Ningun activo tiene tipo declarado todavia."
+  };
+}
+
 export async function guardarPublicaciones(
   proyectoId,
   candidatoId,

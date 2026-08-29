@@ -385,11 +385,158 @@ function Medida({ titulo, valor, maximo = 100, componentes, formula, nota }) {
 }
 
 
+/*
+-----------------------------------------------------------
+ACTIVOS META — DECLARACION DE TIPO POR EL ANALISTA
+-----------------------------------------------------------
+
+El HTML publico no distingue un perfil de una pagina ni una
+cuenta Business de una personal: quedo comprobado con control
+en META-COVERAGE-AUDIT-01, donde las paginas de Meta, BBC y
+NASA salieron todas como «perfil».
+
+Una persona que abre la cuenta lo ve en un segundo. Asi que
+aqui la clasifica, y la interfaz dice en voz alta de donde
+salio el dato: DECLARADO POR ANALISTA, nunca VERIFICADO.
+-----------------------------------------------------------
+*/
+function ActivosMeta({ activos, ocupado, onDeclararTipo }) {
+  if (!activos) return null;
+
+  const deMeta = (activos.activos || []).filter(
+    (a) => a.platform === "facebook" || a.platform === "instagram"
+  );
+
+  if (!deMeta.length) return null;
+
+  const etiquetas = activos.etiquetasDeTipo || {};
+
+  const sinClasificar = deMeta.filter((a) => a.assetType === "UNKNOWN").length;
+
+  return (
+    <div style={caja}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: "10px",
+          flexWrap: "wrap"
+        }}
+      >
+        <div style={rotulo}>Activos Meta · tipo de cuenta</div>
+
+        <span style={tenue}>
+          {deMeta.length} activo(s) · {sinClasificar} sin clasificar
+        </span>
+      </div>
+
+      <div style={{ ...parrafo, marginTop: "6px" }}>
+        El tipo decide si Meta puede alcanzar la cuenta por vía oficial, y no se
+        puede leer del HTML público. Clasifícalo tú: queda registrado como
+        declaración, no como verificación.
+      </div>
+
+      {deMeta.map((a) => {
+        const declarado = a.assetTypeSource === "ANALYST_DECLARATION";
+
+        return (
+          <div
+            key={a.accountId}
+            style={{
+              marginTop: "10px",
+              paddingTop: "10px",
+              borderTop: "1px solid var(--sentinel-borde)",
+              display: "flex",
+              gap: "10px",
+              alignItems: "center",
+              flexWrap: "wrap"
+            }}
+          >
+            <span style={pill(a.platform === "facebook" ? "#1877F2" : "#E1306C")}>
+              {a.platform}
+            </span>
+
+            <span
+              style={{
+                ...tenue,
+                flex: "1 1 180px",
+                wordBreak: "break-all",
+                color: "var(--sentinel-texto)"
+              }}
+            >
+              {a.handle || a.url}
+            </span>
+
+            <select
+              aria-label={`Tipo de ${a.handle || a.url}`}
+              disabled={ocupado}
+              value={a.assetTypeDeclared || "UNKNOWN"}
+              onChange={(e) => onDeclararTipo(a.accountId, e.target.value)}
+              style={{
+                background: "var(--sentinel-primary)",
+                color: "var(--sentinel-texto)",
+                border: "1px solid var(--sentinel-borde-vivo)",
+                borderRadius: "var(--radio-s)",
+                padding: "5px 7px",
+                fontSize: "11px"
+              }}
+            >
+              {(a.tiposAdmitidos || []).map((t) => (
+                <option key={t} value={t}>
+                  {etiquetas[t] || t}
+                </option>
+              ))}
+            </select>
+
+            {/*
+              PROCEDENCIA Y VERIFICACION, SIEMPRE JUNTAS. Sin
+              esto un tipo declarado se lee dentro de un mes
+              como un tipo comprobado.
+            */}
+            {declarado ? (
+              <span style={pill("#F59E0B")}>DECLARADO POR ANALISTA</span>
+            ) : a.assetType !== "UNKNOWN" ? (
+              <span style={pill("var(--sentinel-cyan)")}>{a.assetTypeSource}</span>
+            ) : (
+              <span style={tenue}>sin clasificar</span>
+            )}
+
+            <span style={tenue}>{a.assetTypeVerification}</span>
+
+            {a.elegibilidadMeta && (
+              <span
+                style={{
+                  ...tenue,
+                  flex: "1 1 100%",
+                  fontFamily: "monospace"
+                }}
+              >
+                {a.elegibilidadMeta.estado}
+                {a.elegibilidadMeta.via ? ` · ${a.elegibilidadMeta.via}` : ""}
+              </span>
+            )}
+
+            {a.assetTypeConflicto && <Aviso texto={a.assetTypeConflicto} />}
+          </div>
+        );
+      })}
+
+      <div style={{ ...tenue, marginTop: "10px" }}>{activos.separacion}</div>
+
+      <div style={{ ...tenue, marginTop: "5px" }}>
+        {activos.elegibilidadNoEsMedicion}
+      </div>
+    </div>
+  );
+}
+
+
 export default function AccountIntelligencePanel({
   datos,
   proyecto,
   ocupado,
   onObservar,
+  onDeclararTipo,
   onCerrar
 }) {
   const [seccion, setSeccion] = useState("Resumen");
@@ -691,6 +838,14 @@ export default function AccountIntelligencePanel({
 
                   <div style={tenue}>{solidez.relacion}</div>
                 </>
+              )}
+
+              {onDeclararTipo && (
+                <ActivosMeta
+                  activos={datos.activos}
+                  ocupado={ocupado}
+                  onDeclararTipo={onDeclararTipo}
+                />
               )}
 
               {resolucion?.resumen?.multiplesPorPlataforma?.length > 0 &&

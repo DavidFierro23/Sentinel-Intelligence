@@ -1034,6 +1034,44 @@ export default function ProjectsModule() {
   };
 
   /*
+    DECLARAR EL TIPO DE UN ACTIVO META.
+
+    No sale a la red y no consume cuota: el analista esta
+    clasificando una cuenta que ya existe. Tampoco toca su
+    identidad —la declaracion se guarda en su propia serie— y
+    no la verifica.
+  */
+  const declararTipoActivo = async (candidatoId, assetId, declaredType) => {
+    setOcupado(`ai:${candidatoId}`);
+
+    try {
+      const j = await pedir(
+        `/${proyecto.id}/candidatos/${candidatoId}/tipos-activo`,
+        { assetId, declaredType }
+      );
+
+      if (j.rechazadas?.length) {
+        setAviso(j.rechazadas[0].motivo);
+      }
+
+      /*
+        Se recompone el panel entero en lugar de parchear el
+        activo en local: la elegibilidad y la cobertura salen
+        del backend y deben venir de la misma pasada.
+      */
+      const fresco = await pedir(
+        `/${proyecto.id}/candidatos/${candidatoId}/inteligencia`
+      );
+
+      setInteligencia(fresco);
+    } catch (e) {
+      setAviso(e.message);
+    } finally {
+      setOcupado(null);
+    }
+  };
+
+  /*
     LINEA BASE T0. Se ARMA desde el Lake: no consume cuota de
     ningun proveedor. Lo que se observo ya esta persistido.
   */
@@ -2366,6 +2404,9 @@ export default function ProjectsModule() {
           proyecto={proyecto}
           ocupado={ocupado === `ai:${inteligencia.candidatoId}`}
           onObservar={() => observarCuentas(inteligencia.candidatoId)}
+          onDeclararTipo={(assetId, tipo) =>
+            declararTipoActivo(inteligencia.candidatoId, assetId, tipo)
+          }
           onCerrar={() => setInteligencia(null)}
         />
       )}

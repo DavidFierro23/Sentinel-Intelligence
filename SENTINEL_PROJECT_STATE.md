@@ -5503,6 +5503,112 @@ TikTok en `false`. Auditar cobertura no es medir, y hay tests que lo fijan.
 
 ---
 
+## 18-untricies. P-CAND-ASSET-TYPE-DECLARE-01 (2026-08-28)
+
+Commit `feat(candidate): support analyst-declared Meta asset types`.
+
+**1037 comprobaciones, 25 suites, 0 fallos.** Sin red, sin cuota, sin tokens.
+
+### El problema que resuelve
+
+META-COVERAGE-AUDIT-01 clasifico **0 de 23** activos Meta y demostro por que:
+el HTML publico no distingue perfil de pagina ni Business de personal.
+
+Afinar el clasificador no era el camino. Una persona que abre la cuenta lo ve en
+un segundo — el dato existe, solo que no esta donde lo buscabamos.
+
+Asi que ahora lo declara el analista. Y Sentinel **no llama a eso una
+verificacion**.
+
+### La separacion, que es todo el gate
+
+| Campo | Que dice |
+|---|---|
+| `assetType` | el tipo, venga de donde venga |
+| `assetTypeSource` | `ANALYST_DECLARATION` / `PUBLIC_METADATA` / `META_API` / `NINGUNA` |
+| `assetTypeVerification` | `NO_VERIFICADA` mientras la fuente no sea `META_API` |
+
+    ANALYST_DECLARATION != VERIFICADO_TECNICAMENTE
+
+Es facil de escribir y facil de perder: basta con que alguien, dentro de tres
+meses, pinte un check verde al lado de un tipo declarado para que una hipotesis
+se convierta en una comprobacion sin que nadie lo decida.
+
+Ninguna acumulacion de declaraciones asciende a `VERIFICADA`: solo lo hace una
+fuente de `FUENTES_VERIFICADAS`, que hoy contiene unicamente `META_API`.
+`PUBLIC_METADATA` esta fuera a proposito, por lo que paso en la auditoria.
+
+### Tipos admitidos
+
+    Facebook    UNKNOWN · FACEBOOK_PROFILE · FACEBOOK_PAGE
+
+    Instagram   UNKNOWN · INSTAGRAM_PROFESSIONAL · INSTAGRAM_BUSINESS
+                INSTAGRAM_CREATOR · INSTAGRAM_PERSONAL
+
+`INSTAGRAM_PROFESSIONAL` existe porque el analista suele saber que una cuenta es
+profesional sin saber si Meta la tiene como Business o Creator: en la interfaz
+se ven casi igual. Obligarle a elegir seria obligarle a inventar. Para la
+elegibilidad da lo mismo —las tres abren la misma via— y para lo demas consta
+que no se afino.
+
+### Serie aparte, y la razon importa
+
+Las declaraciones NO viven en `cuentasReferencia`. Meterlas ahi habria
+funcionado, y cada clasificacion estaria reescribiendo el registro que sostiene
+la URL, el handle y el estado de identidad de la cuenta por un campo que no
+tiene nada que ver.
+
+En su propia serie del Lake no puede alcanzarlos ni por accidente, y el
+historial sale gratis: quien dijo que, cuando, y que dijo antes. Corregirse no
+borra que antes se dijo otra cosa.
+
+### Cobertura en tres niveles
+
+    COBERTURA_CONFIRMADA    verificada contra una API de Meta
+    COBERTURA_DECLARADA     lo dijo el analista
+    COBERTURA_DESCONOCIDA   nadie lo ha clasificado
+
+No se suman y ninguna se lee por otra. Un activo declarado elegible obtiene
+`POTENCIALMENTE_ELEGIBLE_META_DECLARADA`, estado propio y no matiz del otro:
+quien firma una inversion en App Review necesita saber cuantos de sus activos
+elegibles lo son porque alguien los miro.
+
+Dos reglas de recuento, que son las que se rompen solas:
+
+- Un solo `UNKNOWN` devuelve al candidato a `DESCONOCIDA`. Para declararlo fuera
+  hacen falta activos **y** que todos sean no elegibles.
+- No tener cuenta en una plataforma es `SIN_ACTIVO`, no `NO_ELEGIBLE`. Juan
+  Carlos Vega no tiene Facebook, y eso no dice nada sobre si su Facebook seria
+  elegible.
+
+### El caso Lloret, ensayado
+
+Sus dos activos de Facebook admiten uno `FACEBOOK_PROFILE` y otro
+`FACEBOOK_PAGE` a la vez, sin deduplicarse y sin que ninguno desplace al otro.
+El candidato pasa a `COBERTURA_DECLARADA` por la pagina y su perfil sigue
+`NO_ELEGIBLE`: la elegibilidad es por activo, nunca por candidato.
+
+**Cual es cual no lo decide el slug ni Sentinel.** El ensayo se hizo en un
+proyecto desechable; el proyecto real sigue con 0 declaraciones.
+
+### Lo que este gate NO cambio
+
+`habilitaBenchmark()` sigue igual: YouTube y X en `true`, Instagram, Facebook y
+TikTok en `false`. Hay un test que declara dos activos elegibles y comprueba que
+la funcion real no se mueve.
+
+### Riesgos
+
+- **Los 23 activos siguen sin clasificar.** El gate entrega la capacidad, no la
+  clasificacion. Mientras nadie declare, la cobertura Meta sigue DESCONOCIDA 7/7.
+- Una declaracion es tan buena como la memoria de quien la hizo. Por eso lleva
+  firma y fecha, y por eso no asciende a verificada.
+- Si el analista declara un tipo que contradice a la URL —`/profile.php?id=` es
+  inequivoco— se conserva la declaracion y el conflicto queda visible en el
+  activo. Una de las dos esta mal y conviene saberlo.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -5649,7 +5755,8 @@ resueltos y verificados.
 | **Cuentas personales en Meta** | 🔴 **INALCANZABLES POR VIA OFICIAL**, ni ahora ni tras la revision. Afecta al candidato patron, que tiene perfil personal de Facebook |
 | **Multi-activo por plataforma** | 🟢 **VERIFICADO** (§18-undetricies): el modelo 1:N funciona en persistencia, dominio e interfaz. Lloret tiene 2 activos de Facebook y 2 de Instagram |
 | Cierre de discovery por plataforma | 🟢 **CORREGIDO**: la propagacion omitia la plataforma entera al encontrar una cuenta; ahora omite el par `plataforma:handle` |
-| **Tipificacion de los 23 activos Meta** | 🔴 **0 de 23 clasificados** (§18-tricies). El HTML publico no distingue perfil de pagina ni Business de personal. Es el dato que bloquea la decision sobre Meta |
+| **Tipificacion de los 23 activos Meta** | 🔴 **0 de 23 clasificados**. La capacidad de declararlos ya existe (§18-untricies); falta que el analista los clasifique. Es el dato que bloquea la decision sobre Meta |
+| Declaracion de tipo por el analista | 🟢 **FUNCIONAL** (§18-untricies): selector en la ficha, serie propia en el Lake, procedencia y verificacion separadas |
 | **Cobertura Meta** | 🔴 **DESCONOCIDA 7/7**. No es baja: es que no se pudo determinar. `UNKNOWN` no se cuenta como `NO` |
 | Clasificacion por HTML publico de Facebook | 🟢 **descartada con control**: paginas conocidas salian como «perfil». La senal era plantilla del armazon sin sesion |
 | `P-CAND-UX-MULTI-ASSET-INPUT` | 🟡 **backlog**: el alta admite una URL por plataforma; se anaden mas por «Editar identidad» |
@@ -5997,6 +6104,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-28 | P-CAND-ASSET-TYPE-DECLARE-01 | La auditoria anterior clasifico 0 de 23 activos Meta y demostro que el HTML publico no distingue perfil de pagina ni Business de personal, asi que el camino no era afinar el clasificador: una persona que abre la cuenta lo ve en un segundo. Ahora el analista declara el tipo y Sentinel no llama a eso una verificacion. Tres campos que viajan juntos —assetType, assetTypeSource y assetTypeVerification— sostienen la regla ANALYST_DECLARATION != VERIFICADO_TECNICAMENTE, que es facil de escribir y facil de perder: basta con que alguien pinte un check verde al lado de un tipo declarado. Ninguna acumulacion de declaraciones asciende a VERIFICADA, porque solo lo hace una fuente de FUENTES_VERIFICADAS y hoy esa lista contiene unicamente META_API; PUBLIC_METADATA quedo fuera a proposito por lo que paso en la auditoria. Instagram admite INSTAGRAM_PROFESSIONAL ademas de Business y Creator, porque el analista suele saber que una cuenta es profesional sin saber cual de las dos y obligarle a elegir seria obligarle a inventar. Las declaraciones se guardan en una serie aparte del Lake y no dentro de cuentasReferencia: meterlas ahi habria hecho que cada clasificacion reescribiera el registro que sostiene la URL, el handle y el estado de identidad por un campo que no tiene nada que ver, y ademas se gana el historial —quien dijo que, cuando, y que dijo antes—. La cobertura pasa a tres niveles que no se suman: CONFIRMADA verificada contra API, DECLARADA dicha por el analista, DESCONOCIDA sin clasificar; un solo UNKNOWN devuelve al candidato a DESCONOCIDA y no tener cuenta en una plataforma es SIN_ACTIVO, no NO_ELEGIBLE. Ensayado con los dos Facebook de Lloret: admiten Page y Profile a la vez sin deduplicarse, el candidato pasa a DECLARADA por la pagina y su perfil sigue NO_ELEGIBLE. habilitaBenchmark() sin cambios, con un test que declara dos activos elegibles y comprueba que la funcion real no se mueve. 1037 pruebas, 0 fallos. Nueva §18-untricies. |
 | 2026-08-28 | META-COVERAGE-AUDIT-01 | Auditoria de la cobertura potencial de Meta sobre los siete candidatos reales, antes de invertir en App Review. El hallazgo no fueron los numeros sino un control: la primera pasada clasifico once de once activos de Facebook como perfiles personales con confianza media, y al probar el mismo clasificador contra Meta, BBC News y NASA —paginas sin discusion— las tres salieron tambien «perfil». Los tokens usados como senal estan en el armazon que Facebook sirve sin sesion en cualquier URL: eran plantilla, 0 % de acierto con confianza media. Se retiro la senal y los once volvieron a UNKNOWN. Sin ese control el gate habria concluido «los 7 usan perfiles personales, Meta no cubre a nadie, no invertir»: firme, accionable y falsa. Inventario real: 23 activos Meta —12 de Instagram en los 7 candidatos y 11 de Facebook en 6—, con nueve casos de multi-activo, asi que el modelo 1:N lo usa la mayoria del universo. Clasificacion: 0 de 23. Facebook son todas URLs de vanidad y el HTML sin sesion devuelve og:type=video.other, que no distingue; Instagram devuelve og:type=profile, que no separa Business de personal. Cobertura confirmada 0/7, DESCONOCIDA 7/7, confirmadamente fuera 0/7 — y UNKNOWN no se suma a NO. Comparabilidad INDETERMINADA. Decision META-INVESTIGAR-MAS: la cobertura no es baja sino desconocida, lo que falta cuesta minutos frente a semanas de revision, y el coste de esperar es cero porque X y YouTube ya sostienen el benchmark. `habilitaBenchmark()` sin cambios, con tests que fijan que auditar no es medir. 1015 pruebas, 0 fallos. Nueva §18-tricies y `docs/META-COVERAGE-AUDIT.md`. |
 | 2026-08-28 | P-CAND-FB-MULTI-ASSET-01 | Verificado con el expediente real que un candidato puede tener N activos por plataforma: Lloret tiene dos de Facebook y dos de Instagram, y los dos sobreviven persistencia, expediente, ficha e interfaz. La clave de identidad es plataforma + handle normalizado, asi que dos handles distintos son dos activos aunque compartan candidato, plataforma y nombre; no hizo falta corregir nada de persistencia ni de UI. El defecto aparecio en discovery: la propagacion de handles omitia la PLATAFORMA entera en cuanto tenia una cuenta atribuida, asi que el segundo activo de Facebook no se buscaba nunca por esa via. Corregido para omitir el par plataforma:handle, que conserva el ahorro de no repreguntar lo mismo y elimina el cierre falso. Nuevo `candidateAssets.js` que clasifica un activo solo con lo persistido: `/profile.php?id=` y `/people/` son perfil, `/pages/` y `/pg/` son pagina, y `og:type` decide si existe. Las dos URLs de Lloret son de vanidad y quedan UNKNOWN, que es la respuesta correcta: adivinar llevaria a esperar de un perfil algo que ninguna API entrega. La elegibilidad Meta se evalua POR ACTIVO —una pagina elegible no vuelve elegible al perfil del mismo candidato— y se declara que POTENCIALMENTE_ELEGIBLE no es MEDIDO_TERCERO ni habilita el benchmark. La relacion no se regala: solo con senal independiente se llega a OFFICIAL, y tener mas seguidores no asciende a nadie. El activo principal queda deliberadamente en null. 1007 pruebas, 0 fallos. Nueva §18-undetricies. |
 | 2026-08-28 | META-PUBLIC-ACCESS-01 | Gate documental sobre la via oficial de Meta para terceros: cero requests, cero tokens, nada configurado. Confirmada con documentacion oficial la cadena completa —Advanced Access exige Business Verification, y `business_discovery` exige un Facebook User access token con Pagina vinculada, permisos y App Review—, lo que explica con fuente el error 190 del gate anterior: el host no sabe leer un token que no es suyo. Documentado lo que `business_discovery` SI devolveria de un tercero —username, name, followers_count, media_count, media, likes, comments y view_count— y lo que NO: reach, impressions, saved y shares no aparecen para terceros, asi que los cinco insights que obtuvimos de nuestra cuenta no existirian para un candidato. Page Public Content Access sigue vigente y Meta lista «analizar publicaciones e interaccion en Paginas» como caso admitido. La respuesta que decide la cobertura: las cuentas personales de Instagram y los perfiles personales de Facebook son inalcanzables por via oficial, y el candidato patron tiene precisamente un perfil personal. Prueba real NO ejecutada por decision: no tenemos el tipo de token requerido y probar a ciegas habria gastado una llamada para confirmar lo que la documentacion ya dice. Se anade `habilitaBenchmark()`, que convierte en funcion la regla de que solo MEDIDO_TERCERO habilita: ni medir la cuenta propia ni documentar la via de Meta ascienden una plataforma. Recomendacion: ruta hibrida, con el recuento de cuentas profesionales frente a personales como el dato que falta antes de invertir semanas en App Review. 975 pruebas, 0 fallos. Nueva §18-duodetricies y `docs/META-PUBLIC-ACCESS.md`. |

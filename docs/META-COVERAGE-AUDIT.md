@@ -221,6 +221,101 @@ URL por plataforma; se añaden más por «Editar identidad». No se corrige aqu�
 
 ---
 
+## DECLARED ASSET TYPE LAYER
+
+*Añadido por `P-CAND-ASSET-TYPE-DECLARE-01` (2026-08-28).*
+
+### Por qué existe
+
+Esta auditoría clasificó **0 de 23** activos. No por falta de intentos: el HTML
+público de Facebook y de Instagram sencillamente no distingue perfil de página
+ni Business de personal, y el control con Meta, BBC y NASA lo dejó fuera de
+duda.
+
+Afinar el clasificador no era el camino. Un analista que abre la cuenta lo ve en
+un segundo — el dato existe, solo que no está donde lo buscábamos.
+
+Así que ahora el analista lo declara. Y **Sentinel no llama a eso una
+verificación**.
+
+### La separación, que es todo el punto
+
+| Campo | Qué dice |
+|---|---|
+| `assetType` | el tipo, venga de donde venga |
+| `assetTypeSource` | `ANALYST_DECLARATION` · `PUBLIC_METADATA` · `META_API` · `NINGUNA` |
+| `assetTypeVerification` | `NO_VERIFICADA` mientras la fuente no sea `META_API` |
+
+Un tipo sin procedencia es un tipo que dentro de un mes nadie sabrá si hay que
+comprobar. Por eso los tres campos viajan juntos y la interfaz pinta
+**DECLARADO POR ANALISTA** en ámbar, nunca «verificado».
+
+Ninguna acumulación de declaraciones asciende a `VERIFICADA`: solo lo hace una
+fuente de `FUENTES_VERIFICADAS`, y hoy esa lista contiene únicamente `META_API`.
+`PUBLIC_METADATA` está deliberadamente fuera, por lo que pasó en esta auditoría.
+
+### Tipos admitidos
+
+**Facebook** — `UNKNOWN` · `FACEBOOK_PROFILE` · `FACEBOOK_PAGE`
+
+**Instagram** — `UNKNOWN` · `INSTAGRAM_PROFESSIONAL` · `INSTAGRAM_BUSINESS` ·
+`INSTAGRAM_CREATOR` · `INSTAGRAM_PERSONAL`
+
+`INSTAGRAM_PROFESSIONAL` existe porque el analista suele saber que una cuenta es
+profesional sin saber si Meta la tiene como Business o como Creator: en la
+interfaz se ven casi igual. Obligarle a elegir sería obligarle a inventar. Para
+la elegibilidad da lo mismo —las tres abren la misma vía— y para cualquier otra
+cosa consta que no se afinó.
+
+### Qué NO hace una declaración
+
+No cambia el candidato, la URL ni el handle. No cambia el estado de identidad de
+la cuenta. No la verifica ni la vuelve oficial. No borra, funde ni desplaza a
+ningún otro activo. Y no habilita el benchmark.
+
+La garantía no es una promesa: las declaraciones se guardan en **una serie
+aparte del Lake**, no dentro de `cuentasReferencia`. La alternativa —meter el
+tipo en el registro de identidad— habría funcionado, y cada clasificación
+estaría reescribiendo el registro que sostiene la URL, el handle y el estado de
+la cuenta por un campo que no tiene nada que ver. Aquí no puede alcanzarlos ni
+por accidente, y el historial sale gratis: quién dijo qué, cuándo, y qué dijo
+antes.
+
+### Cobertura declarada ≠ cobertura confirmada
+
+Tres cifras que no se suman y ninguna se lee por otra:
+
+| | significa |
+|---|---|
+| `COBERTURA_CONFIRMADA` | verificada contra una API de Meta. La única que sostiene una inversión por sí sola |
+| `COBERTURA_DECLARADA` | el analista dijo que el activo es de un tipo elegible. Hipótesis bien fundada, no comprobación |
+| `COBERTURA_DESCONOCIDA` | nadie lo ha clasificado. **No es un «no»** |
+| `SIN_COBERTURA` | *todos* sus activos son de un tipo que ninguna vía oficial alcanza |
+
+Un activo declarado elegible obtiene
+`POTENCIALMENTE_ELEGIBLE_META_DECLARADA`, que es un estado propio y no un matiz
+de `POTENCIALMENTE_ELEGIBLE_META`. Quien decide invertir en App Review necesita
+saber cuántos de sus activos elegibles lo son porque alguien los miró.
+
+Dos reglas de recuento, que son las que se rompen solas:
+
+- Un solo `UNKNOWN` devuelve al candidato a `DESCONOCIDA`. Para declararlo fuera
+  hacen falta activos **y** que todos sean no elegibles.
+- No tener cuenta en una plataforma es `SIN_ACTIVO`, no `NO_ELEGIBLE`. Un
+  candidato del proyecto no tiene Facebook, y eso no dice nada sobre si su
+  Facebook sería elegible.
+
+### Estado al cerrar el gate
+
+23 activos, **0 declarados**. Las cifras de esta auditoría no cambian: la capa
+existe y está vacía a propósito. Clasificar es del analista.
+
+Cuando haya declaraciones, la decisión sobre Meta se recalcula y se marca
+**DECISIÓN PRELIMINAR BASADA EN DECLARACIÓN DE ANALISTA**. No se convierte en
+evidencia de API por haberse recalculado.
+
+---
+
 ## Limitaciones
 
 - **Ninguna clasificación se resolvió.** Este documento describe lo que no

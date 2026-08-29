@@ -69,6 +69,14 @@ import { matrizDeCapacidades } from "../services/intelligence/socialCapabilityMa
 import { lineaBaseT0 } from "../services/intelligence/candidateBaseline.js";
 
 import {
+  activosDeCandidato,
+  crearDeclaracionDeTipo,
+  coberturaMetaDeclarada,
+  TIPOS_POR_PLATAFORMA,
+  ETIQUETA_TIPO
+} from "../services/intelligence/candidateAssets.js";
+
+import {
   crearProyecto,
   obtenerProyecto,
   listarProyectos,
@@ -85,6 +93,8 @@ import {
   evidenciasDe,
   guardarSenalesCrossLink,
   senalesCrossLinkDe,
+  guardarDeclaracionesDeTipo,
+  declaracionesDeTipoDe,
   guardarPublicaciones,
   publicacionesDe,
   ESTADOS,
@@ -459,6 +469,14 @@ async function componerInteligencia(proyectoId, candidatoId, ejecutar) {
 
   const crossLinks = await senalesCrossLinkDe(proyectoId, candidatoId);
 
+  /*
+    Tipos de activo declarados por el analista. Se leen del Lake
+    y no salen a la red: el HTML publico no distingue perfil de
+    pagina —comprobado con control en META-COVERAGE-AUDIT-01— y
+    esta es la unica fuente que hoy lo resuelve.
+  */
+  const tipos = await declaracionesDeTipoDe(proyectoId, candidatoId);
+
   const resolucion = resolverCuentasDelCandidato({
     candidateId: candidatoId,
     projectId: proyectoId,
@@ -613,6 +631,25 @@ async function componerInteligencia(proyectoId, candidatoId, ejecutar) {
       aportanCorroboracion: enlacesParaResolucion(crossLinks.senales).length
     },
 
+    /* ---- ACTIVOS META Y TIPO DECLARADO ---- */
+    activos: {
+      ...activosDeCandidato({
+        candidateId: candidatoId,
+        cuentas,
+        declaraciones: tipos.declaraciones
+      }),
+
+      declaraciones: tipos.declaraciones,
+      lotesDeDeclaracion: tipos.lotes,
+      notaDeclaraciones: tipos.nota,
+
+      tiposPorPlataforma: TIPOS_POR_PLATAFORMA,
+      etiquetasDeTipo: ETIQUETA_TIPO,
+
+      separacion:
+        "El tipo declarado por el analista y el verificado tecnicamente son campos distintos y no se funden. Declarar no verifica."
+    },
+
     /* ---- EVIDENCE-FIRST (P-CAND-02) ---- */
     metricas: estadoDeMetricas(),
 
@@ -762,6 +799,171 @@ router.get("/:proyectoId/candidatos/:candidatoId/inteligencia", async (req, res)
     res.json(r);
   } catch (e) {
     res.status(500).json({ error: e?.message || "fallo al leer Account Intelligence" });
+  }
+});
+
+
+/*
+-----------------------------------------------------------
+DECLARAR EL TIPO DE UN ACTIVO META — P-CAND-ASSET-TYPE-DECLARE-01
+-----------------------------------------------------------
+
+El analista clasifica un activo que ya existe. No crea cuentas,
+no cambia URLs y no verifica nada: solo dice de que clase es la
+cuenta que esta mirando.
+
+No sale a la red. No consume cuota. No toca `cuentasReferencia`:
+la declaracion se guarda en su propia serie para que clasificar
+un activo no pueda alterar la identidad de otro ni la suya.
+-----------------------------------------------------------
+*/
+router.post("/:proyectoId/candidatos/:candidatoId/tipos-activo", async (req, res) => {
+  const { proyectoId, candidatoId } = req.params;
+
+  try {
+    const ficha = await fichaIdentidad(proyectoId, candidatoId, "candidato");
+
+    if (!ficha) {
+      return res.status(404).json({ error: `no existe el candidato ${candidatoId}` });
+    }
+
+    const cuentas = ficha.plataformas.flatMap((p) => p.cuentas || []);
+
+    const porId = new Map(cuentas.map((c) => [String(c.id), c]));
+
+    const entrantes = Array.isArray(req.body?.declaraciones)
+      ? req.body.declaraciones
+      : req.body?.assetId
+        ? [req.body]
+        : [];
+
+    if (!entrantes.length) {
+      return res.status(400).json({
+        error: "no se recibio ninguna declaracion",
+        formato: "{ assetId, declaredType } o { declaraciones: [...] }"
+      });
+    }
+
+    const aceptadas = [];
+
+    const rechazadas = [];
+
+    for (const e of entrantes) {
+      const cuenta = porId.get(String(e?.assetId || ""));
+
+      /*
+        Un activo que no esta en la ficha no se declara. Lo
+        contrario permitiria crear clasificaciones huerfanas
+        que despues nadie sabe a que cuenta pertenecen.
+      */
+      if (!cuenta) {
+        rechazadas.push({
+          assetId: e?.assetId || null,
+          motivo: "ese activo no esta en la ficha del candidato"
+        });
+
+        continue;
+      }
+
+      const r = crearDeclaracionDeTipo({
+        candidateId: candidatoId,
+        assetId: cuenta.id,
+        platform: cuenta.plataformaId,
+        url: cuenta.url,
+        declaredType: e?.declaredType,
+        declaredBy: e?.declaredBy || "analyst"
+      });
+
+      if (!r.valido) {
+        rechazadas.push({ assetId: e?.assetId || null, motivo: r.motivo });
+
+        continue;
+      }
+
+      aceptadas.push(r.declaracion);
+    }
+
+    let escritura = { escrito: false, total: 0 };
+
+    if (aceptadas.length) {
+      escritura = await guardarDeclaracionesDeTipo(proyectoId, candidatoId, aceptadas);
+    }
+
+    const r = await componerInteligencia(proyectoId, candidatoId, false);
+
+    res.json({
+      declaradas: aceptadas.length,
+      rechazadas,
+      escritura,
+
+      /*
+        La respuesta trae el estado recalculado para que la
+        interfaz no tenga que adivinarlo ni pedirlo aparte.
+      */
+      activos: r?.activos || null,
+
+      nota:
+        "Tipo declarado por el analista. Sentinel no lo ha comprobado contra ninguna API: la cuenta sigue NO_VERIFICADA y el benchmark sigue sin habilitarse."
+    });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo al declarar el tipo de activo" });
+  }
+});
+
+
+/*
+-----------------------------------------------------------
+COBERTURA META DEL PROYECTO — TRES NIVELES
+-----------------------------------------------------------
+
+Confirmada, declarada y desconocida no se suman. Ver
+`coberturaMetaDeclarada` para por que son tres columnas y no
+un porcentaje.
+-----------------------------------------------------------
+*/
+router.get("/:proyectoId/cobertura-meta", async (req, res) => {
+  const { proyectoId } = req.params;
+
+  try {
+    const contenido = await contenidoDeProyecto(proyectoId);
+
+    if (!contenido?.proyecto) {
+      return res.status(404).json({ error: `no existe el proyecto ${proyectoId}` });
+    }
+
+    const porCandidato = [];
+
+    for (const cand of contenido.candidatos || []) {
+      const ficha = await fichaIdentidad(proyectoId, cand.id, "candidato");
+
+      if (!ficha) continue;
+
+      const cuentas = ficha.plataformas.flatMap((p) => p.cuentas || []);
+
+      const tipos = await declaracionesDeTipoDe(proyectoId, cand.id);
+
+      const r = activosDeCandidato({
+        candidateId: cand.id,
+        cuentas,
+        declaraciones: tipos.declaraciones
+      });
+
+      porCandidato.push({ ...r, nombre: cand.nombre });
+    }
+
+    res.json({
+      proyectoId,
+      candidatos: porCandidato.length,
+
+      cobertura: coberturaMetaDeclarada(porCandidato),
+
+      porCandidato,
+
+      tiposPorPlataforma: TIPOS_POR_PLATAFORMA,
+      etiquetasDeTipo: ETIQUETA_TIPO
+    });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo al calcular la cobertura Meta" });
   }
 });
 

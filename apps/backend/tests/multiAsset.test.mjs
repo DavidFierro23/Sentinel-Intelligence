@@ -660,6 +660,463 @@ await t("varios activos de un candidato no lo cuentan varias veces", () => {
 });
 
 
+/* =========================================================
+   P-CAND-ASSET-TYPE-DECLARE-01
+   DECLARACION DE TIPO POR EL ANALISTA
+
+   La linea que estas pruebas defienden:
+
+       DECLARADO_POR_ANALISTA != VERIFICADO_TECNICAMENTE
+
+   Es facil de escribir y facil de perder. Basta con que
+   alguien, dentro de tres meses, pinte un check verde al lado
+   de un tipo declarado para que una hipotesis se convierta en
+   una comprobacion sin que nadie decida nada.
+========================================================= */
+
+bloque("Declaracion de tipo — Facebook");
+
+/* Cuenta de fixture: URL de vanidad, que es el caso real. */
+const cuentaFb = (id, handle) => ({
+  id: `facebook:${id}`,
+  plataformaId: "facebook",
+  url: `https://www.facebook.com/${handle}`,
+  handle,
+  declaradaPorAnalista: true
+});
+
+const cuentaIg = (id, handle) => ({
+  id: `instagram:${id}`,
+  plataformaId: "instagram",
+  url: `https://www.instagram.com/${handle}`,
+  handle,
+  declaradaPorAnalista: true
+});
+
+const declarar = (assetId, platform, declaredType) =>
+  ca.crearDeclaracionDeTipo({
+    candidateId: "c-1",
+    assetId,
+    platform,
+    url: "https://ejemplo",
+    declaredType
+  }).declaracion;
+
+await t("1 · una Page declarada queda POTENCIALMENTE_ELEGIBLE_DECLARADA", () => {
+  const r = ca.activosDeCandidato({
+    candidateId: "c-1",
+    cuentas: [cuentaFb("pagina", "pagina")],
+    declaraciones: [declarar("facebook:pagina", "facebook", "FACEBOOK_PAGE")]
+  });
+
+  const a = r.activos[0];
+
+  return (
+    a.assetType === "FACEBOOK_PAGE" &&
+    a.assetTypeSource === ca.FUENTE_TIPO.ANALYST_DECLARATION &&
+    a.elegibilidadMeta.estado ===
+      ca.ELEGIBILIDAD_META.POTENCIALMENTE_ELEGIBLE_DECLARADA
+  );
+});
+
+await t("2 · un perfil personal declarado NO es elegible por ninguna via", () => {
+  const r = ca.activosDeCandidato({
+    candidateId: "c-1",
+    cuentas: [cuentaFb("perfil", "perfil")],
+    declaraciones: [declarar("facebook:perfil", "facebook", "FACEBOOK_PROFILE")]
+  });
+
+  const a = r.activos[0];
+
+  return (
+    a.assetType === "FACEBOOK_PROFILE" &&
+    a.elegibilidadMeta.estado === ca.ELEGIBILIDAD_META.NO_ELEGIBLE &&
+    a.elegibilidadMeta.via === null
+  );
+});
+
+bloque("Declaracion de tipo — Instagram");
+
+await t("3 · «profesional sin afinar» es un tipo valido y elegible", () => {
+  /*
+    El analista suele saber que la cuenta es profesional sin
+    saber si Meta la tiene como Business o Creator. Obligarle a
+    elegir seria obligarle a inventar.
+  */
+  const r = ca.activosDeCandidato({
+    candidateId: "c-1",
+    cuentas: [cuentaIg("pro", "pro")],
+    declaraciones: [declarar("instagram:pro", "instagram", "INSTAGRAM_PROFESSIONAL")]
+  });
+
+  const a = r.activos[0];
+
+  return (
+    a.assetType === "INSTAGRAM_PROFESSIONAL" &&
+    a.elegibilidadMeta.estado ===
+      ca.ELEGIBILIDAD_META.POTENCIALMENTE_ELEGIBLE_DECLARADA
+  );
+});
+
+await t("4 · una cuenta personal de Instagram no la abre ninguna via oficial", () => {
+  const r = ca.activosDeCandidato({
+    candidateId: "c-1",
+    cuentas: [cuentaIg("personal", "personal")],
+    declaraciones: [declarar("instagram:personal", "instagram", "INSTAGRAM_PERSONAL")]
+  });
+
+  return (
+    r.activos[0].elegibilidadMeta.estado ===
+    ca.ELEGIBILIDAD_META.NO_ELEGIBLE_INSTAGRAM
+  );
+});
+
+await t("5 · sin declaracion, UNKNOWN sigue siendo UNKNOWN e INDETERMINADA", () => {
+  const r = ca.activosDeCandidato({
+    candidateId: "c-1",
+    cuentas: [cuentaFb("vanidad", "vanidad"), cuentaIg("vanidad", "vanidad")],
+    declaraciones: []
+  });
+
+  return r.activos.every(
+    (a) =>
+      a.assetType === "UNKNOWN" &&
+      a.assetTypeSource === ca.FUENTE_TIPO.NINGUNA &&
+      a.elegibilidadMeta.estado === ca.ELEGIBILIDAD_META.INDETERMINADA
+  );
+});
+
+bloque("Declarar no es verificar");
+
+await t("6 · declarar el tipo NO verifica el activo", () => {
+  const r = ca.activosDeCandidato({
+    candidateId: "c-1",
+    cuentas: [cuentaFb("pagina", "pagina")],
+    declaraciones: [declarar("facebook:pagina", "facebook", "FACEBOOK_PAGE")]
+  });
+
+  const a = r.activos[0];
+
+  return (
+    a.assetTypeVerification === "NO_VERIFICADA" &&
+    a.elegibilidadMeta.verificadaTecnicamente === false &&
+    a.elegibilidadMeta.basadaEnDeclaracion === true
+  );
+});
+
+await t("7 · una declaracion NO es MEDIDO_TERCERO", () => {
+  const e = ca.elegibilidadMeta("FACEBOOK_PAGE", ca.FUENTE_TIPO.ANALYST_DECLARATION);
+
+  const texto = JSON.stringify(e);
+
+  /*
+    Ni el estado ni ninguna nota deben poder confundirse con
+    una medicion de terceros.
+  */
+  return (
+    e.estado !== scm.ESTADOS_CELDA.MEDIDO &&
+    e.estado !== scm.ESTADOS_CELDA.MEDIDO_PROPIO &&
+    !texto.includes("MEDIDO_TERCERO")
+  );
+});
+
+await t("8 · declarar Page o Professional NO habilita el benchmark", () => {
+  /*
+    El invariante mas caro de perder del gate. Se comprueba la
+    funcion real, no una copia.
+  */
+  ca.activosDeCandidato({
+    candidateId: "c-1",
+    cuentas: [cuentaFb("pagina", "pagina"), cuentaIg("pro", "pro")],
+    declaraciones: [
+      declarar("facebook:pagina", "facebook", "FACEBOOK_PAGE"),
+      declarar("instagram:pro", "instagram", "INSTAGRAM_BUSINESS")
+    ]
+  });
+
+  return (
+    scm.habilitaBenchmark("facebook").habilita === false &&
+    scm.habilitaBenchmark("instagram").habilita === false &&
+    scm.habilitaBenchmark("youtube").habilita === true &&
+    scm.habilitaBenchmark("x").habilita === true
+  );
+});
+
+bloque("La declaracion no toca la identidad");
+
+await t("9 · declarar un tipo no funde ni elimina activos hermanos", () => {
+  const r = ca.activosDeCandidato({
+    candidateId: "c-1",
+    cuentas: [cuentaFb("uno", "uno"), cuentaFb("dos", "dos")],
+    declaraciones: [declarar("facebook:uno", "facebook", "FACEBOOK_PAGE")]
+  });
+
+  return (
+    r.total === 2 &&
+    r.porPlataforma.facebook.length === 2 &&
+    r.variosPorPlataforma.length === 1
+  );
+});
+
+await t("10 · clasificar un activo deja intacto al hermano", () => {
+  const cuentas = [cuentaFb("uno", "uno"), cuentaFb("dos", "dos")];
+
+  const antes = ca.activosDeCandidato({ candidateId: "c-1", cuentas });
+
+  const despues = ca.activosDeCandidato({
+    candidateId: "c-1",
+    cuentas,
+    declaraciones: [declarar("facebook:uno", "facebook", "FACEBOOK_PAGE")]
+  });
+
+  const hermanoAntes = antes.activos.find((a) => a.accountId === "facebook:dos");
+
+  const hermanoDespues = despues.activos.find((a) => a.accountId === "facebook:dos");
+
+  /*
+    Identidad, tipo y elegibilidad del hermano: los tres igual
+    que antes. La declaracion se busca por accountId, asi que
+    no hay forma de que alcance a otro registro — y esta prueba
+    lo fija por si alguien cambia la clave.
+  */
+  return (
+    hermanoDespues.url === hermanoAntes.url &&
+    hermanoDespues.handle === hermanoAntes.handle &&
+    hermanoDespues.assetType === "UNKNOWN" &&
+    hermanoDespues.assetTypeSource === ca.FUENTE_TIPO.NINGUNA &&
+    hermanoDespues.elegibilidadMeta.estado === ca.ELEGIBILIDAD_META.INDETERMINADA
+  );
+});
+
+await t("11 · un candidato puede tener Page y Profile a la vez", () => {
+  /*
+    El caso real que motiva el gate: dos activos de Facebook,
+    uno de cada clase. Ninguno sustituye al otro y el
+    candidato es alcanzable por la pagina sin que eso vuelva
+    alcanzable al perfil.
+  */
+  const r = ca.activosDeCandidato({
+    candidateId: "c-1",
+    cuentas: [cuentaFb("uno", "uno"), cuentaFb("dos", "dos")],
+    declaraciones: [
+      declarar("facebook:uno", "facebook", "FACEBOOK_PROFILE"),
+      declarar("facebook:dos", "facebook", "FACEBOOK_PAGE")
+    ]
+  });
+
+  const tipos = r.activos.map((a) => a.assetType).sort();
+
+  const elegibles = r.activos.filter(
+    (a) =>
+      a.elegibilidadMeta.estado ===
+      ca.ELEGIBILIDAD_META.POTENCIALMENTE_ELEGIBLE_DECLARADA
+  );
+
+  return (
+    r.total === 2 &&
+    tipos.join(",") === "FACEBOOK_PAGE,FACEBOOK_PROFILE" &&
+    elegibles.length === 1
+  );
+});
+
+bloque("Persistencia y aislamiento");
+
+await t("12 · las declaraciones no se filtran entre proyectos", async () => {
+  const idA = `tipos-a-${Date.now()}`;
+  const idB = `tipos-b-${Date.now()}`;
+
+  await ps.crearProyecto({ id: idA, nombre: "Tipos A" });
+  await ps.crearProyecto({ id: idB, nombre: "Tipos B" });
+
+  await ps.guardarDeclaracionesDeTipo(idA, "cand-1", [
+    declarar("facebook:x", "facebook", "FACEBOOK_PAGE")
+  ]);
+
+  const enA = await ps.declaracionesDeTipoDe(idA, "cand-1");
+  const enB = await ps.declaracionesDeTipoDe(idB, "cand-1");
+
+  return enA.total === 1 && enB.total === 0;
+});
+
+await t("13 · ida y vuelta: se guarda, se lee y gana la ultima", async () => {
+  const id = `tipos-rt-${Date.now()}`;
+
+  await ps.crearProyecto({ id, nombre: "Tipos RT" });
+
+  await ps.guardarDeclaracionesDeTipo(
+    id,
+    "cand-1",
+    [declarar("facebook:x", "facebook", "FACEBOOK_PROFILE")],
+    { declaradoEn: "2026-08-01T00:00:00.000Z" }
+  );
+
+  /* El analista se corrige: era una pagina. */
+  await ps.guardarDeclaracionesDeTipo(
+    id,
+    "cand-1",
+    [declarar("facebook:x", "facebook", "FACEBOOK_PAGE")],
+    { declaradoEn: "2026-08-02T00:00:00.000Z" }
+  );
+
+  const r = await ps.declaracionesDeTipoDe(id, "cand-1");
+
+  /*
+    Una vigente y DOS en el historial: corregirse no borra que
+    antes se dijo otra cosa.
+  */
+  return (
+    r.total === 1 &&
+    r.declaraciones[0].declaredType === "FACEBOOK_PAGE" &&
+    r.historial.length === 2 &&
+    r.declaraciones[0].source === "ANALYST_DECLARATION" &&
+    r.declaraciones[0].verificationStatus === "NO_VERIFICADA"
+  );
+});
+
+bloque("Cobertura en tres niveles");
+
+const conActivos = (candidateId, cuentas, declaraciones) =>
+  ca.activosDeCandidato({ candidateId, cuentas, declaraciones });
+
+await t("14 · la cobertura declarada no se suma a la confirmada", () => {
+  const c = ca.coberturaMetaDeclarada([
+    conActivos("a", [cuentaFb("a", "a")], [declarar("facebook:a", "facebook", "FACEBOOK_PAGE")]),
+    conActivos("b", [cuentaFb("b", "b")], [])
+  ]);
+
+  return (
+    c.COBERTURA_DECLARADA.candidatos === 1 &&
+    c.COBERTURA_CONFIRMADA.candidatos === 0 &&
+    c.COBERTURA_DESCONOCIDA.candidatos === 1 &&
+    c.noEsMedicion.includes("MEDIDO_TERCERO")
+  );
+});
+
+await t("15 · UNKNOWN no cuenta como elegible", () => {
+  const c = ca.coberturaMetaDeclarada([
+    conActivos("a", [cuentaFb("a", "a")], []),
+    conActivos("b", [cuentaIg("b", "b")], [])
+  ]);
+
+  return (
+    c.COBERTURA_CONFIRMADA.candidatos === 0 &&
+    c.COBERTURA_DECLARADA.candidatos === 0 &&
+    c.COBERTURA_DESCONOCIDA.candidatos === 2
+  );
+});
+
+await t("16 · UNKNOWN tampoco cuenta como NO elegible", () => {
+  /*
+    El error que casi se comete en META-COVERAGE-AUDIT-01. Un
+    candidato con un perfil personal declarado Y un activo sin
+    clasificar NO esta fuera: el segundo activo podria ser una
+    pagina.
+  */
+  const c = ca.coberturaMetaDeclarada([
+    conActivos(
+      "a",
+      [cuentaFb("perfil", "perfil"), cuentaFb("otro", "otro")],
+      [declarar("facebook:perfil", "facebook", "FACEBOOK_PROFILE")]
+    )
+  ]);
+
+  return (
+    c.SIN_COBERTURA.candidatos === 0 &&
+    c.COBERTURA_DESCONOCIDA.candidatos === 1 &&
+    c.reglaUnknown.toLowerCase().includes("no se suma")
+  );
+});
+
+await t("17 · solo con TODOS los activos no elegibles se declara fuera", () => {
+  const c = ca.coberturaMetaDeclarada([
+    conActivos(
+      "a",
+      [cuentaFb("perfil", "perfil"), cuentaIg("personal", "personal")],
+      [
+        declarar("facebook:perfil", "facebook", "FACEBOOK_PROFILE"),
+        declarar("instagram:personal", "instagram", "INSTAGRAM_PERSONAL")
+      ]
+    )
+  ]);
+
+  return c.SIN_COBERTURA.candidatos === 1 && c.COBERTURA_DESCONOCIDA.candidatos === 0;
+});
+
+await t("18 · no tener cuenta en una plataforma no es «no elegible»", () => {
+  /*
+    Un candidato real del proyecto no tiene Facebook. Eso no
+    dice nada sobre si su Facebook seria elegible.
+  */
+  const c = ca.coberturaMetaDeclarada([
+    conActivos("a", [cuentaIg("a", "a")], [declarar("instagram:a", "instagram", "INSTAGRAM_BUSINESS")])
+  ]);
+
+  return (
+    c.porPlataforma.facebook.noElegible === 0 &&
+    c.porPlataforma.facebook.desconocida === 0 &&
+    c.porPlataforma.instagram.declarada === 1
+  );
+});
+
+bloque("Validacion de tipos");
+
+await t("19 · un tipo de otra plataforma se rechaza", () => {
+  const r = ca.crearDeclaracionDeTipo({
+    assetId: "facebook:x",
+    platform: "facebook",
+    declaredType: "INSTAGRAM_BUSINESS"
+  });
+
+  return r.valido === false && r.motivo.includes("no es un tipo valido");
+});
+
+await t("20 · la declaracion de tipo no aplica fuera de Meta", () => {
+  const r = ca.crearDeclaracionDeTipo({
+    assetId: "x:y",
+    platform: "x",
+    declaredType: "FACEBOOK_PAGE"
+  });
+
+  return r.valido === false && r.motivo.includes("solo aplica a activos de Meta");
+});
+
+await t("21 · retirar la clasificacion devuelve el activo a UNKNOWN", () => {
+  const n = ca.normalizarTipoDeclarado("facebook", "");
+
+  return n.valido === true && n.tipo === "UNKNOWN";
+});
+
+await t("22 · una declaracion que contradice a la URL deja la discrepancia visible", () => {
+  /*
+    `/profile.php?id=` es inequivoco. Si el analista declara
+    que es una pagina, uno de los dos esta mal: se conserva la
+    declaracion y se registra el conflicto en lugar de tapar
+    uno con otro.
+  */
+  const r = ca.activosDeCandidato({
+    candidateId: "c-1",
+    cuentas: [
+      {
+        id: "facebook:num",
+        plataformaId: "facebook",
+        url: "https://www.facebook.com/profile.php?id=100001",
+        handle: null
+      }
+    ],
+    declaraciones: [declarar("facebook:num", "facebook", "FACEBOOK_PAGE")]
+  });
+
+  const a = r.activos[0];
+
+  return (
+    a.assetType === "FACEBOOK_PAGE" &&
+    a.assetTypeTecnico === "FACEBOOK_PROFILE" &&
+    typeof a.assetTypeConflicto === "string" &&
+    a.assetTypeConflicto.includes("una de las dos esta mal")
+  );
+});
+
+
 /* ---------------------------------------------------------
    RESULTADO
 --------------------------------------------------------- */
