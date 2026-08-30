@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "check:identidad": "vite build --config vite.identity-ssr.config.js",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -1041,7 +1041,7 @@ export default function ProjectsModule() {
     identidad —la declaracion se guarda en su propia serie— y
     no la verifica.
   */
-  const declararTipoActivo = async (candidatoId, assetId, declaredType) => {
+  const declararTipoActivo = async (candidatoId, assetId, declaredType, desde) => {
     setOcupado(`ai:${candidatoId}`);
 
     try {
@@ -1055,15 +1055,25 @@ export default function ProjectsModule() {
       }
 
       /*
-        Se recompone el panel entero en lugar de parchear el
-        activo en local: la elegibilidad y la cobertura salen
-        del backend y deben venir de la misma pasada.
+        Se recarga la pantalla desde la que se declaro. Son dos
+        rutas distintas —la ficha alimenta el editor de
+        identidad y `/inteligencia` el panel— y refrescar la que
+        no toca dejaria el selector mostrando el valor viejo
+        aunque el dato ya estuviera guardado.
       */
-      const fresco = await pedir(
-        `/${proyecto.id}/candidatos/${candidatoId}/inteligencia`
-      );
+      if (desde === "ficha") {
+        const f = await pedir(
+          `/${proyecto.id}/candidatos/${candidatoId}/identidad`
+        );
 
-      setInteligencia(fresco);
+        setFicha(f);
+      } else {
+        const fresco = await pedir(
+          `/${proyecto.id}/candidatos/${candidatoId}/inteligencia`
+        );
+
+        setInteligencia(fresco);
+      }
     } catch (e) {
       setAviso(e.message);
     } finally {
@@ -2415,9 +2425,21 @@ export default function ProjectsModule() {
         <CandidateIdentityForm
           ficha={ficha}
           proyecto={proyecto}
-          ocupado={ocupado === `editar:${fichaAbierta}`}
+          /*
+            Tambien mientras se declara un tipo: si no, el
+            selector admite un segundo cambio antes de que
+            vuelva el primero y la ficha se recarga con el
+            valor equivocado.
+          */
+          ocupado={
+            ocupado === `editar:${fichaAbierta}` ||
+            ocupado === `ai:${fichaAbierta}`
+          }
           onCancelar={() => setEditando(false)}
           onGuardar={guardarIdentidad}
+          onDeclararTipo={(assetId, tipo) =>
+            declararTipoActivo(fichaAbierta, assetId, tipo, "ficha")
+          }
         />
       )}
 

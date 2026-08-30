@@ -5601,11 +5601,128 @@ la funcion real no se mueve.
 
 - **Los 23 activos siguen sin clasificar.** El gate entrega la capacidad, no la
   clasificacion. Mientras nadie declare, la cobertura Meta sigue DESCONOCIDA 7/7.
+- **CORRECCION POSTERIOR (§18-duotricies).** Este gate reporto el selector como
+  disponible en la interfaz. Lo estaba en `AccountIntelligencePanel`, que no es
+  la pantalla donde el analista edita cuentas: en «Editar identidad digital» no
+  aparecia, y la ruta que la alimenta ni siquiera devolvia los tipos. Corregido
+  al dia siguiente. La afirmacion sobre dominio y persistencia se sostiene; la
+  de interfaz era incompleta.
 - Una declaracion es tan buena como la memoria de quien la hizo. Por eso lleva
   firma y fecha, y por eso no asciende a verificada.
 - Si el analista declara un tipo que contradice a la URL —`/profile.php?id=` es
   inequivoco— se conserva la declaracion y el conflicto queda visible en el
   activo. Una de las dos esta mal y conviene saberlo.
+
+---
+
+## 18-duotricies. P-CAND-ASSET-TYPE-UI-FIX-01 (2026-08-29)
+
+Commit `fix(candidate): render Meta asset type selectors`.
+
+**1042 comprobaciones de backend, 25 suites, 0 fallos** + **13 de render**.
+Sin red de proveedores, sin cuota, sin tokens.
+
+### Causa raiz
+
+El gate anterior reporto «selector por activo Meta» y no era falso: el selector
+existia y funcionaba. Estaba en `AccountIntelligencePanel.jsx`, pestana
+Identidad.
+
+La pantalla donde el analista edita cuentas es otra:
+`CandidateIdentityForm.jsx`, «Editar identidad digital». Ahi no habia nada.
+
+Dos fallos encadenados, y el segundo es el importante:
+
+1. El componente elegido no era el de esa pantalla.
+2. **`GET /identidad` —la ruta que alimenta el editor— no devolvia los tipos.**
+   Solo viajaban por `/inteligencia`. Aunque el selector hubiera estado en el
+   componente correcto, no habria tenido con que pintarse.
+
+Comprobado, no supuesto: la ficha real del backend en ejecucion no traia
+`activosMeta`.
+
+### Por que las 1037 pruebas no lo vieron
+
+Porque ninguna miraba HTML. El backend devolvia los tipos correctamente y el
+dominio estaba bien; el fallo vivia entero en la distancia entre «la funcion
+devuelve el dato» y «la pantalla lo pinta».
+
+Esa distancia ahora tiene una prueba:
+`apps/web/tests/identity-form.check.jsx` renderiza la pantalla real con la
+respuesta real de la API y cuenta los `<select>`.
+
+    npm run check:identidad --workspace apps/web
+    node apps/web/dist-ssr-identidad/check.mjs ficha.json
+
+Una leccion que conviene no perder: un gate que reporta UI y solo prueba dominio
+esta reportando lo que cree, no lo que hay.
+
+### La correccion
+
+`GET /identidad` devuelve ahora un bloque `activosMeta.porActivo` indexado por
+id de activo, con el tipo, su procedencia, su verificacion y los tipos
+admitidos de esa plataforma. Se lee del Lake; no sale a la red.
+
+El selector vive dentro de la tarjeta de cada cuenta, **debajo** del estado de
+identidad y separado por una linea:
+
+    @jotalloretv
+    Consolidada · revalidada          <- ESTADO DE IDENTIDAD
+    ─────────────────────────
+    Tipo  [ Pagina / Fan Page ▼ ]     <- TIPO DEL ACTIVO
+    declarado por analista · no verificado
+
+Son dos preguntas distintas: *de quien es la cuenta* y *que clase de cuenta es*.
+Una cuenta puede estar consolidada con evidencia y seguir sin que nadie sepa si
+es un perfil o una pagina.
+
+### Guardado
+
+Al cambiar el selector, no al pulsar «Guardar cambios». No es un descuido:
+declarar el tipo NO es una edicion de identidad y no debe viajar en el mismo
+PATCH que el nombre o las cuentas. Usa el endpoint de
+P-CAND-ASSET-TYPE-DECLARE-01, sin segunda persistencia.
+
+### Validado por HTTP contra el backend real
+
+En un proyecto desechable, con dos Facebook y dos Instagram:
+
+    facebook:ensayo.perfil      FACEBOOK_PROFILE        NO_ELEGIBLE_META_PUBLIC_PAGE_API
+    facebook:ensayopagina       FACEBOOK_PAGE           POTENCIALMENTE_ELEGIBLE_META_DECLARADA
+    instagram:ensayo_pro        INSTAGRAM_PROFESSIONAL  POTENCIALMENTE_ELEGIBLE_META_DECLARADA
+    instagram:ensayo_personal   INSTAGRAM_PERSONAL      NO_ELEGIBLE_META_OFICIAL_TERCEROS
+
+Los cuatro sobreviven a releer la ficha. Cambiar el primero no movio a los
+otros tres. Las cuentas —id, URL, handle, estado— quedaron identicas antes y
+despues.
+
+### Un defecto de accesibilidad que aparecio de paso
+
+Lloret usa el mismo handle en Facebook y en Instagram —`jotalloretv`—, asi que
+dos selectores tenian etiqueta identica y un lector de pantalla los anunciaba
+igual. La etiqueta lleva ahora la plataforma delante.
+
+Lo encontro la prueba de render al contar dos selectores donde esperaba uno.
+
+### Lo que este gate NO cambio
+
+`habilitaBenchmark()` sigue igual. `verificadaPorSentinel` no se toca. Ninguna
+declaracion asciende a `META_API` ni a `VERIFICADA`.
+
+### Requiere reinicio del backend
+
+`npm run dev:backend` es `node server.js`, sin watcher: el proceso en marcha
+sirve el codigo con el que arranco. **Hay que reiniciarlo** para que
+`/identidad` devuelva `activosMeta`. Vite recarga solo.
+
+### Riesgos
+
+- El selector tambien sigue en `AccountIntelligencePanel`. No es un problema
+  —leen y escriben el mismo sitio— pero son dos superficies que mantener.
+- La prueba de render comprueba texto y estructura, no color ni espaciado. No
+  sustituye a mirar la pantalla.
+- Los 23 activos reales siguen sin clasificar. El gate entrega la pantalla, no
+  la clasificacion.
 
 ---
 
@@ -5756,7 +5873,8 @@ resueltos y verificados.
 | **Multi-activo por plataforma** | 🟢 **VERIFICADO** (§18-undetricies): el modelo 1:N funciona en persistencia, dominio e interfaz. Lloret tiene 2 activos de Facebook y 2 de Instagram |
 | Cierre de discovery por plataforma | 🟢 **CORREGIDO**: la propagacion omitia la plataforma entera al encontrar una cuenta; ahora omite el par `plataforma:handle` |
 | **Tipificacion de los 23 activos Meta** | 🔴 **0 de 23 clasificados**. La capacidad de declararlos ya existe (§18-untricies); falta que el analista los clasifique. Es el dato que bloquea la decision sobre Meta |
-| Declaracion de tipo por el analista | 🟢 **FUNCIONAL** (§18-untricies): selector en la ficha, serie propia en el Lake, procedencia y verificacion separadas |
+| Declaracion de tipo por el analista | 🟢 **FUNCIONAL Y VISIBLE** (§18-untricies, corregida en §18-duotricies): selector dentro de «Editar identidad digital», serie propia en el Lake, procedencia y verificacion separadas |
+| Cobertura de pruebas sobre la UI | 🟡 **parcial**: hay render check para el editor de identidad (§18-duotricies) y para los paneles territoriales. El resto de pantallas solo tienen pruebas de dominio, que no ven el HTML |
 | **Cobertura Meta** | 🔴 **DESCONOCIDA 7/7**. No es baja: es que no se pudo determinar. `UNKNOWN` no se cuenta como `NO` |
 | Clasificacion por HTML publico de Facebook | 🟢 **descartada con control**: paginas conocidas salian como «perfil». La senal era plantilla del armazon sin sesion |
 | `P-CAND-UX-MULTI-ASSET-INPUT` | 🟡 **backlog**: el alta admite una URL por plataforma; se anaden mas por «Editar identidad» |
@@ -6104,6 +6222,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-29 | P-CAND-ASSET-TYPE-UI-FIX-01 | El gate anterior reporto el selector de tipo Meta como hecho y no era falso: existia y funcionaba, pero en AccountIntelligencePanel, que es otra pantalla. Donde el analista edita cuentas —«Editar identidad digital», CandidateIdentityForm— no habia nada. Y detras habia un segundo fallo mas importante: la ruta GET /identidad que alimenta ese editor no devolvia los tipos, que solo viajaban por /inteligencia, asi que aunque el selector hubiera estado en el componente correcto no habria tenido con que pintarse; comprobado contra el backend en ejecucion, cuya ficha no traia activosMeta. Las 1037 pruebas no lo vieron porque ninguna miraba HTML: el dominio estaba bien y el fallo vivia entero en la distancia entre que la funcion devuelva el dato y que la pantalla lo pinte. Esa distancia ahora tiene prueba propia —identity-form.check.jsx renderiza la pantalla real con la respuesta real de la API y cuenta los select—. Corregido: /identidad devuelve activosMeta.porActivo con tipo, procedencia, verificacion y tipos admitidos, y el selector vive dentro de la tarjeta de cada cuenta, debajo del estado de identidad y separado de el, porque de quien es la cuenta y que clase de cuenta es son dos preguntas distintas. Se guarda al cambiarlo y no al pulsar «Guardar cambios», porque declarar el tipo no es una edicion de identidad y no debe viajar en el mismo PATCH. Validado por HTTP en un proyecto desechable con dos Facebook y dos Instagram: los cuatro tipos distintos sobreviven a releer la ficha, cambiar uno no movio a los otros y las cuentas quedaron identicas. De paso aparecio un defecto de accesibilidad que encontro la propia prueba de render: Lloret usa el mismo handle en Facebook y en Instagram, asi que dos selectores tenian etiqueta identica; ahora lleva la plataforma delante. habilitaBenchmark() sin cambios. 1042 pruebas de backend y 13 de render, 0 fallos. Requiere reiniciar el backend, que corre sin watcher. Nueva §18-duotricies. |
 | 2026-08-28 | P-CAND-ASSET-TYPE-DECLARE-01 | La auditoria anterior clasifico 0 de 23 activos Meta y demostro que el HTML publico no distingue perfil de pagina ni Business de personal, asi que el camino no era afinar el clasificador: una persona que abre la cuenta lo ve en un segundo. Ahora el analista declara el tipo y Sentinel no llama a eso una verificacion. Tres campos que viajan juntos —assetType, assetTypeSource y assetTypeVerification— sostienen la regla ANALYST_DECLARATION != VERIFICADO_TECNICAMENTE, que es facil de escribir y facil de perder: basta con que alguien pinte un check verde al lado de un tipo declarado. Ninguna acumulacion de declaraciones asciende a VERIFICADA, porque solo lo hace una fuente de FUENTES_VERIFICADAS y hoy esa lista contiene unicamente META_API; PUBLIC_METADATA quedo fuera a proposito por lo que paso en la auditoria. Instagram admite INSTAGRAM_PROFESSIONAL ademas de Business y Creator, porque el analista suele saber que una cuenta es profesional sin saber cual de las dos y obligarle a elegir seria obligarle a inventar. Las declaraciones se guardan en una serie aparte del Lake y no dentro de cuentasReferencia: meterlas ahi habria hecho que cada clasificacion reescribiera el registro que sostiene la URL, el handle y el estado de identidad por un campo que no tiene nada que ver, y ademas se gana el historial —quien dijo que, cuando, y que dijo antes—. La cobertura pasa a tres niveles que no se suman: CONFIRMADA verificada contra API, DECLARADA dicha por el analista, DESCONOCIDA sin clasificar; un solo UNKNOWN devuelve al candidato a DESCONOCIDA y no tener cuenta en una plataforma es SIN_ACTIVO, no NO_ELEGIBLE. Ensayado con los dos Facebook de Lloret: admiten Page y Profile a la vez sin deduplicarse, el candidato pasa a DECLARADA por la pagina y su perfil sigue NO_ELEGIBLE. habilitaBenchmark() sin cambios, con un test que declara dos activos elegibles y comprueba que la funcion real no se mueve. 1037 pruebas, 0 fallos. Nueva §18-untricies. |
 | 2026-08-28 | META-COVERAGE-AUDIT-01 | Auditoria de la cobertura potencial de Meta sobre los siete candidatos reales, antes de invertir en App Review. El hallazgo no fueron los numeros sino un control: la primera pasada clasifico once de once activos de Facebook como perfiles personales con confianza media, y al probar el mismo clasificador contra Meta, BBC News y NASA —paginas sin discusion— las tres salieron tambien «perfil». Los tokens usados como senal estan en el armazon que Facebook sirve sin sesion en cualquier URL: eran plantilla, 0 % de acierto con confianza media. Se retiro la senal y los once volvieron a UNKNOWN. Sin ese control el gate habria concluido «los 7 usan perfiles personales, Meta no cubre a nadie, no invertir»: firme, accionable y falsa. Inventario real: 23 activos Meta —12 de Instagram en los 7 candidatos y 11 de Facebook en 6—, con nueve casos de multi-activo, asi que el modelo 1:N lo usa la mayoria del universo. Clasificacion: 0 de 23. Facebook son todas URLs de vanidad y el HTML sin sesion devuelve og:type=video.other, que no distingue; Instagram devuelve og:type=profile, que no separa Business de personal. Cobertura confirmada 0/7, DESCONOCIDA 7/7, confirmadamente fuera 0/7 — y UNKNOWN no se suma a NO. Comparabilidad INDETERMINADA. Decision META-INVESTIGAR-MAS: la cobertura no es baja sino desconocida, lo que falta cuesta minutos frente a semanas de revision, y el coste de esperar es cero porque X y YouTube ya sostienen el benchmark. `habilitaBenchmark()` sin cambios, con tests que fijan que auditar no es medir. 1015 pruebas, 0 fallos. Nueva §18-tricies y `docs/META-COVERAGE-AUDIT.md`. |
 | 2026-08-28 | P-CAND-FB-MULTI-ASSET-01 | Verificado con el expediente real que un candidato puede tener N activos por plataforma: Lloret tiene dos de Facebook y dos de Instagram, y los dos sobreviven persistencia, expediente, ficha e interfaz. La clave de identidad es plataforma + handle normalizado, asi que dos handles distintos son dos activos aunque compartan candidato, plataforma y nombre; no hizo falta corregir nada de persistencia ni de UI. El defecto aparecio en discovery: la propagacion de handles omitia la PLATAFORMA entera en cuanto tenia una cuenta atribuida, asi que el segundo activo de Facebook no se buscaba nunca por esa via. Corregido para omitir el par plataforma:handle, que conserva el ahorro de no repreguntar lo mismo y elimina el cierre falso. Nuevo `candidateAssets.js` que clasifica un activo solo con lo persistido: `/profile.php?id=` y `/people/` son perfil, `/pages/` y `/pg/` son pagina, y `og:type` decide si existe. Las dos URLs de Lloret son de vanidad y quedan UNKNOWN, que es la respuesta correcta: adivinar llevaria a esperar de un perfil algo que ninguna API entrega. La elegibilidad Meta se evalua POR ACTIVO —una pagina elegible no vuelve elegible al perfil del mismo candidato— y se declara que POTENCIALMENTE_ELEGIBLE no es MEDIDO_TERCERO ni habilita el benchmark. La relacion no se regala: solo con senal independiente se llega a OFFICIAL, y tener mas seguidores no asciende a nadie. El activo principal queda deliberadamente en null. 1007 pruebas, 0 fallos. Nueva §18-undetricies. |

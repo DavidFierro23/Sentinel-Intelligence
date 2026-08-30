@@ -122,10 +122,131 @@ function plataformaDeUrl(url) {
 
 /*
 -----------------------------------------------------------
+TIPO DE ACTIVO META — P-CAND-ASSET-TYPE-UI-FIX-01
+-----------------------------------------------------------
+
+Va DEBAJO del estado de identidad, no en su lugar. Son dos
+cosas distintas y confundirlas es facil:
+
+    ESTADO DE IDENTIDAD   si la cuenta es del candidato
+    TIPO DE ACTIVO        que clase de cuenta es
+
+Una cuenta puede estar «consolidada · revalidada» —sabemos que
+es suya, con evidencia— y seguir sin que nadie sepa si es un
+perfil o una pagina. Son preguntas independientes y la segunda
+es la que decide si Meta puede alcanzarla.
+
+Se guarda al cambiarlo, no al pulsar «Guardar cambios». No es
+un descuido: declarar el tipo NO es una edicion de identidad y
+no debe viajar en el mismo PATCH que el nombre o las cuentas.
+-----------------------------------------------------------
+*/
+function TipoDeActivo({ cuenta, info, etiquetas, ocupado, onDeclararTipo }) {
+  /* Sin info del backend no se inventa un selector vacio. */
+  if (!info) return null;
+
+  const declarado = info.assetTypeSource === "ANALYST_DECLARATION";
+
+  return (
+    <div
+      style={{
+        marginTop: "7px",
+        paddingTop: "7px",
+        borderTop: "1px dashed var(--sentinel-borde)",
+        display: "flex",
+        gap: "8px",
+        alignItems: "center",
+        flexWrap: "wrap"
+      }}
+    >
+      <span
+        style={{
+          color: "var(--sentinel-texto-tenue)",
+          fontSize: "9.5px",
+          textTransform: "uppercase",
+          letterSpacing: ".05em"
+        }}
+      >
+        Tipo
+      </span>
+
+      <select
+        /*
+          La plataforma va en la etiqueta porque un candidato
+          puede usar el mismo handle en Facebook y en Instagram
+          —pasa en el proyecto real—, y sin ella un lector de
+          pantalla anuncia dos selectores identicos.
+        */
+        aria-label={`Tipo de cuenta de ${cuenta.plataformaId}:${
+          cuenta.handle || cuenta.url
+        }`}
+        disabled={ocupado}
+        /*
+          El valor viene del DECLARADO, no del efectivo: el
+          selector refleja lo que dijo el analista, y si no dijo
+          nada muestra «Sin clasificar» en lugar de elegir por el.
+        */
+        value={info.assetTypeDeclared || "UNKNOWN"}
+        onChange={(e) => onDeclararTipo(cuenta.id, e.target.value)}
+        style={{
+          background: "var(--sentinel-primary)",
+          color: "var(--sentinel-texto)",
+          border: "1px solid var(--sentinel-borde-vivo)",
+          borderRadius: "var(--radio-s)",
+          padding: "3px 6px",
+          fontSize: "10px",
+          maxWidth: "170px"
+        }}
+      >
+        {(info.tiposAdmitidos || []).map((t) => (
+          <option key={t} value={t}>
+            {etiquetas?.[t] || t}
+          </option>
+        ))}
+      </select>
+
+      {/*
+        PROCEDENCIA Y VERIFICACION, PEGADAS AL TIPO. Sin esto,
+        dentro de un mes un tipo declarado se lee como un tipo
+        comprobado.
+      */}
+      {declarado && (
+        <span style={{ color: "#F59E0B", fontSize: "9.5px" }}>
+          declarado por analista · no verificado
+        </span>
+      )}
+
+      {info.assetTypeConflicto && (
+        <span
+          style={{
+            color: "#F87171",
+            fontSize: "9.5px",
+            flex: "1 1 100%"
+          }}
+        >
+          {info.assetTypeConflicto}
+        </span>
+      )}
+    </div>
+  );
+}
+
+
+/*
+-----------------------------------------------------------
 UNA PLATAFORMA EN MODO EDICION
 -----------------------------------------------------------
 */
-function BloquePlataforma({ p, nuevas, setNuevas, porQuitar, alternarQuitar }) {
+function BloquePlataforma({
+  p,
+  nuevas,
+  setNuevas,
+  porQuitar,
+  alternarQuitar,
+  activosMeta,
+  ocupado,
+  onDeclararTipo
+}) {
   const Icono = ICONOS[p.plataformaId] || Globe;
 
   const [borrador, setBorrador] = useState("");
@@ -219,6 +340,20 @@ function BloquePlataforma({ p, nuevas, setNuevas, porQuitar, alternarQuitar }) {
                   {marcada ? "se retirará al guardar" : procedencia(c)}
                 </span>
               </div>
+
+              {/*
+                El tipo del activo, debajo del estado de
+                identidad y claramente separado de el.
+              */}
+              {onDeclararTipo && !marcada && (
+                <TipoDeActivo
+                  cuenta={c}
+                  info={activosMeta?.porActivo?.[c.id]}
+                  etiquetas={activosMeta?.etiquetasDeTipo}
+                  ocupado={ocupado}
+                  onDeclararTipo={onDeclararTipo}
+                />
+              )}
             </div>
 
             <button
@@ -369,7 +504,8 @@ export default function CandidateIdentityForm({
   proyecto,
   ocupado,
   onCancelar,
-  onGuardar
+  onGuardar,
+  onDeclararTipo
 }) {
   const [nombre, setNombre] = useState(ficha?.nombre || "");
 
@@ -681,6 +817,9 @@ export default function CandidateIdentityForm({
                 setNuevas={setNuevas}
                 porQuitar={porQuitar}
                 alternarQuitar={alternarQuitar}
+                activosMeta={ficha?.activosMeta}
+                ocupado={ocupado}
+                onDeclararTipo={onDeclararTipo}
               />
             ))}
           </div>

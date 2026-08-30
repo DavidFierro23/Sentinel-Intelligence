@@ -308,7 +308,66 @@ router.get("/:proyectoId/candidatos/:candidatoId/identidad", async (req, res) =>
       });
     }
 
-    res.json(absolutizarAvatares(f, req));
+    /*
+      ---------------------------------------------------------
+      TIPO DE ACTIVO EN LA FICHA — P-CAND-ASSET-TYPE-UI-FIX-01
+      ---------------------------------------------------------
+
+      El editor de identidad se alimenta de esta ruta, y sin
+      esto no tenia forma de saber que tipo tiene cada activo:
+      la clasificacion solo viajaba por `/inteligencia`, que
+      alimenta otra pantalla.
+
+      Se lee del Lake, no de la red. Va como bloque aparte y no
+      mezclado dentro de cada cuenta, porque el TIPO DEL ACTIVO
+      y el ESTADO DE IDENTIDAD son dos cosas distintas y la
+      ficha ya lleva la segunda.
+      ---------------------------------------------------------
+    */
+    const cuentasFicha = f.plataformas.flatMap((pl) => pl.cuentas || []);
+
+    const tiposDeclarados = await declaracionesDeTipoDe(
+      req.params.proyectoId,
+      req.params.candidatoId
+    );
+
+    const inventario = activosDeCandidato({
+      candidateId: req.params.candidatoId,
+      cuentas: cuentasFicha,
+      declaraciones: tiposDeclarados.declaraciones
+    });
+
+    /* Indexado por id de activo: la UI lo cruza con su cuenta. */
+    const porActivo = {};
+
+    inventario.activos
+      .filter((a) => a.platform === "facebook" || a.platform === "instagram")
+      .forEach((a) => {
+        porActivo[a.accountId] = {
+          assetType: a.assetType,
+          assetTypeSource: a.assetTypeSource,
+          assetTypeDeclared: a.assetTypeDeclared,
+          assetTypeVerification: a.assetTypeVerification,
+          assetTypeConflicto: a.assetTypeConflicto,
+          tiposAdmitidos: a.tiposAdmitidos,
+          elegibilidadMeta: a.elegibilidadMeta?.estado || null
+        };
+      });
+
+    res.json({
+      ...absolutizarAvatares(f, req),
+
+      activosMeta: {
+        porActivo,
+        total: Object.keys(porActivo).length,
+        declarados: tiposDeclarados.total,
+        etiquetasDeTipo: ETIQUETA_TIPO,
+        tiposPorPlataforma: TIPOS_POR_PLATAFORMA,
+
+        separacion:
+          "El estado de identidad dice si la cuenta es del candidato. El tipo de activo dice que clase de cuenta es. No son lo mismo y no se deducen uno del otro."
+      }
+    });
   } catch (e) {
     res.status(500).json({ error: e?.message || "fallo al leer la identidad" });
   }

@@ -1117,6 +1117,131 @@ await t("22 · una declaracion que contradice a la URL deja la discrepancia visi
 });
 
 
+/* =========================================================
+   P-CAND-ASSET-TYPE-UI-FIX-01
+
+   El gate anterior implemento el selector en un componente que
+   la pantalla real no usa, y lo reporto como hecho. Las 1037
+   pruebas seguian pasando: el backend devolvia los tipos bien y
+   ninguna prueba miraba lo que la pantalla recibia.
+
+   Lo que sigue cubre el lado del backend —que la ficha lleve lo
+   que el selector necesita—. El render lo comprueba
+   `apps/web/tests/identity-form.check.jsx`, porque que la
+   funcion devuelva el dato no significa que la pantalla lo
+   pinte.
+========================================================= */
+
+bloque("La ficha lleva lo que el selector necesita");
+
+await t("23 · cada activo Meta declara sus tipos admitidos", () => {
+  const r = ca.activosDeCandidato({
+    candidateId: "c-1",
+    cuentas: [cuentaFb("a", "a"), cuentaIg("b", "b")]
+  });
+
+  const fb = r.activos.find((x) => x.platform === "facebook");
+  const ig = r.activos.find((x) => x.platform === "instagram");
+
+  /*
+    La UI pinta estas listas. Si vinieran vacias el selector se
+    renderiza sin opciones, que es indistinguible de no estar.
+  */
+  return (
+    fb.tiposAdmitidos.length === 3 &&
+    ig.tiposAdmitidos.length === 5 &&
+    fb.tiposAdmitidos[0] === "UNKNOWN" &&
+    ig.tiposAdmitidos[0] === "UNKNOWN"
+  );
+});
+
+await t("24 · un activo que no es de Meta no ofrece tipos", () => {
+  const r = ca.activosDeCandidato({
+    candidateId: "c-1",
+    cuentas: [
+      { id: "x:handle", plataformaId: "x", url: "https://x.com/handle", handle: "handle" }
+    ]
+  });
+
+  /* Sin tipos no hay selector, que es lo correcto: la distincion
+     perfil/pagina no existe fuera de Meta. */
+  return r.activos[0].tiposAdmitidos.length === 0;
+});
+
+await t("25 · el tipo declarado viaja aparte del efectivo", () => {
+  /*
+    El selector se pinta con `assetTypeDeclared`, no con
+    `assetType`. Si usara el efectivo, un activo cuyo tipo salio
+    de la URL apareceria como si el analista lo hubiera
+    declarado.
+  */
+  const r = ca.activosDeCandidato({
+    candidateId: "c-1",
+    cuentas: [
+      {
+        id: "facebook:num",
+        plataformaId: "facebook",
+        url: "https://www.facebook.com/profile.php?id=100002",
+        handle: null
+      }
+    ]
+  });
+
+  const a = r.activos[0];
+
+  return (
+    a.assetType === "FACEBOOK_PROFILE" &&
+    a.assetTypeDeclared === null &&
+    a.assetTypeSource === "PUBLIC_METADATA"
+  );
+});
+
+await t("26 · el estado de identidad y el tipo son campos distintos", () => {
+  /*
+    Una cuenta puede estar consolidada —sabemos que es suya— y
+    seguir sin tipo. Y al reves. La pantalla los pinta por
+    separado porque lo son.
+  */
+  const r = ca.activosDeCandidato({
+    candidateId: "c-1",
+    cuentas: [
+      {
+        ...cuentaFb("consolidada", "consolidada"),
+        estado: "CONSOLIDADA",
+        senalesIndependientes: [{ tipo: "CROSS_LINK" }]
+      }
+    ]
+  });
+
+  const a = r.activos[0];
+
+  return (
+    a.verificationStatus === "VERIFICADA" &&
+    a.relationshipToCandidate === "OFFICIAL" &&
+    a.assetType === "UNKNOWN" &&
+    a.assetTypeVerification === "NO_VERIFICADA"
+  );
+});
+
+await t("27 · declarar un tipo no asciende la verificacion de identidad", () => {
+  const cuentas = [cuentaFb("solo", "solo")];
+
+  const antes = ca.activosDeCandidato({ candidateId: "c-1", cuentas }).activos[0];
+
+  const despues = ca.activosDeCandidato({
+    candidateId: "c-1",
+    cuentas,
+    declaraciones: [declarar("facebook:solo", "facebook", "FACEBOOK_PAGE")]
+  }).activos[0];
+
+  return (
+    antes.relationshipToCandidate === despues.relationshipToCandidate &&
+    antes.verificationStatus === despues.verificationStatus &&
+    despues.verificationStatus === "NO_VERIFICADA"
+  );
+});
+
+
 /* ---------------------------------------------------------
    RESULTADO
 --------------------------------------------------------- */
