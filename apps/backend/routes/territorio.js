@@ -24,7 +24,14 @@ import {
 
 import { recargarRegistro } from "../services/geo/territoryRegistry.js";
 
-import { cruzarTemaTerritorio } from "../services/geo/topicTerritoryCrosstab.js";
+import {
+  cruzarTemaTerritorio,
+  construirMatriz,
+  compararVentanas,
+  toponimosDe,
+  TIPOS_SENAL,
+  TERRITORIO_NO_RESUELTO
+} from "../services/geo/topicTerritoryCrosstab.js";
 
 import {
   construirAgenda,
@@ -407,6 +414,270 @@ router.post("/fuentes/verificar", async (req, res) => {
     });
   } catch (e) {
     res.status(500).json({ error: e?.message || "fallo la comprobacion de fuentes" });
+  }
+});
+
+
+/*
+===========================================================
+TEMA x TERRITORIO — TERRITORIAL-TOPIC-TERRITORY-01
+===========================================================
+
+Sobre el corpus YA PERSISTIDO. **Cero peticiones externas**:
+ni Google News, ni YouTube, ni GDELT, ni RSS.
+
+POR QUE UNA RUTA APARTE Y NO SOLO DENTRO DE /analisis
+-----------------------------------------------------------
+
+`/analisis` recolecta: invoca `conversationHarvester`, que sale
+a Google News. Abrir una vista de temas no puede costar una
+recoleccion.
+
+Esta ruta LEE el libro de evidencias y cruza. Es la diferencia
+entre consultar lo observado y volver a observar, y es la misma
+separacion que ya existe entre `GET /fuentes` y
+`POST /fuentes/verificar`.
+===========================================================
+*/
+
+router.post("/tema-territorio", async (req, res) => {
+  try {
+    const cuerpo = req.body || {};
+
+    const ambitoId = cuerpo.territorio || "ec-azuay-cuenca";
+
+    const ventanaId = cuerpo.ventana || "30d";
+
+    const ahora = cuerpo.ahora || new Date().toISOString();
+
+    /* --- corpus persistido --- */
+    const ledger = crearLedgerFichero();
+
+    const observaciones = await ledger.leerTodos();
+
+    const estadoCorpus = reconstruirEstado(observaciones);
+
+    /*
+      El libro guarda el titular pero NO la descripcion, asi que
+      la extraccion de temas trabaja solo con titulares. Se
+      declara en la respuesta: no es lo mismo que trabajar con
+      el texto completo.
+    */
+    const evidencias = [...estadoCorpus.values()].map((e) => ({
+      titulo: e.title || null,
+      descripcion: null,
+      url: e.canonicalUrl || null,
+      enlace: e.canonicalUrl || null,
+      dominio: e.sourceId || null,
+      sourceId: e.sourceId || null,
+      fecha: e.publishedAt || null,
+      publishedAt: e.publishedAt || null,
+      firstObservedAt: e.firstObservedAt || null,
+      lastObservedAt: e.lastObservedAt || null,
+      evidenceId: e.evidenceId,
+      providerId: (e.providers || [])[0] || null,
+      publisher: null
+    }));
+
+    if (evidencias.length === 0) {
+      return res.json({
+        gate: "TERRITORIAL-TOPIC-TERRITORY-01",
+        territorioId: ambitoId,
+        corpus: { evidencias: 0 },
+
+        matriz: null,
+
+        motivo:
+          "El libro de evidencias está vacío. No hay corpus que cruzar: eso NO es «no hay temas en el territorio», es que no se ha observado todavía."
+      });
+    }
+
+    /* --- temas: clasificados y descubiertos --- */
+    const { extraerTemas } = await import("../services/conversation/topicExtractor.js");
+
+    const { descubrirTemas } = await import(
+      "../services/conversation/openTopicDiscovery.js"
+    );
+
+    const temas = extraerTemas(evidencias, { ambito: ambitoId });
+
+    const descubrimiento = descubrirTemas(evidencias, { ambito: ambitoId });
+
+    const listaTemas = temas?.temas || [];
+
+    const listaDescubiertos = descubrimiento?.temasDescubiertos || [];
+
+    /* --- territorio por evidencia, con su razon --- */
+    const { resolverLote } = await import("../services/geo/geoResolver.js");
+
+    const resuelto = resolverLote(evidencias, {
+      ambitoId,
+      pistaPorEvidencia: (e) => pistaDeFuente(e)
+    });
+
+    const ubicaciones = [];
+
+    (resuelto?.ubicadas || []).forEach((r) => {
+      ubicaciones[r.indice] = {
+        unidadId: r.ubicacion.unidadId,
+        unidad: r.ubicacion.unidad,
+        nivel: r.ubicacion.resolucion,
+        procedencia: r.ubicacion.procedencia,
+        confianzaGeografica: r.ubicacion.confianza,
+        razones: r.ubicacion.razones || []
+      };
+    });
+
+    /*
+      Toponimos del registro territorial: un nombre propio de
+      territorio no es un tema, y el criterio tiene que ser
+      verificable en lugar de una lista escrita a mano.
+    */
+    const toponimos = toponimosDe(listarUnidades());
+
+    const matriz = construirMatriz({
+      evidencias,
+      temas: listaTemas,
+      descubiertos: listaDescubiertos,
+      ubicaciones,
+      ventanaId,
+      ahora,
+      toponimos
+    });
+
+    const comparacion = compararVentanas({
+      evidencias,
+      temas: listaTemas,
+      descubiertos: listaDescubiertos,
+      ventanaId,
+      ahora
+    });
+
+    /* Todas las ventanas, para que la vista pueda cambiarlas. */
+    const porVentana = {};
+
+    ["hoy", "7d", "15d", "30d", "90d"].forEach((v) => {
+      const m = construirMatriz({
+        evidencias,
+        temas: listaTemas,
+        descubiertos: listaDescubiertos,
+        ubicaciones,
+        ventanaId: v,
+        ahora,
+        toponimos
+      });
+
+      porVentana[v] = {
+        ventana: { id: m.ventana.id, etiqueta: m.ventana.etiqueta },
+        celdas: m.metricas.celdas,
+        temas: m.metricas.temas,
+        senalesQueSonLugar: m.metricas.senalesQueSonLugar,
+        territorios: m.metricas.territorios,
+        evidenciasEnVentana: m.metricas.evidenciasEnVentana,
+        historicoCubre: m.ventana.historicoCubre,
+        porCobertura: m.metricas.porCobertura
+      };
+    });
+
+    /*
+      Evidencia por id, para que la interfaz pueda abrir una
+      celda sin volver a pedir nada. Sin esto, «auditable» seria
+      una promesa.
+    */
+    const evidenciaPorId = {};
+
+    evidencias.forEach((e, i) => {
+      if (!e.evidenceId) return;
+
+      const u = ubicaciones[i] || null;
+
+      const fuente = identificarFuente(e);
+
+      evidenciaPorId[e.evidenceId] = {
+        evidenceId: e.evidenceId,
+        titulo: e.titulo,
+        url: e.url,
+        dominio: e.dominio,
+        tipoFuente: fuente?.tipo || null,
+        emisor: e.publisher,
+        publishedAt: e.publishedAt,
+        firstObservedAt: e.firstObservedAt,
+        lastObservedAt: e.lastObservedAt,
+        providerId: e.providerId,
+
+        territorio: u
+          ? { unidadId: u.unidadId, nivel: u.nivel, razones: u.razones }
+          : { unidadId: TERRITORIO_NO_RESUELTO, nivel: null, razones: [] }
+      };
+    });
+
+    res.json({
+      gate: "TERRITORIAL-TOPIC-TERRITORY-01",
+
+      territorioId: ambitoId,
+
+      corpus: {
+        observaciones: observaciones.length,
+        evidencias: evidencias.length,
+        conFecha: evidencias.filter((e) => e.publishedAt).length,
+        dominios: new Set(evidencias.map((e) => e.dominio).filter(Boolean)).size,
+        inicioDeObservacion: matriz.ventana.inicioDeObservacion,
+
+        limitacion:
+          "El libro de evidencias guarda el titular pero no la descripción: la extracción de temas trabaja SOLO con titulares."
+      },
+
+      señales: {
+        clasificados: listaTemas.length,
+        descubiertos: listaDescubiertos.length
+      },
+
+      territorio: {
+        ubicadas: (resuelto?.ubicadas || []).length,
+        sinUbicar: (resuelto?.sinUbicar || []).length,
+
+        declaracion:
+          "Las evidencias sin territorio NO se descartan ni se reparten: van a la fila TERRITORIO_NO_RESUELTO, que se ve."
+      },
+
+      matriz,
+
+      comparacion,
+
+      porVentana,
+
+      evidenciaPorId,
+
+      metricasPermitidas: [
+        "conteo de evidencias",
+        "número de fuentes",
+        "número de emisores",
+        "distribución temporal",
+        "territorios observados",
+        "temas observados"
+      ],
+
+      metricasNoDisponibles: {
+        porcentajePoblacional: null,
+        porcentajeElectores: null,
+        intencionDeVoto: null,
+        aprobacion: null,
+        influencia: null,
+
+        motivo:
+          "No hay denominador poblacional con licencia comercial ni padrón electoral accesible. Sin denominador oficial NO se calcula ningún porcentaje: la métrica es conteo absoluto."
+      },
+
+      costes: {
+        usd: 0,
+        peticionesExternas: 0,
+
+        motivo:
+          "Esta ruta lee el corpus ya persistido. Ningún adapter se invoca: abrir una vista de temas no puede costar una recolección."
+      }
+    });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo el cruce tema x territorio" });
   }
 });
 

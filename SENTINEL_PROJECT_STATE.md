@@ -9,10 +9,10 @@
 
 | Campo | Valor comprobado |
 |---|---|
-| Fecha de actualización | **2026-08-31** (última sección añadida: §13-duodecies) |
+| Fecha de actualización | **2026-08-31** (última sección añadida: §13-terdecies) |
 | Rama | `dev` |
 | Último commit **base** de esta actualización | `a369ed2` — *feat(candidate): close Facebook coverage assessment* (Terminal 1 comiteó 4 veces mientras se cerraba este gate) |
-| Último commit **territorial** | `3a34c5c` — *feat(territorial): add verified Cuenca source universe* → le sigue el de §13-duodecies |
+| Último commit **territorial** | `098809e` — *feat(territorial): rotate verified RSS sources* → le sigue el de §13-terdecies |
 | Versión monorepo | `sentinel-intelligence-platform` 0.1.0 |
 | Versión backend | `sentinel-backend` 1.0.0 |
 | Versión frontend | `web` 0.0.0 (sin versionar) |
@@ -1766,6 +1766,214 @@ Sin red y comprobable: contador sobre el `fetch` global, y marca cero.
 
 ---
 
+## 13-terdecies. TERRITORIAL-TOPIC-TERRITORY-01 — tema × territorio (2026-08-31)
+
+✅ El corpus territorial se convierte en una matriz **explicable y auditable**.
+
+### Qué se completó, y qué NO se creó
+
+`topicTerritoryCrosstab.js` existía desde el Gate C2 y contaba evidencias por tema y
+unidad. Con eso no se podía responder ninguna de las preguntas que justifican el
+módulo: *¿qué fuentes hablan de esto aquí?*, *¿está creciendo?*, *¿qué evidencia lo
+sostiene?*
+
+Se **completó ese fichero**. No hay un segundo motor de temas: `topicExtractor`,
+`openTopicDiscovery`, `entityTopicSeparation`, `geoResolver` y `dayWindow` se invocan
+tal cual. Lo que se añade es la celda completa y la comparación de ventanas.
+
+### La celda
+
+| campo | qué es |
+|---|---|
+| `tema` · `origenTema` · `tipoSenal` | clasificado o descubierto; TEMA o LUGAR |
+| `territorioId` · `territorio` · `nivel` | unidad y resolución reales |
+| `evidencias` · `fuentes` · `emisores` | conteos separados |
+| `emisoresSinResolver` | el hueco, **fuera** del conteo de emisores |
+| `publicadoHoy` · `publicado7d` | frescura dentro de la celda |
+| `rangoPublicacion` · `primeraObservacion` · `ultimaObservacion` | qué publicó el medio, cuándo lo vimos |
+| `coverageStatus` · `coberturaEvidencial` | dos preguntas distintas |
+| `atribucion` | **por qué** se asignó ese territorio |
+| `evidenceIds` | sin esto no hay auditoría: hay una cifra que hay que creerse |
+
+### Tema no es lugar
+
+En el corpus real, la señal con más evidencias era **«cuenca», con 30**, seguida de
+«azuay · estado» con 4. Ninguna de las dos es un tema: son el territorio. El extractor
+las produce como etiquetas emergentes porque el topónimo es, literalmente, la palabra
+que más se repite en un corpus territorial.
+
+Dejarlas en el ranking convierte «¿de qué se habla en Cuenca?» en «de Cuenca».
+
+El criterio es verificable y no una lista escrita a mano: se comparan los tokens del
+nombre contra los **topónimos del registro territorial**, que se inyectan. Si todos los
+tokens significativos son topónimos, la señal es `LUGAR`. `alcaldia cuenca` se queda
+como `TEMA` —`alcaldia` no es un topónimo— y `agua en Cuenca` también.
+
+Las filas de LUGAR **no se borran**: su evidencia es real. Salen del ranking y se
+cuentan aparte.
+
+### Territorio indeterminado, visible
+
+No se fuerza una parroquia. Si la evidencia solo sostiene «Cuenca», el territorio es
+Cuenca a nivel cantón. Si solo sostiene «Azuay», es Azuay. Si no sostiene nada, va a la
+fila **`TERRITORIO_NO_RESUELTO`**, que se muestra.
+
+Descartar esas evidencias haría que el total de la matriz no cuadrase con el corpus y
+nadie sabría por qué.
+
+### Dos coberturas, porque son dos preguntas
+
+```
+coberturaEvidencial   ¿hay suficiente evidencia y de suficientes fuentes?
+coverageStatus        ¿además, estábamos observando durante la ventana?
+```
+
+El histórico manda: sin observación, el conteo es incompleto y presentarlo como
+cobertura sería informar mal. Pero el juicio evidencial **no se borra**, porque una
+celda con seis evidencias de cuatro medios no es lo mismo que una con una de uno, y
+ambas saldrían como `HISTORICO_INSUFICIENTE`.
+
+### Prueba real · 31 ago 2026 · corpus persistido, 0 peticiones externas
+
+| | |
+|---|---|
+| observaciones en el libro | 234 |
+| **evidencias distintas** | **81** |
+| con titular / con fecha | 81 / 81 |
+| dominios distintos | 6 |
+| proveedores | `google_news` 74 · `youtube_data` 7 |
+| inicio de observación | **2026-08-28T17:44:20Z** |
+| señales | 8 clasificadas + 26 descubiertas = **34** |
+| de las descubiertas → entidades / temas | **5 / 21** |
+| territorio resuelto | **77** de 81 · 4 sin resolver |
+| procedencia | derivada 77 · desconocida 4 |
+
+**Territorios observados:** Cuenca (cantón) 65 · Azuay (provincia) 10 · **Machángara
+(parroquia) 1** · Ecuador (país) 1.
+
+> Una evidencia se resolvió a **parroquia**. La resolución infra-cantonal existe y
+> funciona; lo que falta es geometría oficial para dibujarla.
+
+**Matriz por ventana:**
+
+| ventana | celdas | temas | señales que son lugar | territorios | ev. en ventana | ¿histórico cubre? |
+|---|---|---|---|---|---|---|
+| hoy | 0 | 0 | 0 | 0 | 0 | **sí** |
+| 7d | 6 | 4 | 2 | 2 | 18 | no |
+| 15d | 9 | 7 | 2 | 2 | 23 | no |
+| 30d | 14 | 9 | 4 | 2 | 32 | no |
+| 90d | 29 | 19 | 4 | 3 | 50 | no |
+
+**Temas reales, tras separar entidades y lugares:**
+
+```
+clasificados        Gestión y gobernanza 23 · Movilidad y transporte 8
+                    Proceso electoral 7 · Movilización social 4
+                    Seguridad ciudadana 3 · Agua y saneamiento 3
+
+descubiertos        alcaldía cuenca 10 · precandidatos 6 · estado excepción 4
+                    cuenca prefectura 4 · proyecto minero 4
+                    elecciones seccionales 3
+```
+
+**Tres cruces reales (ventana 30d, solo TEMA):**
+
+| # | tema | territorio | ev. | fuentes | emisores | cobertura | evidencial |
+|---|---|---|---|---|---|---|---|
+| 1 | Gestión y gobernanza | Cuenca · cantón | 4 | 1 | 0 (+4 sin resolver) | HISTORICO_INSUFICIENTE | COBERTURA_BAJA |
+| 2 | alcaldía cuenca | Cuenca · cantón | 3 | 1 | 0 (+3 sin resolver) | HISTORICO_INSUFICIENTE | COBERTURA_BAJA |
+| 3 | elecciones seccionales | Cuenca · cantón | 2 | 1 | 0 (+2 sin resolver) | HISTORICO_INSUFICIENTE | COBERTURA_BAJA |
+
+Cada uno con sus `evidenceId`, su rango de publicación y su atribución territorial
+—`procedencia: derivada`, `confianza: 72`, `topónimo "Cuenca" presente en el texto
+(+40)`—.
+
+> **Cero emisores resueltos en los tres cruces.** El corpus persistido es de Google
+> News, que oculta al publicador detrás de `news.google.com`: la fuente se identifica
+> como `agregador` y el emisor queda `null`. El universo RSS de §13-undecies resuelve
+> 8 de 8 publicadores, pero sus evidencias **no están en el libro**: las pasadas de
+> rotación midieron el dedup sin escribir en el corpus. Es la limitación más visible de
+> esta prueba.
+
+### Comparación temporal: el mecanismo funciona, el corpus es joven
+
+| ventana | ¿observábamos la anterior? | resultado |
+|---|---|---|
+| 7d · 15d · 30d | **no** | 34 de 34 señales → `HISTORICO_INSUFICIENTE` |
+| hoy vs ayer | **sí** | `MUESTRA_INSUFICIENTE`: 1 evidencia entre las dos ventanas |
+
+Sentinel empezó a observar el 28 de agosto. La ventana anterior de 7 días empieza el
+18: **no se puede comparar contra un periodo que no se observaba.**
+
+> El caso que esto evita, medido: el tema «cuenca» tenía **20 evidencias en la ventana
+> de 30 días y 1 en la anterior**. Sin la guarda, la pantalla habría declarado un
+> crecimiento del 1.900 %. Lo que había era un corpus que empezó el 28 de agosto.
+
+Las dos guardas están probadas por separado con corpus sintético: `CRECIENDO`,
+`DISMINUYENDO` y `ESTABLE` funcionan cuando se observaban las dos ventanas y hay
+muestra; con base cero **no se da variación relativa**, porque «+infinito %» por una
+primera aparición no es información.
+
+### Lo que no se calcula, y por qué
+
+`porcentajePoblacion`, `penetracion`, `perCapita`, `porcentajeElectores`, `padron`,
+`intencionVoto`, `aprobacion`, `influencia`, `probabilidadElectoral`: **ausentes del
+código**, no avisados en un texto. Comprobado en la prueba real y fijado en pruebas.
+
+La métrica es **conteo absoluto**. No hay denominador poblacional con licencia
+comercial (#4) ni padrón accesible (#5).
+
+`viral` es `null` con motivo `NO_DISPONIBLE`: exige velocidad de propagación y origen,
+que este módulo no observa. **«Emergente» no se declara**: solo el hecho
+`primeraObservacionEnLaVentana`, porque una señal nueva para nosotros puede ser vieja
+en el territorio.
+
+### Tres defectos corregidos durante la prueba
+
+**1 · El rango de publicación salía invertido.** El libro mezcla dos formatos de
+`publishedAt` —ISO y RFC 2822— porque cada proveedor la declara a su manera y el
+contrato no la normaliza. Ordenar esas cadenas alfabéticamente ponía `Wed, 26 Aug`
+después de `2026-08-28`: el rango real medido era «desde 28-ago hasta 26-ago». Ahora se
+ordena por instante.
+
+**2 · El nombre del territorio se imprimía como `[object Object]`.** `resolverUbicacion`
+devuelve `unidad` como objeto y el agregador como cadena. La matriz acepta las dos.
+
+**3 · Las señales que son topónimos encabezaban el ranking.** Resuelto con
+`clasificarSenal` contra el gazetteer.
+
+### Interfaz
+
+`TopicTerritoryPanel.jsx`: matriz + cajón de evidencia, selector de ventana, filtro por
+territorio y conmutador «solo temas». Se carga **a demanda** contra
+`POST /api/territorio/tema-territorio`, que lee el corpus persistido y **no sale a
+internet**: abrir una vista de temas no puede costar una recolección.
+
+Se montó dentro de `TerritorialModule.jsx`. **No se tocaron `App.jsx` ni `Sidebar.jsx`**
+—los tiene Media Intelligence sin commitear— ni se rediseñó nada.
+
+**Mapa:** sin geometría oficial de las unidades urbanas, la lectura territorial es por
+tabla. El panel lo dice y no dibuja polígonos sin fuente oficial.
+
+### Ficheros
+
+| Pieza | Fichero |
+|---|---|
+| Matriz, ventanas, tendencia, tema/lugar | `geo/topicTerritoryCrosstab.js` |
+| Ruta sobre corpus persistido | `routes/territorio.js` → `POST /tema-territorio` |
+| Interfaz | `territorio/panels/TopicTerritoryPanel.jsx` |
+
+### Pruebas
+
+`territorial` 160 · `c2` 53 · `d` 39 · `d2` 92 · `ingest-real` 93 · `fresh` 50 ·
+`sources` 61 · `rotation` 42 · **`topic` 49** = **639** en backend, más SSR **126** =
+**765**.
+
+`npm run test:territorial` ejecuta las nueve suites territoriales. Sin red, con contador
+sobre `fetch` que marca cero.
+
+---
+
 ## 13-decies. Roadmap territorial
 
 Orden oficial:
@@ -1782,11 +1990,12 @@ Orden oficial:
 ✅ TERRITORIAL-FRESH-01             Escucha del día · frescura
 ✅ TERRITORIAL-SOURCE-UNIVERSE-01   Fuentes locales comprobadas · RSS operativo
 ✅ TERRITORIAL-RSS-ROTATION-01      Rotación del universo RSS · sin starvation
+✅ TERRITORIAL-TOPIC-TERRITORY-01   Matriz tema × territorio · evidencia auditable
 →  1.  Primera prueba real multifuente        ← siguiente, EXIGE CREDENCIALES
    2.  DATA-PROVIDER-EVAL real
    3.  Ampliar providers donde el benchmark demuestre valor
    4.  E1 / Pulse
-   5.  Topic × Territory avanzado
+   5.  ~~Topic × Territory~~  ✅ §13-terdecies (avanzado: pendiente el radar)
    6.  Origin / Amplification
    7.  Media / Creator Intelligence
    8.  Candidate Overlay
@@ -1848,6 +2057,12 @@ Evaluaciones registradas: **`DATA-PROVIDER-EVAL-01`** (estructura definida, ning
 | 40 | **La rotación no reintenta dentro de la misma pasada** | aprovechar plazas perdidas | 🟡 si un feed falla, su plaza no se reasigna a otra fuente en esa pasada: se pierde. Con 0 fallos medidos hoy no molesta; con varios sí |
 | 41 | **Los feeds de comentarios no se aprovechan** | escucha de la reacción ciudadana | 🟡 8 feeds de comentarios están comprobados y **excluidos** de la recolección de noticias, con razón. Serían la primera fuente ciudadana real del módulo, pero exigen su propio contrato: un comentario no es una nota de prensa |
 | 42 | **`gk.city` alterna entre alcanzable e inaccesible** | estabilidad del universo elegible | 🟡 el número de feeds elegibles varía entre 11 y 12 según la última comprobación. La rotación lo tolera —el universo variable está cubierto por pruebas— pero la cobertura declarada cambia de denominador |
+
+| 43 | **El corpus persistido no incluye las evidencias del universo RSS** | emisores resueltos en la matriz | 🔴 el libro es de Google News y YouTube, así que los tres cruces reales salieron con **cero emisores resueltos**. Las pasadas de rotación midieron el dedup **sin escribir** en el corpus; con RSS persistido serían 8 de 8 publicadores. Es la limitación más visible de §13-terdecies |
+| 44 | **El libro de evidencias no guarda la descripción** | calidad de la extracción de temas | 🟡 solo guarda el titular, así que los temas se extraen de titulares. Funciona —34 señales reales— pero con el texto completo sería mejor |
+| 45 | **`publishedAt` no está normalizado en el contrato de evidencia** | cualquier orden o serie temporal | 🟡 el libro mezcla ISO y RFC 2822 según el proveedor. Ya rompió el rango de publicación una vez; la matriz ordena por instante, pero el contrato debería normalizarlo en la entrada |
+| 46 | **Sin histórico observado, ninguna tendencia es declarable** | Trend Radar | 🟡 la observación empezó el 2026-08-28: 34 de 34 señales quedan en `HISTORICO_INSUFICIENTE` en 7d/15d/30d. El mecanismo funciona y está probado; lo que falta es **tiempo observando**, no código |
+| 47 | **La matriz no se expone dentro de `/analisis`** | leer temas y recolección en una sola vista | 🟡 vive en `POST /tema-territorio` a propósito, para que abrir la vista no cueste una recolección. Integrarlas exigiría separar análisis de recolección en la propia ruta |
 
 `POST /api/territorio/recargar` integra 1–4 **sin reiniciar el backend y sin
 cambiar arquitectura**.

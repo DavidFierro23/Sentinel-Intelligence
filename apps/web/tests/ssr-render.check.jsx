@@ -22,6 +22,7 @@ import EntitiesPanel from "../src/territorio/agenda/EntitiesPanel";
 import SourceAgendasPanel from "../src/territorio/agenda/SourceAgendasPanel";
 import FreshnessPanel from "../src/territorio/panels/FreshnessPanel";
 import ProvidersStatusPanel from "../src/territorio/panels/ProvidersStatusPanel";
+import TopicTerritoryPanel from "../src/territorio/panels/TopicTerritoryPanel";
 
 /*
   Renderiza los paneles con la respuesta REAL de la API y
@@ -816,6 +817,44 @@ t(
   "sin rotacion activa el bloque no aparece: no se inventa un ciclo",
   () => !/Rotación RSS/.test(rotacionInactiva)
 );
+
+/*
+  TEMA x TERRITORIO — TERRITORIAL-TOPIC-TERRITORY-01
+
+  Se renderiza el estado SIN CARGAR, que es el que se ve al
+  abrir la vista. Tres cosas que este panel tiene que decir
+  antes de tener un solo dato:
+
+    - que leer el cruce no cuesta una recoleccion;
+    - que la metrica es conteo absoluto;
+    - que no hay porcentajes de poblacion.
+*/
+const topicoVacio = render("TopicTerritoryPanel sin cargar", <TopicTerritoryPanel />);
+
+t(
+  "declara que no sale a internet antes de tener datos",
+  () => /No sale a internet/i.test(topicoVacio) && /conteo absoluto/i.test(topicoVacio)
+);
+
+t(
+  "el panel sin cargar no finge una matriz",
+  () => /Sin cargar/i.test(topicoVacio) && !/Observado/.test(topicoVacio)
+);
+
+t(
+  "no aparece ningun porcentaje de poblacion en el panel",
+  () =>
+    !/% de poblaci/i.test(topicoVacio) &&
+    !/penetraci/i.test(topicoVacio) &&
+    !/per c\u00e1pita/i.test(topicoVacio)
+);
+
+const topicoConDatos = render(
+  "TopicTerritoryPanel con matriz",
+  <TopicTerritoryPanel territorioId="ec-azuay-cuenca" />
+);
+
+t("el panel con territorio declarado renderiza", () => topicoConDatos.length > 0);
 
 const frescuraRota = render(
   "FreshnessPanel con error",
