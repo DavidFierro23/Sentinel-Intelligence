@@ -6158,6 +6158,131 @@ lo que asciende a una plataforma es una llamada, no un documento.
 
 ---
 
+## 18-sextricies. P-CAND-SOCIAL-COVERAGE-01 (2026-08-30)
+
+Commit `feat(candidate): operationalize Instagram and Facebook coverage`.
+
+**1101 comprobaciones, 26 suites, 0 fallos.** **1 llamada Meta.**
+
+### Lo que paso
+
+El gate iba a pasar Instagram de prueba a operacion sobre los siete candidatos.
+No llego a ejecutarse: **el token de Facebook caduco entre gates**.
+
+    Session has expired on Sunday, 30-Aug-26 21:00:00 PDT.
+    The current time is Sunday, 30-Aug-26 21:00:56 PDT.
+
+Cincuenta y seis segundos. Los tokens del Graph API Explorer viven alrededor de
+una hora, y ese detalle no aparecio en ningun gate anterior porque las pruebas
+duraban minutos.
+
+Es un hallazgo de operacion, no de arquitectura: la via funciona y la credencial
+con la que se probo no sirve para operar.
+
+### La distincion que se anadio por esto
+
+    CREDENCIAL_RECHAZADA   el token esta mal. Revisar de donde salio.
+    CREDENCIAL_EXPIRADA    el token estuvo bien. Duraba poco.
+
+Antes las dos caian en la primera, y la accion que sugiere es «regenera el
+token». Regenerar otro corto caduca igual antes de la siguiente ejecucion. Lo
+que hace falta es un token de larga duracion, que es otro tramite.
+
+Nuevo `tokenDeLargaDuracion()`, que hace el intercambio de ~1 hora a ~60 dias.
+Exige `META_APP_ID` y `META_APP_SECRET`; si faltan, lo dice y no intenta la
+llamada.
+
+### Lo que SI quedo construido
+
+**`observarInstagram`**, dentro de `candidateObservation` y bajo el mismo
+contrato que `observarX` y `observarYouTube`. Una llamada por activo: Meta
+permite anidar la muestra en el propio `fields`, asi que pedir metrica por
+metrica gastaria mas sin obtener nada distinto.
+
+El campo que impide el falso positivo:
+
+    alcanceDeLaMedicion:  MEDIDO_TERCERO | MEDIDO_PROPIO_AUTORIZADO
+
+**No sale de la respuesta de Meta.** Sobre una cuenta propia y sobre una ajena
+la respuesta es identica —mismos campos, mismo 200— y ahi estuvo el riesgo en
+META-THIRD-PARTY-REAL-02. Sale de cruzar el handle con `me/accounts`, y por eso
+`cuentasPropias` es un parametro obligatorio en la practica: sin el, la funcion
+no puede afirmar que midio un tercero.
+
+**Nuevo estado `NO_SOPORTADO_PERSONAL`.** `business_discovery` solo responde
+sobre cuentas Business o Creator. Sobre una personal devuelve error, y leerlo
+como `CUENTA_NO_RESUELTA` diria «no encontramos la cuenta» cuando la verdad es
+«la cuenta esta ahi y esta via no la abre, ni ahora ni tras ninguna revision».
+Una invita a revisar el handle; la otra, a buscar otra fuente.
+
+**Instagram registrado en el puerto de adaptadores.** Es el caso mas extremo de
+lo que ese mapa resuelve: una sola funcion cumple las cuatro capacidades.
+
+**`matrizSocialDelProyecto()`**, con siete estados de celda que se niegan a
+colapsar en «sin datos»: `SIN_CUENTA`, `NO_SOPORTADO`, `BLOQUEADO`,
+`NO_PROBADO`, `PARCIAL`, `MEDIDO` y `MEDIDO_PROPIO`. Dos reglas fijadas por
+test: dos de tres activos medidos es PARCIAL y no MEDIDO, y `MEDIDO_PROPIO` no
+cuenta como cobertura del candidato.
+
+**`evidenceId` derivado del permalink.** Estable entre ejecuciones, que es lo
+que impide duplicar la misma publicacion al volver a observar. Un id aleatorio
+serviria para deduplicar dentro de una ejecucion y para nada entre dos.
+
+### Facebook: la respuesta concreta
+
+El error de Meta nombraba tres alternativas. Consultada la documentacion
+oficial, **solo una es real**:
+
+| Alternativa | Estado |
+|---|---|
+| `pages_read_engagement` | no aplica: es un permiso sobre Paginas donde tenemos rol |
+| Page Public Metadata Access | **sustituida por PPCA**, y no se puede pedir si el envio incluye PPCA |
+| **Page Public Content Access** | la via |
+
+PPCA exige **App Review** y **Business Verification**, las dos verbatim en su
+documentacion. En modo desarrollo solo alcanza Paginas cuyo administrador tenga
+rol en nuestra app — que es exactamente lo medido: la Pagina que administramos
+dio 200 y la de otro candidato dio 400.
+
+**No hay ningun cambio de configuracion que abra Paginas de terceros sin
+revision.**
+
+Y un dato que cambia la prioridad: PPCA habilita `/page-post/comments`, o sea
+**texto de comentarios publicos**. Instagram no lo entrega —medido, HTTP 400
+code 100—, asi que **PPCA no es «tambien Facebook»: es la condicion para que
+Comments Intelligence tenga fuente**.
+
+Preparado `docs/META-FB-PUBLIC-ACCESS-REQUEST.md`. No se envio nada.
+
+### Matriz social real del proyecto
+
+    CANDIDATO                 X         YOUTUBE   INSTAGRAM FACEBOOK  TIKTOK
+    Paul Carrasco             NO_PROB   MEDIDO    NO_PROB   NO_PROB   NO_PROB
+    J. C. Lloret              MEDIDO    MEDIDO    NO_PROB   NO_PROB   NO_PROB
+    Pedro Palacios            MEDIDO    SIN_CTA   NO_PROB   NO_PROB   NO_PROB
+    Juan Carlos Vega          MEDIDO    SIN_CTA   NO_PROB   SIN_CTA   NO_PROB
+    Yaku Perez                MEDIDO    MEDIDO    NO_PROB   NO_PROB   NO_PROB
+    Marcelo Cabrera           MEDIDO    SIN_CTA   NO_PROB   NO_PROB   NO_PROB
+    Leonardo Morales          MEDIDO    SIN_CTA   NO_PROB   NO_PROB   NO_PROB
+
+Instagram queda `NO_PROBADO` en los siete, con 12 activos declarados y cero
+observados. Es el estado honesto: la capacidad existe, la credencial caduco y
+no se rellena nada.
+
+### Riesgos
+
+- **Instagram multicandidato sigue sin ejecutarse.** El gate entrega el motor,
+  no los datos.
+- Solo 3 de los 12 activos de Instagram estan declarados profesionales. Los
+  personales no los alcanza `business_discovery` por diseno, asi que la
+  cobertura maxima esperable por esta via es parcial y conviene saberlo antes de
+  ejecutar.
+- El token de Meta administra la Pagina de un candidato del proyecto. Sigue
+  siendo una decision pendiente y ahora tambien afecta a que se declara a Meta
+  en el envio de PPCA.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -6306,6 +6431,9 @@ resueltos y verificados.
 | Cierre de discovery por plataforma | 🟢 **CORREGIDO**: la propagacion omitia la plataforma entera al encontrar una cuenta; ahora omite el par `plataforma:handle` |
 | **Tipificacion de los 23 activos Meta** | 🔴 **0 de 23 clasificados**. La capacidad de declararlos ya existe (§18-untricies); falta que el analista los clasifique. Es el dato que bloquea la decision sobre Meta |
 | **Instagram de terceros** | 🟢 **MEDIDO_TERCERO** (§18-quintricies): `business_discovery` responde con identidad, followers, publicaciones, likes y comments_count de una cuenta profesional ajena. Solo alcanza cuentas profesionales |
+| Observacion de Instagram multicandidato | 🟡 **MOTOR LISTO, SIN EJECUTAR** (§18-sextricies): `observarInstagram` integrado en el pipeline; el token caduco antes de correrlo |
+| Duracion del token de Meta | 🔴 **~1 hora**: los del Graph API Explorer no sirven para operar. Falta el intercambio a ~60 dias, que exige `META_APP_ID` y `META_APP_SECRET` |
+| Facebook de terceros: via exacta | 🟢 **DETERMINADA** (§18-sextricies): Page Public Content Access, con App Review y Business Verification. Las otras dos alternativas que Meta nombraba no son reales |
 | Comentarios de Instagram | 🟡 **PARCIAL**: el recuento llega, el TEXTO no —medido, HTTP 400 code 100—. Comments Intelligence sigue sin fuente por esta via |
 | Titularidad del token de Meta | 🟡 **decision pendiente**: el token administra la Pagina del candidato patron, asi que «nuestra cuenta propia» en Meta es su activo |
 | **Facebook de terceros** | 🔴 **BLOQUEADO POR PERMISOS** (§18-quintricies): Meta nombra tres alternativas —`pages_read_engagement`, Page Public Content Access o Page Public Metadata Access— y no menciona Business Verification |
@@ -6662,6 +6790,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-30 | P-CAND-SOCIAL-COVERAGE-01 | El gate iba a pasar Instagram de prueba a operacion sobre los siete candidatos y no llego a ejecutarse: el token de Facebook caduco entre gates, por cincuenta y seis segundos, porque los del Graph API Explorer viven alrededor de una hora y las pruebas anteriores duraban minutos. Es un hallazgo de operacion y no de arquitectura, y produjo la distincion que faltaba: CREDENCIAL_EXPIRADA no es CREDENCIAL_RECHAZADA, porque una manda a revisar de donde salio el token y la otra a conseguir uno de larga duracion —regenerar otro corto caduca igual—. Nuevo tokenDeLargaDuracion() para el intercambio a ~60 dias, que exige META_APP_ID y META_APP_SECRET y no intenta la llamada si faltan. Lo que si quedo construido: observarInstagram bajo el mismo contrato que observarX y observarYouTube, con una sola llamada por activo porque Meta permite anidar la muestra en el propio fields; el campo alcanceDeLaMedicion que separa MEDIDO_TERCERO de MEDIDO_PROPIO_AUTORIZADO y que NO sale de la respuesta de Meta —sobre una cuenta propia y una ajena la respuesta es identica, y ahi estuvo el riesgo del gate anterior— sino de cruzar el handle con me/accounts; el estado NO_SOPORTADO_PERSONAL, porque business_discovery solo responde sobre cuentas Business o Creator y leer ese error como CUENTA_NO_RESUELTA diria «no encontramos la cuenta» cuando la verdad es que la cuenta esta ahi y la via no la abre; Instagram registrado en el puerto de adaptadores, donde una sola funcion cumple las cuatro capacidades; matrizSocialDelProyecto con siete estados de celda que se niegan a colapsar en «sin datos», con dos reglas fijadas por test —dos de tres activos medidos es PARCIAL y no MEDIDO, y MEDIDO_PROPIO no cuenta como cobertura—; y evidenceId derivado del permalink, estable entre ejecuciones, que es lo que impide duplicar una publicacion al reobservar. Sobre Facebook se determino la via exacta: de las tres alternativas que Meta nombraba en su error, pages_read_engagement no aplica a terceros y Page Public Metadata Access esta sustituida, asi que solo queda Page Public Content Access, que exige App Review y Business Verification verbatim y en modo desarrollo solo alcanza Paginas cuyo administrador tenga rol en la app —exactamente lo medido—. No hay ningun cambio de configuracion que abra terceros sin revision. Y un dato que cambia la prioridad: PPCA habilita /page-post/comments, o sea texto de comentarios publicos, que Instagram no entrega; PPCA no es «tambien Facebook», es la condicion para que Comments Intelligence tenga fuente. Preparado docs/META-FB-PUBLIC-ACCESS-REQUEST.md sin enviar nada. 1101 pruebas, 0 fallos, 1 llamada Meta. Nueva §18-sextricies. |
 | 2026-08-30 | META-THIRD-PARTY-REAL-02 | Reintento con la credencial correcta, siete llamadas. El hallazgo que casi rompe el gate llego en la llamada de prerequisito: `me/accounts` revelo que el token ADMINISTRA la Pagina del candidato patron y su Instagram vinculado, asi que las dos primeras sondas preguntaron por nuestro propio activo y devolvieron datos reales —10.821 y 55.859 seguidores— con cero evidencia sobre terceros. Un resultado positivo con el sujeto equivocado se lee exactamente igual que un exito, y sin esa llamada el gate habria declarado MEDIDO_TERCERO con evidencia de MEDIDO_PROPIO. Se repitio contra un candidato ausente de me/accounts. INSTAGRAM: MEDIDO_TERCERO — business_discovery devolvio username, name, followers_count 9.719, media_count 1.635 y cinco publicaciones con id, permalink, timestamp, media_type, like_count y comments_count; no volvieron follows_count ni view_count y no se pidieron los owner insights. FACEBOOK: BLOQUEADO_PERMISOS — la Page que administramos dio 200 y la de un tercero 400 code 100, con TRES alternativas nombradas por Meta que no cuestan lo mismo (pages_read_engagement, Page Public Content Access, Page Public Metadata Access) y sin mencionar Business Verification; esta si es causa demostrada porque el error llega a evaluar permisos. COMENTARIOS de Instagram PARCIAL: el recuento llega y el texto no, medido con un 400 code 100 al pedir comments{text} dentro de business_discovery.media, asi que Comments Intelligence sigue sin fuente por esta via. Tres activos pasan a META_API/VERIFICADA porque business_discovery solo responde sobre cuentas profesionales y responder ES la evidencia del tipo; los otros veinte quedan intactos. habilitaBenchmark("instagram") pasa a true con siete capacidades sobre un tercero genuino, el mismo baremo con el que entraron X y YouTube, mientras views y shares se quedan en PROPIO porque son OWNER_INSIGHT y no vinieron del tercero. Registrada una discrepancia con META-PUBLIC-ACCESS-01, que documentaba Advanced Access y Business Verification como obligatorios: la llamada funciono sin que consten, y POR QUE funciona no esta demostrado. Corregido un defecto encontrado de paso: guardarDeclaracionesDeTipo usaba candidato + fecha como clave de entidad, asi que dos lotes con el mismo declaradoEn colisionaban y el primero dejaba de leerse devolviendo escrito true. Once aserciones cambiaron y ninguna se debilito. 1076 pruebas, 0 fallos. Nueva §18-quintricies. |
 | 2026-08-30 | META-FB-LOGIN-SETUP-01 | Gate de preparacion, cero llamadas Meta. El gate anterior concluyo «falta un token de Facebook Login», que era cierto y no era todo: el adaptador tenia UNA lista de variables y una sola funcion credencial(), y el token que devolvia se enviaba a los dos hosts. Eso es lo que produjo el 400 code 190, y habria sobrevivido a la solucion — al anadir el token de Facebook, graph.facebook.com habria seguido recibiendo el de Instagram porque era el primero de la lista, con el mismo 190 y la credencial correcta guardada al lado sin usarse, que es el peor caso posible porque parece que la configuracion ya esta hecha. Corregido: el token lo decide el host y no el orden de una lista, sin respaldo cruzado, y si falta el que toca la llamada no se hace —SIN_CREDENCIAL con llamadas 0 y la familia que falta—, porque contar una llamada que no salio falsearia el unico numero que este proyecto vigila. sanitizar() redacta ahora las dos familias, ya que el error de un host puede traer el token del otro y redactar solo uno lo dejaria a la vista precisamente en el mensaje que alguien va a copiar y pegar. Ocho pruebas antiguas cambiaron y no se debilitaron: pedian una respuesta simulada de graph.facebook.com y llegaban al fetch inyectado con un token que ese host nunca habria aceptado, asi que vivian del defecto sin saberlo. Documentada la credencial requerida por via —las dos comparten familia, Facebook User access token del flujo Facebook Login for Business, y no comparten permiso— y declarado que un token no resuelve el acceso: Standard Access alcanza solo a usuarios y Paginas con un rol en la app y un candidato nunca lo tendra, asi que el reintento seguira fallando, pero fallara con un error de permisos, que es informacion que hoy no existe. estadoDeCredenciales() lo declara en el dato: con el token presente, alcanza sigue vacio. App Review y Business Verification siguen TODAVIA NO DEMOSTRADOS porque ninguna llamada ha llegado a evaluar permisos, y la distincion entre «lo lei» y «lo medi» es la que sostiene los ultimos cuatro gates. 1059 pruebas, 0 fallos. Nueva §18-quatertricies. |
 | 2026-08-30 | META-THIRD-PARTY-REAL-01 | Prueba quirurgica de si Sentinel puede observar hoy una cuenta de candidato tercero por via oficial de Meta, en cuatro llamadas y sobre los dos mejores activos posibles del expediente: un Instagram declarado INSTAGRAM_PROFESSIONAL y un Facebook declarado FACEBOOK_PAGE. No puede, y ahora se sabe por que. La llamada que aporta la informacion nueva es business_discovery contra graph.instagram.com, que nunca se habia probado: META-IG-REAL-01 lo habia medido contra graph.facebook.com y recibido un 190 que podia estar tapando otra cosa, y faltaba preguntar al host que SI acepta nuestro token. La respuesta fue HTTP 400 code 100, «Tried accessing nonexisting field (business_discovery)»: no es un permiso que falte, el campo no existe ahi, asi que la via de Instagram Login no descubre terceros y ningun permiso sobre este token lo va a producir. Un 400 asi es mejor que un 403 porque cierra la pregunta. La lectura de la Page de Facebook devolvio 190 OAuthException, y lo que eso demuestra es que no tenemos credencial para ese host; lo que NO demuestra —y es exactamente lo que se sobreinterpreta— es que haga falta App Review o Business Verification, porque el error se detiene antes de evaluar permisos, al parsear la credencial. Lo hace legible el control de la primera llamada: graph.instagram.com/me devolvio 200 con el mismo token en la misma sesion, asi que la credencial esta viva y el host es otro; sin ese control, «Invalid OAuth access token» manda a regenerar el token, que es justo lo que no hay que hacer. Comentarios: NO_PROBADO y no NO_DISPONIBLE, porque ninguna plataforma devolvio publicacion de tercero y no habia nada a lo que preguntar. Queda fijada la obligacion de lenguaje COMENTARIOS OBSERVADOS != TODOS LOS COMENTARIOS. Nada se persistio: cero publicaciones, cero snapshots, cero metricas, con un test que fija que una llamada bloqueada no puede devolver cifras en cero porque un cero es una medicion y la ausencia no lo es. habilitaBenchmark() sin cambios y las declaraciones del analista siguen NO_VERIFICADA. 1051 pruebas, 0 fallos. Nueva §18-tertricies y `docs/META-THIRD-PARTY-REAL.md`. |

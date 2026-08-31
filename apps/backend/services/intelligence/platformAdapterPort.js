@@ -104,7 +104,13 @@ export const CAPACIDADES_REQUERIDAS = Object.freeze([
 */
 const RUTAS_CONOCIDAS = Object.freeze({
   youtube: "../ingest/adapters/youtubeAdapter.js",
-  x: "../ingest/adapters/xAdapter.js"
+  x: "../ingest/adapters/xAdapter.js",
+
+  /*
+    Registrado en P-CAND-SOCIAL-COVERAGE-01, cuando Instagram
+    dejo de ser una via documentada y paso a ser una medida.
+  */
+  instagram: "../ingest/adapters/instagramAdapter.js"
 });
 
 
@@ -137,6 +143,24 @@ const FUNCIONES_POR_CAPACIDAD = Object.freeze({
     estadisticas_de_publicacion: ["listarPublicaciones"],
 
     menciones: ["buscarMenciones"]
+  },
+
+  /*
+    Instagram es el caso mas extremo de lo que este mapa
+    resuelve: UNA sola funcion cumple las cuatro capacidades,
+    porque `business_discovery` devuelve identidad, estadisticas
+    de cuenta, muestra de publicaciones y metricas de cada una
+    en la misma respuesta.
+
+    Meta permite anidar la muestra dentro del propio `fields`,
+    asi que pedirlas por separado gastaria mas sin obtener nada
+    distinto.
+  */
+  instagram: {
+    metadatos_de_cuenta: ["descubrirCuentaProfesional"],
+    estadisticas_de_cuenta: ["descubrirCuentaProfesional"],
+    listado_de_publicaciones: ["descubrirCuentaProfesional"],
+    estadisticas_de_publicacion: ["descubrirCuentaProfesional"]
   }
 });
 

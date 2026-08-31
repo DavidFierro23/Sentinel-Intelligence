@@ -69,6 +69,20 @@ export const ESTADOS_OBSERVACION_REAL = Object.freeze({
   /* La capacidad no existe para terceros en esta plataforma. */
   CAPACIDAD_NO_DISPONIBLE: "CAPACIDAD_NO_DISPONIBLE",
 
+  /*
+    LA CUENTA EXISTE Y LA VIA NO LA ALCANZA.
+
+    `business_discovery` solo responde sobre cuentas Business o
+    Creator. Sobre una personal devuelve error, y leerlo como
+    CUENTA_NO_RESUELTA seria decir «no encontramos la cuenta»
+    cuando la verdad es «la cuenta esta ahi y esta via no la
+    abre, ni ahora ni despues de ninguna revision».
+
+    La diferencia cambia la accion: una invita a revisar el
+    handle, la otra a buscar otra fuente.
+  */
+  NO_SOPORTADO_PERSONAL: "NO_SOPORTADO_PERSONAL",
+
   CUOTA_AGOTADA: "CUOTA_AGOTADA",
 
   /*
@@ -84,6 +98,18 @@ export const ESTADOS_OBSERVACION_REAL = Object.freeze({
 
   /* 401: el token no vale. */
   CREDENCIAL_RECHAZADA: "CREDENCIAL_RECHAZADA",
+
+  /*
+    El token ESTUVO bien y caduco. Medido en
+    P-CAND-SOCIAL-COVERAGE-01: el de Facebook expiro entre la
+    validacion y la ejecucion, porque los del Graph API Explorer
+    duran alrededor de una hora.
+
+    Separarlo de RECHAZADA cambia la accion: uno manda a revisar
+    de donde salio el token, el otro a conseguir uno de larga
+    duracion. Regenerar otro corto vuelve a caducar.
+  */
+  CREDENCIAL_EXPIRADA: "CREDENCIAL_EXPIRADA",
 
   /* 403: el token vale y el plan no cubre este endpoint. */
   PERMISOS_INSUFICIENTES: "PERMISOS_INSUFICIENTES",
@@ -138,6 +164,17 @@ export function clasificarBloqueo(r) {
       motivo:
         "La credencial no fue rechazada: el acceso esta cerrado por facturacion. Reintentar no cambia nada y cargar saldo es una decision de una persona.",
       accion: "cargar saldo o contratar un plan en el portal del proveedor"
+    };
+  }
+
+  if (r.estado === "CREDENCIAL_EXPIRADA") {
+    return {
+      tipo: ESTADOS_OBSERVACION_REAL.CREDENCIAL_EXPIRADA,
+      reintentable: false,
+      motivo:
+        "el token caduco. No estaba mal: duraba poco, y los del Graph API Explorer viven alrededor de una hora.",
+      accion:
+        "Conseguir un token de larga duracion. Regenerar otro corto caducara igual antes de la siguiente ejecucion"
     };
   }
 
@@ -715,6 +752,300 @@ export async function observarX(entrada = {}) {
 
 /*
 ===========================================================
+OBSERVAR UN INSTAGRAM DE TERCERO — business_discovery
+===========================================================
+
+P-CAND-SOCIAL-COVERAGE-01.
+
+UNA llamada por activo, y en ella cabe todo: identidad,
+seguidores, recuento de publicaciones y una muestra de cinco con
+sus metricas. Meta permite anidar la muestra dentro del mismo
+`fields`, asi que pedir metrica por metrica seria gastar de mas
+sin obtener nada distinto.
+
+LA DISTINCION QUE ESTA FUNCION NO PUEDE PERDER
+-----------------------------------------------------------
+
+    MEDIDO_TERCERO            la cuenta no es nuestra
+    MEDIDO_PROPIO_AUTORIZADO  el token la administra
+
+Las dos devuelven HTTP 200 y los mismos campos. Se separan
+mirando `me/accounts`, no la respuesta: por la respuesta son
+indistinguibles, y ahi esta el riesgo. META-THIRD-PARTY-REAL-02
+casi declaro acceso a terceros con una consulta que nuestra
+propia cuenta se hizo a si misma.
+
+Por eso `cuentasPropias` es un parametro y no un detalle
+opcional: sin el, esta funcion no puede afirmar que midio un
+tercero.
+
+LO QUE business_discovery NO DEVUELVE
+-----------------------------------------------------------
+
+`reach`, `impressions`, `saved` y `shares` son OWNER_INSIGHT.
+No se piden y no se rellenan: una cifra ausente queda
+NO_DISPONIBLE, nunca 0.
+===========================================================
+*/
+function idEstable(texto) {
+  let acumulado = 0;
+
+  const t = String(texto || "");
+
+  for (let i = 0; i < t.length; i += 1) {
+    acumulado = (acumulado * 31 + t.charCodeAt(i)) % 0xffffffff;
+  }
+
+  return acumulado.toString(36);
+}
+
+
+export async function observarInstagram(entrada = {}) {
+  const {
+    candidateId = null,
+    projectId = null,
+    cuenta = null,
+    idParaBusinessDiscovery = null,
+    cuentasPropias = [],
+    maximoPublicaciones = 5,
+    observedAt = new Date().toISOString(),
+    fetchImpl = undefined
+  } = entrada;
+
+  const traza = { plataformaId: "instagram", llamadas: [], unidadesConsumidas: 0 };
+
+  const registrar = (endpoint, r) => {
+    traza.llamadas.push({
+      endpoint,
+      estado: r?.estado || "ERROR",
+      unidades: r?.llamadas ?? 0,
+      httpStatus: r?.httpStatus ?? null,
+      codigoMeta: r?.codigo ?? null,
+      motivo: r?.motivo || null
+    });
+
+    traza.unidadesConsumidas += r?.llamadas ?? 0;
+  };
+
+  const salida = (estado, extra = {}) => ({
+    estado,
+    plataformaId: "instagram",
+    candidateId,
+    accountId: cuenta?.id || null,
+    canal: null,
+    publicaciones: [],
+    traza,
+    ...extra
+  });
+
+  if (!cuenta?.handle) {
+    return salida(ESTADOS_OBSERVACION_REAL.CUENTA_NO_RESUELTA, {
+      motivo: "la cuenta del expediente no trae handle"
+    });
+  }
+
+  if (!idParaBusinessDiscovery) {
+    return salida(ESTADOS_OBSERVACION_REAL.NO_EJECUTABLE, {
+      motivo:
+        "business_discovery se pide DESDE nuestra cuenta profesional y no hay ninguna Pagina propia con Instagram vinculado. Sin ese vinculo la via no existe."
+    });
+  }
+
+  const puerto = await resolverAdaptador("instagram");
+
+  if (
+    puerto.estado === ESTADOS_ADAPTADOR.ADAPTADOR_NO_DISPONIBLE ||
+    puerto.estado === ESTADOS_ADAPTADOR.SIN_CREDENCIAL
+  ) {
+    return salida(ESTADOS_OBSERVACION_REAL.NO_EJECUTABLE, {
+      motivo: puerto.motivo
+    });
+  }
+
+  const adapter = await import(puerto.adaptador.ruta);
+
+  /*
+    ANTES de llamar: la cuenta es nuestra o no lo es. Se decide
+    aqui porque la respuesta de Meta no lo dice.
+  */
+  const normal = (x) => String(x || "").trim().toLowerCase().replace(/^@+/, "");
+
+  const esPropia = (cuentasPropias || []).map(normal).includes(normal(cuenta.handle));
+
+  const r = await adapter.descubrirCuentaProfesional(
+    idParaBusinessDiscovery,
+    cuenta.handle,
+    {
+      ...(fetchImpl ? { fetch: fetchImpl } : {}),
+      host: adapter.BASE_FB,
+      limiteDeMedia: maximoPublicaciones,
+      observedAt
+    }
+  );
+
+  registrar("GET graph.facebook.com/{ig}?fields=business_discovery.username()", r);
+
+  const bloqueo = clasificarBloqueo(r);
+
+  if (bloqueo) {
+    return salida(bloqueo.tipo, {
+      bloqueo,
+      esPropia,
+      motivo: `${bloqueo.motivo} ${bloqueo.accion}.`
+    });
+  }
+
+  /*
+    UN CASO QUE NO ES UN FALLO Y SE CONFUNDE CON UNO.
+
+    `business_discovery` solo responde sobre cuentas Business o
+    Creator. Sobre una personal devuelve error, y eso NO
+    significa que la cuenta no exista ni que Sentinel este mal
+    configurado: significa que esa cuenta queda fuera de la via
+    oficial, hoy y despues de cualquier revision.
+
+    Se le da su propio estado para que en la matriz no aparezca
+    como un error nuestro.
+  */
+  if (r.estado !== "OK" || !r.cuenta) {
+    const texto = String(r.motivo || "").toLowerCase();
+
+    const noProfesional =
+      /not a business|not an instagram business|does not exist|no matching user|cannot be loaded/.test(
+        texto
+      );
+
+    return salida(
+      noProfesional
+        ? ESTADOS_OBSERVACION_REAL.NO_SOPORTADO_PERSONAL
+        : ESTADOS_OBSERVACION_REAL.CUENTA_NO_RESUELTA,
+      {
+        esPropia,
+        httpStatus: r.httpStatus ?? null,
+        codigoMeta: r.codigo ?? null,
+
+        motivo: noProfesional
+          ? `business_discovery no devuelve @${cuenta.handle}: solo alcanza cuentas Business o Creator. Que no responda NO prueba que la cuenta no exista; prueba que esta fuera de la via oficial.`
+          : r.motivo || "la respuesta no incluye business_discovery"
+      }
+    );
+  }
+
+  const perfil = r.cuenta;
+
+  const est = perfil.estadisticasPublicas || {};
+
+  const metricaDeCuenta = (nombre, m) =>
+    crearSnapshotDeMetrica({
+      metrica: nombre,
+      value: m?.value ?? null,
+      observedAt,
+      provider: "instagram_graph",
+      source: perfil.url,
+      availability:
+        m?.value == null ? DISPONIBILIDAD.NO_DISPONIBLE : DISPONIBILIDAD.DISPONIBLE,
+      motivo: m?.value == null ? "business_discovery no incluyo esta metrica" : null
+    });
+
+  const metricasDeCuenta = [
+    metricaDeCuenta("followers", est.followers),
+    metricaDeCuenta("publicaciones", est.publicaciones)
+  ];
+
+  const publicaciones = (perfil.publicaciones || []).map((ev) => {
+    const m = ev.metricas || {};
+
+    const metricas = Object.entries(m).map(([nombre, v]) =>
+      crearSnapshotDeMetrica({
+        metrica: nombre,
+        value: v?.value ?? null,
+        observedAt,
+        provider: "instagram_graph",
+        source: ev.canonicalUrl,
+        availability:
+          v?.value == null
+            ? DISPONIBILIDAD.NO_DISPONIBLE
+            : DISPONIBILIDAD.DISPONIBLE,
+        motivo: v?.value == null ? "business_discovery no incluyo esta metrica" : null
+      })
+    );
+
+    return crearPublicacionObservada({
+      candidateId,
+      projectId,
+      accountId: cuenta.id,
+      platformId: "instagram",
+
+      canonicalUrl: ev.canonicalUrl,
+
+      publishedAt: ev.publishedAt,
+      firstObservedAt: observedAt,
+      lastObservedAt: observedAt,
+
+      title: null,
+      text: ev.caption || null,
+
+      /*
+        business_discovery no distingue original de repost: no
+        expone nada equivalente a `referenced_tweets`. Decir
+        ORIGINAL seria afirmar algo que no consta.
+      */
+      tipoPublicacion: TIPOS_PUBLICACION.NO_DETERMINADO,
+
+      metricas,
+      metricsObservedAt: observedAt,
+
+      provider: "instagram_graph",
+      observationMethod: "instagram_business_discovery",
+
+      /*
+        El evidenceId se deriva del permalink, que es la URL
+        canonica de la publicacion. Asi la evidencia es
+        REENCONTRABLE: cualquiera puede abrirla y comprobar que
+        existe, hoy y en seis meses.
+
+        Un id aleatorio serviria para deduplicar y para nada
+        mas. Este ademas es estable entre ejecuciones, que es
+        justo lo que impide duplicar la misma publicacion al
+        volver a observar.
+      */
+      evidenceId:
+        ev.evidenceId ||
+        (ev.canonicalUrl ? `ev-ig-${idEstable(ev.canonicalUrl)}` : null)
+    });
+  });
+
+  return salida(ESTADOS_OBSERVACION_REAL.OBSERVADA, {
+    canal: perfil,
+    metricasDeCuenta,
+    publicaciones,
+
+    esPropia,
+
+    /*
+      El campo que impide el falso positivo. No sale de la
+      respuesta de Meta —ahi son identicas— sino de si el token
+      administra la cuenta.
+    */
+    alcanceDeLaMedicion: esPropia ? "MEDIDO_PROPIO_AUTORIZADO" : "MEDIDO_TERCERO",
+
+    notaAlcance: esPropia
+      ? "El token administra esta cuenta: la consulta fue sobre un activo propio. NO demuestra acceso a terceros."
+      : "Cuenta que no administramos. Esta si es una observacion de tercero.",
+
+    tipoVerificado: "INSTAGRAM_PROFESSIONAL",
+
+    evidenciaDelTipo:
+      "business_discovery solo responde sobre cuentas Business o Creator, asi que responder ES la evidencia de que la cuenta es profesional.",
+
+    notaIdentidad:
+      "La observacion NO altera la resolucion de identidad. Que una cuenta se pueda leer no dice de quien es."
+  });
+}
+
+
+/*
+===========================================================
 OBSERVAR LO QUE SE PUEDA DE UN CANDIDATO
 ===========================================================
 
@@ -777,6 +1108,25 @@ export async function observarCandidato(entrada = {}) {
       continue;
     }
 
+    if (cuenta.plataformaId === "instagram") {
+      const r = await observarInstagram({
+        candidateId,
+        projectId,
+        cuenta,
+        idParaBusinessDiscovery: entrada.idParaBusinessDiscovery || null,
+        cuentasPropias: entrada.cuentasPropias || [],
+        maximoPublicaciones,
+        observedAt,
+        fetchImpl
+      });
+
+      unidades += r.traza?.unidadesConsumidas || 0;
+
+      resultados.push(r);
+
+      continue;
+    }
+
     if (cuenta.plataformaId === "youtube") {
       const r = await observarYouTube({
         candidateId,
@@ -823,5 +1173,6 @@ export default {
   clasificarBloqueo,
   observarYouTube,
   observarX,
+  observarInstagram,
   observarCandidato
 };

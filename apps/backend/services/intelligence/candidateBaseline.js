@@ -334,6 +334,204 @@ Dos candidatos con coberturas distintas no se comparan igual, y
 decirlo es mas util que ocultarlo detras de un numero.
 ===========================================================
 */
+/*
+===========================================================
+MATRIZ SOCIAL DEL PROYECTO — P-CAND-SOCIAL-COVERAGE-01
+===========================================================
+
+Una fila por candidato, una columna por plataforma, y el estado
+real de cada celda.
+
+LO QUE ESTA MATRIZ SE NIEGA A HACER
+
+Rellenar. Cada celda vacia tiene una causa distinta y todas se
+verian igual si se pintaran como «sin datos»:
+
+    SIN_CUENTA        no tiene cuenta ahi
+    NO_SOPORTADO      la tiene y la via oficial no la alcanza
+    BLOQUEADO         la via existe y no esta abierta
+    NO_PROBADO        no se ha intentado
+    PARCIAL           se midio algo, no lo suficiente
+    MEDIDO            observacion real de un tercero
+    MEDIDO_PROPIO     observacion real de un activo nuestro
+
+`SIN_CUENTA` y `NO_PROBADO` son los dos que mas facil se
+confunden con «no hay nada», y ninguno de los dos lo significa.
+
+Y `MEDIDO_PROPIO` no se cuenta como cobertura: una cuenta que
+administramos no informa de un candidato ajeno.
+===========================================================
+*/
+export const ESTADOS_CELDA_SOCIAL = Object.freeze({
+  MEDIDO: "MEDIDO",
+  MEDIDO_PROPIO: "MEDIDO_PROPIO",
+  PARCIAL: "PARCIAL",
+  BLOQUEADO: "BLOQUEADO",
+  NO_PROBADO: "NO_PROBADO",
+  SIN_CUENTA: "SIN_CUENTA",
+  NO_SOPORTADO: "NO_SOPORTADO"
+});
+
+
+export function matrizSocialDelProyecto(entrada = {}) {
+  const { candidatos = [], plataformas = PLATAFORMAS_OBJETIVO } = entrada;
+
+  const filas = (candidatos || []).map((c) => {
+    const celdas = {};
+
+    plataformas.forEach((plat) => {
+      const activos = (c.activos || []).filter((a) => a.platform === plat);
+
+      const observados = (c.observaciones || []).filter(
+        (o) => o.platform === plat
+      );
+
+      if (!activos.length) {
+        celdas[plat] = {
+          estado: ESTADOS_CELDA_SOCIAL.SIN_CUENTA,
+          activos: 0,
+          observados: 0,
+          publicaciones: 0,
+          snapshots: 0,
+          ultimaObservacion: null,
+          nota: "no tiene ningun activo declarado en esta plataforma"
+        };
+
+        return;
+      }
+
+      /*
+        La cuenta de activos y la de observados son cifras
+        distintas y las dos hacen falta: 3 activos con 1
+        observado no es lo mismo que 1 activo con 1 observado,
+        aunque las dos «tengan Instagram medido».
+      */
+      const conTercero = observados.filter((o) => o.alcance === "MEDIDO_TERCERO");
+
+      const conPropio = observados.filter(
+        (o) => o.alcance === "MEDIDO_PROPIO_AUTORIZADO"
+      );
+
+      const noSoportados = observados.filter(
+        (o) => o.estado === "NO_SOPORTADO_PERSONAL"
+      );
+
+      const bloqueados = observados.filter((o) =>
+        String(o.estado || "").startsWith("BLOQUEADO") ||
+        ["CREDENCIAL_RECHAZADA", "CREDENCIAL_EXPIRADA", "PERMISOS_INSUFICIENTES"].includes(
+          o.estado
+        )
+      );
+
+      const publicaciones = observados.reduce(
+        (n, o) => n + (o.publicaciones || 0),
+        0
+      );
+
+      const snapshots = observados.reduce((n, o) => n + (o.snapshots || 0), 0);
+
+      const fechas = observados.map((o) => o.observedAt).filter(Boolean).sort();
+
+      let estado = ESTADOS_CELDA_SOCIAL.NO_PROBADO;
+
+      let nota = "hay activos declarados y no se ha intentado observarlos";
+
+      if (conTercero.length) {
+        /*
+          MEDIDO si TODOS los activos de la plataforma se
+          midieron; PARCIAL si solo algunos. Un candidato con
+          tres Instagram y uno medido no esta «medido en
+          Instagram».
+        */
+        const completo = conTercero.length === activos.length;
+
+        estado = completo
+          ? ESTADOS_CELDA_SOCIAL.MEDIDO
+          : ESTADOS_CELDA_SOCIAL.PARCIAL;
+
+        nota = completo
+          ? `los ${activos.length} activo(s) observados sobre terceros`
+          : `${conTercero.length} de ${activos.length} activo(s) observados. El resto no se midio y no se rellena`;
+      } else if (conPropio.length) {
+        estado = ESTADOS_CELDA_SOCIAL.MEDIDO_PROPIO;
+
+        nota =
+          "lo unico observado son activos que administramos. NO cuenta como cobertura del candidato por vias de tercero";
+      } else if (bloqueados.length) {
+        estado = ESTADOS_CELDA_SOCIAL.BLOQUEADO;
+
+        nota = bloqueados[0].motivo || "la via existe y no esta abierta";
+      } else if (noSoportados.length === observados.length && observados.length) {
+        estado = ESTADOS_CELDA_SOCIAL.NO_SOPORTADO;
+
+        nota =
+          "los activos existen y la via oficial no los alcanza. NO es que no tenga cuenta";
+      }
+
+      celdas[plat] = {
+        estado,
+        activos: activos.length,
+        observados: conTercero.length + conPropio.length,
+        observadosSobreTerceros: conTercero.length,
+        publicaciones,
+        snapshots,
+        ultimaObservacion: fechas.length ? fechas[fechas.length - 1] : null,
+        nota
+      };
+    });
+
+    return {
+      candidateId: c.candidateId,
+      nombre: c.nombre || null,
+      celdas,
+
+      /* Cuantas plataformas aportan observacion de TERCERO. */
+      plataformasConTercero: plataformas.filter(
+        (plat) =>
+          celdas[plat].estado === ESTADOS_CELDA_SOCIAL.MEDIDO ||
+          celdas[plat].estado === ESTADOS_CELDA_SOCIAL.PARCIAL
+      ).length
+    };
+  });
+
+  const cuenta = (plat, estado) =>
+    filas.filter((f) => f.celdas[plat]?.estado === estado).length;
+
+  return {
+    plataformas,
+    filas,
+
+    porPlataforma: plataformas.reduce((acc, plat) => {
+      acc[plat] = {
+        MEDIDO: cuenta(plat, ESTADOS_CELDA_SOCIAL.MEDIDO),
+        PARCIAL: cuenta(plat, ESTADOS_CELDA_SOCIAL.PARCIAL),
+        MEDIDO_PROPIO: cuenta(plat, ESTADOS_CELDA_SOCIAL.MEDIDO_PROPIO),
+        BLOQUEADO: cuenta(plat, ESTADOS_CELDA_SOCIAL.BLOQUEADO),
+        NO_PROBADO: cuenta(plat, ESTADOS_CELDA_SOCIAL.NO_PROBADO),
+        SIN_CUENTA: cuenta(plat, ESTADOS_CELDA_SOCIAL.SIN_CUENTA),
+        NO_SOPORTADO: cuenta(plat, ESTADOS_CELDA_SOCIAL.NO_SOPORTADO),
+
+        activos: filas.reduce((n, f) => n + (f.celdas[plat]?.activos || 0), 0),
+        publicaciones: filas.reduce(
+          (n, f) => n + (f.celdas[plat]?.publicaciones || 0),
+          0
+        )
+      };
+
+      return acc;
+    }, {}),
+
+    candidatos: filas.length,
+
+    reglaDeRelleno:
+      "Ninguna celda vacia se rellena. SIN_CUENTA, NO_SOPORTADO, BLOQUEADO y NO_PROBADO tienen causas distintas y se verian igual pintadas como «sin datos».",
+
+    reglaDePropio:
+      "MEDIDO_PROPIO no cuenta como cobertura: una cuenta que administramos no informa de un candidato ajeno."
+  };
+}
+
+
 export function comparabilidad(cobertura, referencia) {
   const suyas = new Set(cobertura.plataformasMedidas);
 

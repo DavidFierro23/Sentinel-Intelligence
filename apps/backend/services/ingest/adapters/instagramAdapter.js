@@ -281,7 +281,33 @@ function clasificar(status, cuerpo) {
     return "LIMITE_DE_PETICIONES";
   }
 
-  if (status === 401 || /invalid.*token|session.*expired|oauthexception.*190/.test(texto)) {
+  /*
+    -----------------------------------------------------------
+    EXPIRADO NO ES RECHAZADO
+    -----------------------------------------------------------
+
+    Medido en P-CAND-SOCIAL-COVERAGE-01: el token de Facebook
+    caduco a mitad del gate. Meta lo dice con precision —«Session
+    has expired on ...»— y hasta ahora todo eso caia en
+    CREDENCIAL_RECHAZADA.
+
+    La diferencia manda a sitios distintos:
+
+        RECHAZADA   el token esta mal. Revisar de donde salio.
+        EXPIRADA    el token estuvo bien. Duraba poco.
+
+    Y la segunda tiene una consecuencia de producto: los tokens
+    del Graph API Explorer viven ~1 hora. Regenerar uno igual
+    vuelve a caducar antes de la siguiente ejecucion. Lo que
+    hace falta es un token de larga duracion, y eso es un
+    trámite distinto.
+    -----------------------------------------------------------
+  */
+  if (/session has expired|has expired on|session is invalid/.test(texto)) {
+    return "CREDENCIAL_EXPIRADA";
+  }
+
+  if (status === 401 || /invalid.*token|oauthexception.*190/.test(texto)) {
     return "CREDENCIAL_RECHAZADA";
   }
 
@@ -486,6 +512,98 @@ export async function validarCredencialDeFacebook(opciones = {}) {
 
     nota:
       "El token se parsea en graph.facebook.com. Eso es todo lo que dice: a quien alcanza lo decide el nivel de acceso de la app y se mide pidiendo un tercero."
+  };
+}
+
+
+/*
+===========================================================
+CAMBIAR UN TOKEN CORTO POR UNO LARGO
+===========================================================
+
+Los tokens que produce el Graph API Explorer duran alrededor de
+una hora. Sirven para comprobar que algo funciona y no para
+operar: en P-CAND-SOCIAL-COVERAGE-01 uno caduco entre la
+validacion y la ejecucion.
+
+Meta ofrece el cambio a un token de ~60 dias, y exige el id y
+el secreto de la app. No hay forma de hacerlo sin ellos, asi
+que si faltan esta funcion lo dice y no intenta nada.
+
+    GET /oauth/access_token
+        ?grant_type=fb_exchange_token
+        &client_id=APP_ID
+        &client_secret=APP_SECRET
+        &fb_exchange_token=EL_CORTO
+
+El token resultante NO se imprime ni se devuelve entero: se
+devuelve para que quien llame lo guarde, y de ahi no sale.
+===========================================================
+*/
+export async function tokenDeLargaDuracion(opciones = {}) {
+  const appId = process.env.META_APP_ID || process.env.FACEBOOK_APP_ID || null;
+
+  const appSecret =
+    process.env.META_APP_SECRET || process.env.FACEBOOK_APP_SECRET || null;
+
+  const corto = primeraDefinida(VARIABLES_FB);
+
+  const faltan = [];
+
+  if (!appId) faltan.push("META_APP_ID");
+  if (!appSecret) faltan.push("META_APP_SECRET");
+  if (!corto) faltan.push(VARIABLES_FB[0]);
+
+  if (faltan.length) {
+    return {
+      estado: "SIN_CREDENCIAL",
+      llamadas: 0,
+      faltan,
+      motivo: `para cambiar el token corto por uno de larga duracion hacen falta: ${faltan.join(", ")}. No se intenta la llamada sin ellos.`
+    };
+  }
+
+  const r = await pedir(
+    BASE_FB,
+    "/oauth/access_token",
+    {
+      grant_type: "fb_exchange_token",
+      client_id: appId,
+      client_secret: appSecret,
+      fb_exchange_token: corto
+    },
+    { ...opciones, etiqueta: "Facebook intercambio de token" }
+  );
+
+  if (!r.ok) {
+    return {
+      estado: r.estado,
+      llamadas: 1,
+      httpStatus: r.httpStatus,
+      endpoint: r.endpoint,
+      motivo: r.motivo,
+      codigo: r.codigo
+    };
+  }
+
+  const nuevo = r.datos?.access_token || null;
+
+  return {
+    estado: nuevo ? "OK" : "SIN_DATOS",
+    llamadas: 1,
+    httpStatus: r.httpStatus,
+    endpoint: r.endpoint,
+
+    /* Para guardarlo. No para registrarlo en ningun sitio. */
+    token: nuevo,
+
+    /* Lo unico que se puede contar de el sin filtrarlo. */
+    longitud: nuevo ? String(nuevo).length : null,
+    expiraEn: r.datos?.expires_in ?? null,
+
+    nota: nuevo
+      ? "Token de larga duracion obtenido. Guardarlo en apps/backend/.env; no debe aparecer en ningun log."
+      : "la respuesta no incluyo access_token"
   };
 }
 
