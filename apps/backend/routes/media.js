@@ -14,6 +14,10 @@ import { resolverPieza } from "../services/media/pieceResolver.js";
 
 import { CONTRATO_ANALISIS_PIEZA } from "../services/media/pieceContracts.js";
 
+import { matrizCompleta, matrizDePieza } from "../services/media/pieceFieldMatrix.js";
+
+import { fichaCompleta } from "../services/media/commercialProviderBenchmark.js";
+
 const router = express.Router();
 
 /*
@@ -45,6 +49,37 @@ router.get("/contrato", (req, res) => {
     gate: "MEDIA-PIECE-01",
     contrato: CONTRATO_ANALISIS_PIEZA
   });
+});
+
+
+/*
+-----------------------------------------------------------
+MATRIZ POR CAMPO — MEDIA-PIECE-02 §E
+
+Que se puede obtener de cada campo en cada plataforma, y por
+que via. Es la respuesta honesta a «¿por que este panel esta
+vacio?» y la UI puede enlazarla.
+-----------------------------------------------------------
+*/
+router.get("/campos", (req, res) => {
+  const { plataforma = null } = req.query || {};
+
+  res.json({
+    gate: "MEDIA-PIECE-02",
+    matriz: plataforma ? [matrizDePieza(String(plataforma))] : matrizCompleta()
+  });
+});
+
+
+/*
+-----------------------------------------------------------
+BENCHMARK DE PROVEEDORES — §F
+
+Ficha, no compra. Ningun proveedor evaluado ni contratado.
+-----------------------------------------------------------
+*/
+router.get("/proveedores/benchmark", (req, res) => {
+  res.json(fichaCompleta());
 });
 
 

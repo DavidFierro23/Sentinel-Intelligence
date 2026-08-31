@@ -4,7 +4,12 @@ import { resolverPieza } from "./pieceResolver.js";
 
 import { leerMetricas, planDeMetricas, resumirDisponibilidad } from "./pieceMetrics.js";
 
-import { buscarAmplificacion, construirMapa, construirConsultas } from "./pieceAmplification.js";
+import {
+  buscarAmplificacion,
+  construirMapa,
+  construirConsultas,
+  fallbackWebDePieza
+} from "./pieceAmplification.js";
 
 import { temasDePieza } from "./pieceTopics.js";
 
@@ -29,6 +34,10 @@ import {
 } from "./pieceContracts.js";
 
 import { obtenerCandidato } from "../projects/projectStore.js";
+
+import { enriquecerPieza } from "./pieceEnrichment.js";
+
+import { matrizDePieza } from "./pieceFieldMatrix.js";
 
 /*
 ===========================================================
@@ -129,7 +138,65 @@ export async function analizarPieza(entrada = {}, opciones = {}) {
 
   /*
     =========================================================
-    2. CANDIDATO
+    1b. METADATA PUBLICA — MEDIA-PIECE-02
+    =========================================================
+
+    Se hace ANTES de todo lo demas porque de aqui sale el
+    titulo, y sin titulo no hay temas ni consultas utiles de
+    amplificacion. Era la causa raiz del Caso 2.
+    =========================================================
+  */
+  let metadata = null;
+
+  let procedenciaCampos = null;
+
+  let camposPendientes = [];
+
+  if (!dryRun) {
+    try {
+      const enr = await enriquecerPieza(pieza, emisor, {
+        fetch: opciones.fetch,
+        sinMetadataPublica: entrada.sinMetadataPublica === true
+      });
+
+      pieza = enr.pieza;
+      emisor = enr.emisor;
+      metadata = enr.metadata;
+      procedenciaCampos = enr.procedenciaCampos;
+      camposPendientes = enr.camposPendientes || [];
+
+      limitaciones.push(...(enr.limitaciones || []));
+
+      if (metadata?.estado === "OK") {
+        evidencias.push({
+          evidenceId: `ev-meta-${pieza.hash}-${observedAt}`,
+          tipo: "metadata_publica",
+          canonicalUrl: metadata.urlFinal || pieza.canonicalUrl,
+          url: pieza.url,
+          provider: "open_graph_publico",
+          observedAt,
+          titulo: pieza.titulo,
+
+          nota:
+            "Metadata que la propia pagina publica para ser compartida. Leida sin autenticacion y respetando robots.txt."
+        });
+      }
+    } catch (error) {
+      limitaciones.push(
+        `La lectura de metadata publica fallo: ${error?.message || "error desconocido"}.`
+      );
+    }
+  }
+
+  /*
+    =========================================================
+    2. CANDIDATO — CONTEXTO ANALITICO OPCIONAL (§C)
+    =========================================================
+
+    `projectId` y `candidateId` NO condicionan la resolucion de
+    la pieza. Todo lo anterior a este punto ya esta resuelto solo
+    con la URL. Si no llegan, la pieza se analiza igual y se
+    declara que falta contexto, no que falta un dato.
     =========================================================
   */
   let candidato = null;
@@ -161,6 +228,30 @@ export async function analizarPieza(entrada = {}, opciones = {}) {
   }
 
   if (candidatoError) limitaciones.push(candidatoError);
+
+  /*
+    §C: se declara explicitamente que el contexto es opcional y
+    QUE se pierde sin el, para que su ausencia no se lea como un
+    fallo de resolucion.
+  */
+  const contextoAnalitico = {
+    projectId: entrada.projectId || null,
+    candidateId: entrada.candidateId || null,
+    resuelto: Boolean(candidato),
+    obligatorio: false,
+
+    declaracion:
+      "projectId y candidateId son CONTEXTO ANALITICO OPCIONAL. La resolucion de la pieza —plataforma, id, canonica, emisor, titulo, metricas, temas, territorio— no depende de ellos.",
+
+    queAportaSiSeIndica: [
+      "Relacion observable EMISOR -> PUBLICA_SOBRE -> CANDIDATO con su evidencia.",
+      "Deteccion de menciones del candidato en la pieza y en sus replicas.",
+      "Distincion entre presencia PROPIA y GANADA segun las cuentas atribuidas.",
+      "Una consulta de amplificacion adicional que cruza candidato y hecho."
+    ],
+
+    motivo: candidatoError || (candidato ? null : "No se indico contexto.")
+  };
 
   /*
     =========================================================
@@ -331,6 +422,68 @@ export async function analizarPieza(entrada = {}, opciones = {}) {
     } catch (error) {
       limitaciones.push(
         `La busqueda de amplificacion fallo: ${error?.message || "error desconocido"}.`
+      );
+    }
+  }
+
+  /*
+    =========================================================
+    4b. FALLBACK WEB — §D
+
+    Solo si la pieza sigue sin titulo. Con titulo no aporta
+    nada y gastaria una consulta.
+    =========================================================
+  */
+  let fallback = null;
+
+  if (!dryRun && !sinBusqueda && !pieza.titulo) {
+    try {
+      fallback = await fallbackWebDePieza(pieza, { fetch: opciones.fetch });
+
+      cuota.web.consultas += fallback.consultas || 0;
+
+      if (fallback.encontrado) {
+        const t = fallback.campos?.titulo;
+
+        if (t?.valor) {
+          pieza = {
+            ...pieza,
+            titulo: t.valor,
+            tituloProcedencia: t.procedencia,
+            tituloEsContenidoOriginal: false
+          };
+
+          if (procedenciaCampos) procedenciaCampos.titulo = t.procedencia;
+
+          limitaciones.push(
+            `El titulo proviene del snippet de un buscador (${t.proveedor}), NO de la publicacion. Un snippet no es el contenido original.`
+          );
+        }
+
+        const tx = fallback.campos?.texto;
+
+        if (tx?.valor && !pieza.snippet) {
+          pieza = { ...pieza, snippet: tx.valor, snippetEsContenidoOriginal: false };
+
+          if (procedenciaCampos) procedenciaCampos.snippet = tx.procedencia;
+        }
+
+        evidencias.push({
+          evidenceId: `ev-fallback-${pieza.hash}-${observedAt}`,
+          tipo: "snippet_de_buscador",
+          canonicalUrl: pieza.canonicalUrl,
+          url: pieza.url,
+          provider: fallback.proveedor,
+          observedAt,
+          titulo: pieza.titulo,
+          nota: fallback.advertencia
+        });
+      } else {
+        limitaciones.push(`Fallback web: ${fallback.motivo}`);
+      }
+    } catch (error) {
+      limitaciones.push(
+        `El fallback web fallo: ${error?.message || "error desconocido"}.`
       );
     }
   }
@@ -512,15 +665,23 @@ export async function analizarPieza(entrada = {}, opciones = {}) {
     pieza,
     emisor,
 
+    /* MEDIA-PIECE-02 */
+    metadataPublica: metadata,
+    procedenciaCampos,
+    camposPendientes,
+    matrizDeCampos: matrizDePieza(pieza.plataforma),
+
     metricas,
     disponibilidadMetricas: disponibilidad,
     planDeMetricas: plan,
     estadoLecturaMetricas: metricasEstado,
 
+    contextoAnalitico,
     candidato: relacionCandidato,
 
     amplificacion,
     planDeConsultas: planConsultas,
+    fallbackWeb: fallback,
 
     temas,
     conversacion,

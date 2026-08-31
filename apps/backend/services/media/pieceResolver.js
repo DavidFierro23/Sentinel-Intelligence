@@ -142,9 +142,28 @@ const PATRONES = [
     },
     cuenta(u) {
       const seg = u.pathname.split("/").filter(Boolean);
-      return seg[0] && !["posts", "videos", "reel", "watch"].includes(seg[0])
-        ? seg[0]
-        : null;
+
+      /*
+        MEDIA-PIECE-02: en /{pagina}/posts/{id} el emisor SI esta
+        en la URL. En /reel/{id} y /watch/?v= NO lo esta, y ahi
+        solo puede llegar de la metadata publica o de un
+        buscador. Devolver null es la respuesta correcta: el
+        dominio facebook.com nunca es el emisor.
+      */
+      const contenedores = [
+        "posts",
+        "videos",
+        "reel",
+        "reels",
+        "watch",
+        "photo",
+        "story.php",
+        "permalink.php",
+        "share",
+        "groups"
+      ];
+
+      return seg[0] && !contenedores.includes(seg[0]) ? seg[0] : null;
     }
   }
 ];

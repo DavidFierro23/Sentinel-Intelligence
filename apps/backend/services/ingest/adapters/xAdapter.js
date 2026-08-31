@@ -290,6 +290,20 @@ export function normalizarPost(item, contexto = {}) {
         pm,
         "impression_count",
         "la API no incluyo impression_count: su disponibilidad para publicaciones de terceros depende del plan y del endpoint"
+      ),
+
+      /*
+        MEDIA-PIECE-02: los "guardados" son visibles en la
+        interfaz de X y el usuario los ve al mirar una
+        publicacion. La API los expone como `bookmark_count`,
+        pero no en todos los niveles de acceso. Se pide y, si no
+        vienen, se declara ausente: no aparecer aqui hacia creer
+        que la metrica no existe, cuando el problema es el plan.
+      */
+      bookmarks: metrica(
+        pm,
+        "bookmark_count",
+        "la API no incluyo bookmark_count: su disponibilidad depende del nivel de acceso contratado"
       )
     },
 
@@ -392,6 +406,108 @@ export async function listarPublicaciones(userId, opciones = {}) {
         })
       )
       .filter(Boolean),
+    llamadas: 1
+  };
+}
+
+
+/*
+===========================================================
+RESOLVER POSTS POR ID — MEDIA-PIECE-02
+===========================================================
+
+El equivalente de `youtubeAdapter.resolverVideos`. Faltaba, y su
+ausencia era la causa exacta de que MEDIA-PIECE reconociera una
+URL de X pero no trajera ninguna metrica: habia un mapa de
+metricas completo en `normalizarPost` y ningun camino desde un
+`postId` hasta la API.
+
+`GET /2/tweets?ids=` es el unico endpoint que resuelve una
+publicacion concreta de un tercero sin recorrer su timeline. Con
+`expansions=author_id` la misma llamada devuelve el autor, que es
+justo lo que la URL de un post no siempre lleva
+(`x.com/i/status/123`).
+
+Una llamada por lote, hasta 100 ids. No hay reintentos: un 403
+aqui significa «tu plan no lo cubre» y repetirlo no lo cambia.
+===========================================================
+*/
+export async function resolverPosts(postIds = [], opciones = {}) {
+  if (!estaConfigurado()) {
+    return { estado: "SIN_CREDENCIAL", posts: [], llamadas: 0 };
+  }
+
+  const ids = (Array.isArray(postIds) ? postIds : [postIds])
+    .map((x) => String(x || "").trim())
+    .filter(Boolean)
+    .slice(0, 100);
+
+  if (!ids.length) {
+    return { estado: "OK", posts: [], llamadas: 0, motivo: "sin ids" };
+  }
+
+  const params = new URLSearchParams({
+    ids: ids.join(","),
+    "tweet.fields": CAMPOS_POST,
+    expansions: "author_id",
+    "user.fields": "username,name,public_metrics"
+  });
+
+  const r = await pedir(`${BASE}/tweets?${params}`, {
+    ...opciones,
+    etiqueta: "X tweets"
+  }).catch((e) => ({ ok: false, estado: "ERROR", motivo: e?.message }));
+
+  if (!r.ok) {
+    return { estado: r.estado, posts: [], llamadas: 1, motivo: r.motivo };
+  }
+
+  const items = r.datos?.data || [];
+
+  /* El autor llega en `includes`, no dentro del post. */
+  const usuarios = new Map(
+    (r.datos?.includes?.users || []).map((u) => [u.id, u])
+  );
+
+  const posts = items
+    .map((it) => {
+      const autor = usuarios.get(it.author_id) || null;
+
+      const ev = normalizarPost(it, {
+        handle: autor?.username || opciones.handle || null,
+        userId: it.author_id || null,
+        observedAt: opciones.observedAt || null
+      });
+
+      if (ev && autor) {
+        ev.x.autor = {
+          userId: autor.id,
+          handle: autor.username || null,
+          displayName: autor.name || null,
+          followers: autor.public_metrics?.followers_count ?? null,
+
+          procedencia: `${ID}:tweets?expansions=author_id`,
+
+          nota:
+            "El autor lo devuelve la propia API, no se dedujo de la URL."
+        };
+      }
+
+      return ev;
+    })
+    .filter(Boolean);
+
+  /*
+    IDs pedidos que la API no devolvio: post borrado, cuenta
+    protegida o id inexistente. Se declara en lugar de perderlos.
+  */
+  const devueltos = new Set(posts.map((p) => p.x?.postId));
+
+  return {
+    estado: "OK",
+    posts,
+    noDevueltos: ids.filter((id) => !devueltos.has(id)),
+    errores: r.datos?.errors || [],
     llamadas: 1
   };
 }
@@ -502,6 +618,7 @@ export default {
   DISPONIBILIDAD_METRICA,
   estaConfigurado,
   resolverCuentaPorHandle,
+  resolverPosts,
   listarPublicaciones,
   buscarMenciones,
   normalizarUsuario,

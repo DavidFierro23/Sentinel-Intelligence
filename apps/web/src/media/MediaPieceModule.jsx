@@ -105,7 +105,13 @@ function Seccion({ icono: Icono, titulo, children, nota }) {
 }
 
 
-function Campo({ etiqueta, valor, mono = false }) {
+/*
+  MEDIA-PIECE-02: un campo puede llevar su PROCEDENCIA. No es
+  decoracion: un titulo de `og:title` lo escribio el editor y uno
+  de `snippet_de_buscador` lo escribio un buscador sobre la
+  pieza. Quien decide tiene que poder distinguirlos.
+*/
+function Campo({ etiqueta, valor, mono = false, procedencia = null }) {
   return (
     <div style={{ minWidth: "140px", flex: "1 1 160px", marginBottom: "10px" }}>
       <div style={ETIQUETA}>{etiqueta}</div>
@@ -121,6 +127,28 @@ function Campo({ etiqueta, valor, mono = false }) {
       >
         {valor || "no resuelto"}
       </div>
+
+      {valor && procedencia ? (
+        <div
+          style={{
+            fontSize: "0.58rem",
+            color:
+              procedencia === "snippet_de_buscador"
+                ? "#eda100"
+                : "var(--sentinel-texto-tenue)",
+            marginTop: "2px",
+            fontFamily: "ui-monospace, monospace",
+            letterSpacing: "0.02em"
+          }}
+          title={
+            procedencia === "snippet_de_buscador"
+              ? "Proviene del snippet de un buscador, NO de la publicación original."
+              : `Procedencia del dato: ${procedencia}`
+          }
+        >
+          {procedencia}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -536,17 +564,75 @@ export default function MediaPieceModule() {
 
           <Seccion icono={FileText} titulo="Publicación original">
             <div style={{ display: "flex", flexWrap: "wrap", gap: "16px" }}>
-              <Campo etiqueta="Título" valor={r.pieza?.titulo} />
-              <Campo etiqueta="Autor" valor={r.pieza?.autor} />
-              <Campo etiqueta="Medio / cuenta" valor={r.emisor?.nombre} />
+              <Campo
+                etiqueta="Título"
+                valor={r.pieza?.titulo}
+                procedencia={r.procedenciaCampos?.titulo}
+              />
+              <Campo
+                etiqueta="Autor"
+                valor={r.pieza?.autor}
+                procedencia={r.procedenciaCampos?.autor}
+              />
+              <Campo
+                etiqueta="Medio / cuenta"
+                valor={r.emisor?.nombre}
+                procedencia={r.emisor?.procedencia}
+              />
               <Campo etiqueta="Clase del emisor" valor={r.emisor?.clase} />
               <Campo etiqueta="Plataforma" valor={r.pieza?.plataforma} />
               <Campo
                 etiqueta="Fecha de publicación"
                 valor={r.pieza?.publishedAt || null}
                 mono
+                procedencia={r.procedenciaCampos?.publishedAt}
               />
             </div>
+
+            {/*
+              MEDIA-PIECE-02: por qué un campo está vacío. Sin
+              esto, el analista no puede distinguir «no lo hemos
+              pedido» de «no se puede obtener».
+            */}
+            {r.camposPendientes?.length ? (
+              <div
+                style={{
+                  marginTop: "10px",
+                  borderTop: "1px solid var(--sentinel-borde)",
+                  paddingTop: "10px"
+                }}
+              >
+                <div style={ETIQUETA}>Campos sin resolver y por qué</div>
+
+                {r.camposPendientes.map((c) => (
+                  <div
+                    key={c.campo}
+                    style={{
+                      fontSize: "0.7rem",
+                      color: "var(--sentinel-texto-tenue)",
+                      marginTop: "6px",
+                      lineHeight: 1.5
+                    }}
+                  >
+                    <strong style={{ color: "var(--sentinel-texto-suave)" }}>
+                      {c.campo}
+                    </strong>{" "}
+                    <Pastilla
+                      texto={c.estado}
+                      tono={
+                        c.estado === "REQUIERE_AUTORIZACION"
+                          ? "alerta"
+                          : c.estado === "NO_DISPONIBLE"
+                            ? "mal"
+                            : "neutro"
+                      }
+                    />
+                    <div>{c.motivo}</div>
+                    <div style={{ color: "#eda100" }}>{c.accionable}</div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
 
             <div style={{ marginTop: "6px" }}>
               <a

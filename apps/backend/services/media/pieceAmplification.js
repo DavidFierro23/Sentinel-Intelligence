@@ -576,11 +576,145 @@ function agruparPorContenido(items) {
 }
 
 
+/*
+===========================================================
+FALLBACK WEB PARA UNA PIEZA BLOQUEADA — MEDIA-PIECE-02 §D
+===========================================================
+
+Cuando la plataforma no entrega la metadata (muro de Facebook,
+X sin credencial), un buscador puede tener la URL indexada y
+darnos su titular y su emisor.
+
+LA DISTINCION QUE NO SE PUEDE PERDER
+-----------------------------------------------------------
+
+    snippet de buscador  ≠  contenido de la publicacion
+    replica              ≠  metrica de la original
+
+Lo que devuelve esta funcion NO es el texto de la publicacion:
+es lo que un tercero indexo sobre ella, en un momento que
+puede no ser hoy. Por eso:
+
+  · cada campo sale con `procedencia: snippet_de_buscador`
+  · se marca `esContenidoOriginal: false`
+  · NUNCA rellena una metrica: un contador no se lee de un
+    snippet, y si apareciera en uno seria una cifra sin fecha
+    de observacion ni fuente responsable
+
+UNA SOLA CONSULTA
+-----------------------------------------------------------
+
+Se busca la URL exacta. Si el buscador no la tiene indexada, se
+acepta y se declara: insistir con variantes gastaria el
+presupuesto del dia para adivinar.
+===========================================================
+*/
+export async function fallbackWebDePieza(pieza, opciones = {}) {
+  const canon = pieza?.canonicalUrl || pieza?.url || null;
+
+  if (!canon) {
+    return {
+      encontrado: false,
+      motivo: "La pieza no tiene URL utilizable.",
+      consultas: 0
+    };
+  }
+
+  const desnuda = canon.replace(/^https?:\/\//i, "").replace(/\/$/, "");
+
+  const sesion = opciones.sesion || crearSesion({ tipo: "web" });
+
+  const r = await buscarWeb(`"${desnuda}"`, {
+    sesion,
+    fetch: opciones.fetch
+  });
+
+  const propio = (r.resultados || []).find((res) => {
+    const u = normalizarUrl(res.enlace || res.url || "");
+
+    return u && u === normalizarUrl(canon);
+  });
+
+  if (!propio) {
+    return {
+      encontrado: false,
+
+      motivo:
+        r.estado === "BLOQUEADO"
+          ? "El proveedor web quedo bloqueado: no se pudo comprobar si la URL esta indexada."
+          : (r.total || 0) === 0
+            ? "Ningun buscador tiene esta URL indexada todavia. Es lo habitual en una publicacion reciente."
+            : "Los buscadores devolvieron resultados, pero ninguno es la URL exacta de la pieza.",
+
+      estado: r.estado,
+      proveedor: r.proveedorUsado?.id || null,
+      resultados: r.total || 0,
+      consultas: 1,
+      sesion
+    };
+  }
+
+  const titulo = (propio.titulo || propio.title || "").trim() || null;
+
+  const snippet = (propio.descripcion || propio.snippet || "").trim() || null;
+
+  return {
+    encontrado: true,
+
+    campos: {
+      titulo: titulo
+        ? {
+            valor: titulo,
+            procedencia: "snippet_de_buscador",
+            proveedor: propio.motorId || r.proveedorUsado?.id || null,
+            esContenidoOriginal: false
+          }
+        : null,
+
+      texto: snippet
+        ? {
+            valor: snippet,
+            procedencia: "snippet_de_buscador",
+            proveedor: propio.motorId || r.proveedorUsado?.id || null,
+            esContenidoOriginal: false
+          }
+        : null,
+
+      fecha: propio.fecha
+        ? {
+            valor: propio.fecha,
+            procedencia: "snippet_de_buscador",
+            proveedor: propio.motorId || r.proveedorUsado?.id || null,
+            esContenidoOriginal: false,
+
+            cautela:
+              "La fecha que declara un buscador es cuando lo indexo o lo estimo, NO necesariamente cuando se publico."
+          }
+        : null
+    },
+
+    estado: r.estado,
+    proveedor: r.proveedorUsado?.id || null,
+    consultas: 1,
+    sesion,
+
+    advertencia:
+      "Estos campos provienen del snippet de un buscador, no de la publicacion. Un snippet no es el contenido original y no habilita ninguna metrica.",
+
+    noAporta: [
+      "Ninguna metrica: views, likes, comentarios y compartidos siguen sin resolver.",
+      "Ninguna certeza sobre el autor real: el titular indexado puede no nombrarlo."
+    ]
+  };
+}
+
+
 export default {
   MAX_CONSULTAS,
   UMBRAL_REPLICA,
   construirConsultas,
   buscarAmplificacion,
   asignarRol,
-  construirMapa
+  construirMapa,
+  fallbackWebDePieza
 };

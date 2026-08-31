@@ -7,7 +7,16 @@ import {
   ID as YOUTUBE_PROVIDER_ID
 } from "../ingest/adapters/youtubeAdapter.js";
 
+import {
+  resolverPosts as resolverPostsX,
+  estaConfigurado as xConfigurado,
+  DISPONIBILIDAD_METRICA as DISP_X,
+  ID as X_PROVIDER_ID
+} from "../ingest/adapters/xAdapter.js";
+
 import { capacidad, ESTADOS_CAPACIDAD } from "../intelligence/socialCapabilityMatrix.js";
+
+import { estadoDeCampo, ESTADOS_CAMPO } from "./pieceFieldMatrix.js";
 
 import {
   PLATAFORMAS,
@@ -56,12 +65,31 @@ limite de la plataforma.
 */
 
 
-/* Traduccion del estado de la matriz al contrato de metrica. */
+/* Traduccion del estado de la matriz de CUENTA al contrato de metrica. */
 const MAPA_ESTADO = Object.freeze({
   [ESTADOS_CAPACIDAD.DISPONIBLE]: DISPONIBILIDAD.DISPONIBLE,
   [ESTADOS_CAPACIDAD.NO_DISPONIBLE]: DISPONIBILIDAD.NO_DISPONIBLE,
   [ESTADOS_CAPACIDAD.REQUIERE_AUTORIZACION]: DISPONIBILIDAD.REQUIERE_AUTORIZACION,
   [ESTADOS_CAPACIDAD.REQUIERE_PROVEEDOR_EXTERNO]: DISPONIBILIDAD.REQUIERE_PROVEEDOR
+});
+
+
+/*
+  Traduccion del estado de la matriz POR CAMPO.
+
+  `DISPONIBLE_WEB_INDIRECTO` se mapea a NO_DISPONIBLE
+  deliberadamente: por definicion ninguna metrica puede llegar
+  por via web indirecta, y si algun dia la matriz lo declarara
+  por error, aqui no se convertiria en una cifra. El test de
+  coherencia lo prohibe ademas explicitamente.
+*/
+const MAPA_CAMPO = Object.freeze({
+  [ESTADOS_CAMPO.DISPONIBLE_OFICIAL]: DISPONIBILIDAD.DISPONIBLE,
+  [ESTADOS_CAMPO.DISPONIBLE_PROVEEDOR]: DISPONIBILIDAD.REQUIERE_PROVEEDOR,
+  [ESTADOS_CAMPO.DISPONIBLE_WEB_INDIRECTO]: DISPONIBILIDAD.NO_DISPONIBLE,
+  [ESTADOS_CAMPO.REQUIERE_AUTORIZACION]: DISPONIBILIDAD.REQUIERE_AUTORIZACION,
+  [ESTADOS_CAMPO.NO_DISPONIBLE]: DISPONIBILIDAD.NO_DISPONIBLE,
+  [ESTADOS_CAMPO.NO_VERIFICADO]: DISPONIBILIDAD.NO_DISPONIBLE
 });
 
 
@@ -98,22 +126,31 @@ export function planDeMetricas(pieza) {
 
   const requests = [];
 
+  /*
+    MEDIA-PIECE-02: la disponibilidad de cada metrica sale de la
+    matriz POR CAMPO (`pieceFieldMatrix`), no de la matriz de
+    capacidades de cuenta.
+
+    Motivo: la matriz oficial no modela `quotes` ni `bookmarks`
+    —capacidades que solo existen a escala de publicacion— y
+    para ellas devolveria "capacidad no contemplada", que es
+    verdad pero inutil. La matriz por campo si las modela y
+    ademas se comprueba contra la oficial en un test de
+    coherencia, de modo que no pueden contar historias distintas.
+  */
+  const proveedorDe = {
+    [PLATAFORMAS.YOUTUBE]: YOUTUBE_PROVIDER_ID,
+    [PLATAFORMAS.X]: X_PROVIDER_ID
+  };
+
   const metricas = METRICAS_PIEZA.map((m) => {
-    const cap = capacidad(plataforma, m.capacidad);
+    const est = estadoDeCampo(plataforma, m.id);
 
-    const disp = MAPA_ESTADO[cap.estado] || DISPONIBILIDAD.NO_DISPONIBLE;
+    const disp = MAPA_CAMPO[est.estado] || DISPONIBILIDAD.NO_DISPONIBLE;
 
-    if (disp === DISPONIBILIDAD.DISPONIBLE) {
-      /* Se marcara como leida cuando la lectura ocurra. */
-      return metricaVacia(
-        m.id,
-        DISPONIBILIDAD.DISPONIBLE,
-        `Capacidad declarada disponible: ${cap.nota}`,
-        plataforma === PLATAFORMAS.YOUTUBE ? YOUTUBE_PROVIDER_ID : null
-      );
-    }
+    const nota = est.via ? `${est.nota} [via: ${est.via}]` : est.nota;
 
-    return metricaVacia(m.id, disp, cap.nota, null);
+    return metricaVacia(m.id, disp, nota, proveedorDe[plataforma] || null);
   });
 
   const alguna = metricas.some((m) => m.availability === DISPONIBILIDAD.DISPONIBLE);
@@ -163,6 +200,79 @@ export function planDeMetricas(pieza) {
       costeUnidades: 1,
       devuelve: ["views", "likes", "comments"],
       noDevuelve: ["shares"]
+    });
+  }
+
+  /*
+    -------------------------------------------------------
+    X — MEDIA-PIECE-02
+
+    El usuario ve reproducciones, respuestas, reposts, likes y
+    guardados en la interfaz. El adapter ya los mapea y desde
+    este gate existe `resolverPosts`. Lo que falta es la
+    credencial, y eso se declara en lugar de dejar el panel
+    vacio sin explicacion.
+    -------------------------------------------------------
+  */
+  /*
+    Sin `&& alguna` a proposito: en X la matriz marca todas las
+    metricas como REQUIERE_AUTORIZACION, asi que `alguna` es
+    false. Si esta rama dependiera de ella, el panel quedaria
+    vacio y sin explicar la unica cosa que hay que explicar:
+    que la via existe y falta la credencial.
+  */
+  if (plataforma === PLATAFORMAS.X) {
+    if (!pieza?.publicationId) {
+      return {
+        plataforma,
+        lecturaPosible: false,
+        requests: [],
+        metricas: metricas.map((m) =>
+          m.availability === DISPONIBILIDAD.DISPONIBLE
+            ? metricaVacia(
+                m.id,
+                DISPONIBILIDAD.NO_DISPONIBLE,
+                "La API acepta un id de publicacion y la URL no permitio extraerlo."
+              )
+            : m
+        ),
+        nota: "Sin id de publicacion no se puede consultar la API de X."
+      };
+    }
+
+    if (!xConfigurado()) {
+      return {
+        plataforma,
+        lecturaPosible: false,
+        requests: [],
+
+        metricas: metricas.map((m) =>
+          metricaVacia(
+            m.id,
+            DISPONIBILIDAD.REQUIERE_AUTORIZACION,
+            "X_BEARER_TOKEN no esta configurado. La via existe y esta implementada (x_api:tweets?ids=), pero exige credencial y un plan que cubra el endpoint. La cifra que se ve en pantalla no es accesible por API sin eso.",
+            X_PROVIDER_ID
+          )
+        ),
+
+        nota:
+          "Brecha declarada: el adapter de X mapea likes, reposts, respuestas, citas, guardados e impresiones, pero no hay X_BEARER_TOKEN en este entorno. Es una decision de contratacion, no un fallo de codigo."
+      };
+    }
+
+    requests.push({
+      proveedor: X_PROVIDER_ID,
+      endpoint: "tweets?ids=",
+      params: {
+        ids: pieza.publicationId,
+        "tweet.fields": "created_at,public_metrics,author_id,lang,referenced_tweets",
+        expansions: "author_id"
+      },
+      costeUnidades: null,
+      costeNota:
+        "El coste depende del plan contratado. Se cuenta la llamada, no el dinero.",
+      devuelve: ["views", "likes", "comments", "shares", "quotes", "bookmarks", "autor"],
+      noDevuelve: []
     });
   }
 
@@ -309,6 +419,126 @@ export async function leerMetricas(pieza, opciones = {}) {
         cuenta: v.channelTitle || null,
         cuentaId: v.channelId || null,
         procedencia: `${YOUTUBE_PROVIDER_ID}:videos.list`
+      },
+
+      evidenciasDeMetrica: [evidenciaMetrica],
+      estado: "OK",
+      motivo: null
+    };
+  }
+
+  /*
+    -------------------------------------------------------
+    X — lectura real (MEDIA-PIECE-02)
+    -------------------------------------------------------
+  */
+  if (plan.plataforma === PLATAFORMAS.X) {
+    const r = await resolverPostsX([pieza.publicationId], {
+      fetch: opciones.fetch,
+      observedAt
+    });
+
+    cuota.x = { llamadas: r.llamadas || 0, coste: null };
+
+    if (r.estado !== "OK" || !r.posts?.length) {
+      const motivo =
+        r.estado === "SIN_CREDENCIAL"
+          ? "X_BEARER_TOKEN no configurado."
+          : r.estado === "PLAN_INSUFICIENTE"
+            ? "El plan contratado de X no cubre este endpoint (HTTP 403)."
+            : r.estado === "LIMITE_DE_PETICIONES"
+              ? "Limite de peticiones de X alcanzado (HTTP 429)."
+              : r.motivo ||
+                "La API no devolvio la publicacion: puede estar borrada, la cuenta protegida o el id no existir.";
+
+      return {
+        metricas: plan.metricas.map((m) =>
+          metricaVacia(
+            m.id,
+            r.estado === "SIN_CREDENCIAL" || r.estado === "PLAN_INSUFICIENTE"
+              ? DISPONIBILIDAD.REQUIERE_AUTORIZACION
+              : DISPONIBILIDAD.NO_DISPONIBLE,
+            motivo,
+            X_PROVIDER_ID
+          )
+        ),
+        plan,
+        cuota,
+        evidenciasDeMetrica: [],
+        estado: r.estado,
+        motivo
+      };
+    }
+
+    const post = r.posts[0];
+
+    const mx = post.x?.metricas || {};
+
+    const evidenciaMetrica = {
+      evidenceId: `ev-metric-x-${post.x.postId}-${observedAt}`,
+      tipo: "lectura_de_metricas",
+      provider: X_PROVIDER_ID,
+      canonicalUrl: post.x.canonicalUrl,
+      observedAt,
+      endpoint: "tweets?ids=&tweet.fields=public_metrics",
+      unidadesConsumidas: null
+    };
+
+    const traducir = (id, m) => {
+      if (!m) {
+        return metricaVacia(
+          id,
+          DISPONIBILIDAD.NO_DISPONIBLE,
+          "La API no incluyo esta metrica.",
+          X_PROVIDER_ID
+        );
+      }
+
+      if (m.availability === DISP_X.DISPONIBLE) {
+        return metricaLeida(id, m.value, {
+          observedAt,
+          provider: X_PROVIDER_ID,
+          evidenceId: evidenciaMetrica.evidenceId
+        });
+      }
+
+      /*
+        `NO_INCLUIDA_POR_LA_API` no es lo mismo que inexistente:
+        la metrica existe y el plan no la entrega. Se refleja
+        como REQUIERE_AUTORIZACION para que el motivo apunte a la
+        decision correcta.
+      */
+      return metricaVacia(
+        id,
+        m.availability === DISP_X.NO_INCLUIDA_POR_LA_API
+          ? DISPONIBILIDAD.REQUIERE_AUTORIZACION
+          : DISPONIBILIDAD.NO_DISPONIBLE,
+        m.motivo,
+        X_PROVIDER_ID
+      );
+    };
+
+    return {
+      metricas: [
+        traducir("views", mx.views),
+        traducir("likes", mx.likes),
+        traducir("comments", mx.comments),
+        traducir("shares", mx.reposts),
+        traducir("quotes", mx.quotes),
+        traducir("bookmarks", mx.bookmarks)
+      ],
+
+      plan,
+      cuota,
+
+      enriquecimiento: {
+        titulo: null,
+        texto: post.snippet || null,
+        publishedAt: post.publishedAt || null,
+        canonicalUrl: post.x.canonicalUrl,
+        cuenta: post.x.autor?.displayName || post.x.autor?.handle || post.author || null,
+        cuentaId: post.x.autor?.userId || post.x.authorId || null,
+        procedencia: `${X_PROVIDER_ID}:tweets?ids=`
       },
 
       evidenciasDeMetrica: [evidenciaMetrica],

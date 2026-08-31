@@ -111,11 +111,25 @@ export const DISPONIBILIDAD = Object.freeze({
 });
 
 
+/*
+  MEDIA-PIECE-02: se anaden `quotes` y `bookmarks`.
+
+  El usuario ve "guardados" en una publicacion de X y el gate
+  anterior no tenia donde ponerlos: una metrica que la interfaz
+  muestra y el modelo no contempla se lee como "no existe",
+  cuando la verdad es "no la pedimos".
+
+  `capacidad` apunta a la matriz de CUENTA cuando existe alli;
+  para las dos nuevas no existe, y su disponibilidad la resuelve
+  `pieceFieldMatrix`, que si las modela.
+*/
 export const METRICAS_PIEZA = Object.freeze([
-  { id: "views", nombre: "Visualizaciones", capacidad: "views" },
+  { id: "views", nombre: "Visualizaciones / reproducciones", capacidad: "views" },
   { id: "likes", nombre: "Me gusta o reacciones", capacidad: "likes" },
-  { id: "comments", nombre: "Comentarios", capacidad: "comments" },
-  { id: "shares", nombre: "Compartidos o republicaciones", capacidad: "shares" }
+  { id: "comments", nombre: "Comentarios o respuestas", capacidad: "comments" },
+  { id: "shares", nombre: "Compartidos o republicaciones", capacidad: "shares" },
+  { id: "quotes", nombre: "Citas", capacidad: null },
+  { id: "bookmarks", nombre: "Guardados", capacidad: null }
 ]);
 
 
