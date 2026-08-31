@@ -212,8 +212,30 @@ real— pero salen del ranking de temas y se cuentan aparte.
 
 export const TIPOS_SENAL = Object.freeze({
   TEMA: "TEMA",
-  LUGAR: "LUGAR"
+  LUGAR: "LUGAR",
+
+  /*
+    Una FECHA tampoco es un tema.
+
+    Medido en TERRITORIAL-ACCELERATION-02: al persistir los
+    resumenes de RSS, el descubrimiento abierto empezo a
+    proponer señales como «agosto · lunes» con ocho evidencias.
+    Es la fecha del articulo, no su asunto.
+
+    Los nombres de mes y de dia son una lista cerrada del
+    idioma: comprobable, no inventada.
+  */
+  TEMPORAL: "TEMPORAL"
 });
+
+
+const TOKENS_TEMPORALES = new Set([
+  "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
+  "agosto", "septiembre", "setiembre", "octubre", "noviembre", "diciembre",
+  "lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo",
+  "hoy", "ayer", "manana", "semana", "mes", "año", "ano", "hora", "horas",
+  "minutos", "dias", "dia"
+]);
 
 
 /* Conectores que no deciden nada. */
@@ -237,6 +259,14 @@ export function clasificarSenal(nombre, toponimos = null) {
     .filter((t) => t.length >= 3 && !TOKENS_VACIOS.has(t));
 
   if (tokens.length === 0) return TIPOS_SENAL.TEMA;
+
+  /*
+    Igual que con los toponimos: TODOS los tokens tienen que ser
+    temporales. «crisis de agosto» sigue siendo un tema.
+  */
+  if (tokens.every((t) => TOKENS_TEMPORALES.has(t) || /^\d{1,4}$/.test(t))) {
+    return TIPOS_SENAL.TEMPORAL;
+  }
 
   /*
     TODOS los tokens significativos tienen que ser toponimos.
@@ -684,6 +714,10 @@ export function construirMatriz({
     filas.filter((f) => f.tipoSenal === TIPOS_SENAL.LUGAR).map((f) => f.temaId)
   );
 
+  const temporalesComoSenal = new Set(
+    filas.filter((f) => f.tipoSenal === TIPOS_SENAL.TEMPORAL).map((f) => f.temaId)
+  );
+
   const territoriosVistos = new Set(
     filas.filter((f) => f.territorioId !== TERRITORIO_NO_RESUELTO).map((f) => f.territorioId)
   );
@@ -714,6 +748,9 @@ export function construirMatriz({
         aparte para que «23 temas» no incluya «cuenca».
       */
       senalesQueSonLugar: lugaresComoSenal.size,
+
+      /* Señales que son una fecha, no un asunto. */
+      senalesQueSonFecha: temporalesComoSenal.size,
       territorios: territoriosVistos.size,
 
       evidenciasEnVentana: enVentana.length,
@@ -744,6 +781,7 @@ export function construirMatriz({
       "Un mismo `evidenceId` no se cuenta dos veces en la misma celda. En dos temas distintos sí cuenta en los dos: habla de los dos.",
       "No se calculan porcentajes de población ni de electores: no hay denominador oficial con licencia. La métrica es CONTEO ABSOLUTO.",
       "Cero evidencias no se usa nunca para decir «desconocido»: para eso están SIN_EVIDENCIA e HISTORICO_INSUFICIENTE.",
+      "Una fecha tampoco es un tema: «agosto · lunes» es cuándo se publicó, no de qué habla. Los nombres de mes y de día son una lista cerrada del idioma, comprobable.",
       "Un nombre propio de territorio NO es un tema. «cuenca» era la señal con más evidencias del corpus real; queda marcada como LUGAR y fuera del ranking, porque responder «¿de qué se habla en Cuenca?» con «de Cuenca» no informa.",
       "`coverageStatus` y `coberturaEvidencial` responden dos preguntas distintas: si hay suficiente evidencia, y si se estaba observando la ventana. La segunda pesa más, porque sin observación el conteo es incompleto.",
       "«Emergente» y «viral» no se declaran: la primera exigiría saber que antes no estaba —y antes puede que no estuviéramos mirando— y la segunda una metodología de propagación que este módulo no tiene."

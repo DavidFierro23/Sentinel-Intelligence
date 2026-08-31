@@ -162,10 +162,40 @@ leído desordenado.
 ===========================================================
 */
 
-export function reconstruirEstado(observaciones = []) {
+export function reconstruirEstado(observaciones = [], opciones = {}) {
   const porId = new Map();
 
+  /*
+    ---------------------------------------------------------
+    AMBITO DE PROYECTO — TERRITORIAL-ACCELERATION-02
+
+    El libro es infraestructura COMPARTIDA; la lectura es por
+    proyecto. Si se pide un `projectId`, solo se reconstruye lo
+    de ese proyecto: la cobertura de una campaña no puede
+    incluir evidencia observada para otra.
+
+    `incluirLegado` existe porque las observaciones anteriores a
+    este gate NO llevan `projectId`. Descartarlas en silencio
+    haria desaparecer 234 observaciones reales; contarlas dentro
+    de cualquier proyecto seria mentir sobre su ambito. Por
+    defecto quedan FUERA de un proyecto concreto y solo se ven
+    cuando no se filtra.
+    ---------------------------------------------------------
+  */
+  const proyecto = opciones.projectId || null;
+
+  const incluirLegado = opciones.incluirLegado === true;
+
+  const relevante = (o) => {
+    if (!proyecto) return true;
+
+    if (o.projectId) return o.projectId === proyecto;
+
+    return incluirLegado;
+  };
+
   [...observaciones]
+    .filter((o) => o?.evidenceId && relevante(o))
     .sort((a, b) => String(a.retrievedAt).localeCompare(String(b.retrievedAt)))
     .forEach((o) => {
       const previo = porId.get(o.evidenceId);
@@ -186,7 +216,28 @@ export function reconstruirEstado(observaciones = []) {
 
           providers: o.providerId ? [o.providerId] : [],
 
-          territoryId: o.territoryId || null
+          territoryId: o.territoryId || null,
+
+          /* --- TERRITORIAL-ACCELERATION-02 --- */
+          projectId: o.projectId || null,
+          feedUrl: o.feedUrl || null,
+          domain: o.domain || null,
+
+          publisher: o.publisher || null,
+          emitterId: o.emitterId || null,
+          emitterStatus: o.emitterStatus || null,
+
+          summary: o.summary || null,
+
+          provenance: o.provenance || null,
+
+          /*
+            Lo que se DERIVO en el momento de observar. Es un
+            registro historico, no una verdad: Topic x Territory
+            recalcula y NO lee esto. Guardarlo permite auditar
+            que se creia entonces sin convertirlo en cache.
+          */
+          derivadoEnLaObservacion: o.derivadoEnLaObservacion || null
         });
 
         return;
@@ -215,6 +266,31 @@ export function reconstruirEstado(observaciones = []) {
       if (!previo.title && o.title) previo.title = o.title;
 
       if (!previo.sourceId && o.sourceId) previo.sourceId = o.sourceId;
+
+      /* --- TERRITORIAL-ACCELERATION-02: misma regla --- */
+      if (!previo.projectId && o.projectId) previo.projectId = o.projectId;
+
+      if (!previo.feedUrl && o.feedUrl) previo.feedUrl = o.feedUrl;
+
+      if (!previo.domain && o.domain) previo.domain = o.domain;
+
+      if (!previo.summary && o.summary) previo.summary = o.summary;
+
+      /*
+        El emisor se COMPLETA si no constaba. Que RSS resuelva
+        al publicador que Google News ocultaba es justo el caso
+        que este gate persigue: la pieza ya estaba en el corpus
+        y ahora se sabe quien la publico.
+      */
+      if (!previo.publisher && o.publisher) {
+        previo.publisher = o.publisher;
+
+        previo.emitterId = o.emitterId || previo.emitterId;
+
+        previo.emitterStatus = o.emitterStatus || previo.emitterStatus;
+      }
+
+      if (!previo.provenance && o.provenance) previo.provenance = o.provenance;
     });
 
   return porId;
@@ -240,7 +316,15 @@ export async function registrarPasada({
   estadoPrevio = new Map(),
   retrievedAt,
   territoryId = null,
-  runId = null
+  runId = null,
+
+  /*
+    TERRITORIAL-ACCELERATION-02. Opcional a proposito: las
+    suites anteriores llaman sin proyecto y siguen valiendo. Lo
+    que NO se hace es inventar uno.
+  */
+  projectId = null,
+  tenantId = null
 }) {
   if (!retrievedAt) {
     throw new Error(
@@ -280,6 +364,8 @@ export async function registrarPasada({
 
       providersSeenBy: providers,
 
+      projectId: projectId || ev.projectId || null,
+
       esNuevaParaSentinel: esNueva
     };
 
@@ -302,7 +388,39 @@ export async function registrarPasada({
         providerId: (ev.providersSeenBy || [])[0] || ev.providerId || null,
         territoryId,
         runId,
-        retrievedAt
+        retrievedAt,
+
+        /*
+          --- TERRITORIAL-ACCELERATION-02 ---
+
+          `projectId` es el ambito de lectura. `null` significa
+          «observado sin proyecto», no «de todos los proyectos».
+        */
+        projectId,
+        tenantId,
+
+        feedUrl: ev.feedUrl || ev.provenance?.query || null,
+
+        domain: ev.domain || ev.sourceId || null,
+
+        /*
+          El emisor NO se inventa. Si no se pudo resolver, viaja
+          `null` con su estado, que es un hecho comprobable.
+        */
+        publisher: ev.publisher || null,
+        emitterId: ev.emitterId || null,
+        emitterStatus: ev.emitterStatus || null,
+
+        /*
+          Resumen tal como lo publica la fuente. Sin esto, la
+          extraccion de temas trabaja solo con titulares: fue la
+          limitacion declarada de §13-terdecies.
+        */
+        summary: ev.snippet || ev.summary || null,
+
+        provenance: ev.provenance || null,
+
+        derivadoEnLaObservacion: ev.derivadoEnLaObservacion || null
       });
     }
   }

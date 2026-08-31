@@ -137,6 +137,14 @@ import {
 
 import { comprobarUniverso } from "../services/territorial/sourceVerifier.js";
 
+/* --- TERRITORIAL-ACCELERATION-02 --- */
+
+import {
+  indiceDeFeeds,
+  resolverLoteDeEmisores,
+  ESTADOS_EMISOR
+} from "../services/territorial/emitterResolver.js";
+
 /* --- TERRITORIAL-RSS-ROTATION-01 --- */
 
 import {
@@ -420,6 +428,428 @@ router.post("/fuentes/verificar", async (req, res) => {
 
 /*
 ===========================================================
+PROVEEDORES Y MOTORES — TERRITORIAL-ACCELERATION-02
+===========================================================
+
+Lo que Sentinel usa HOY y lo que está en evaluación, con su
+estado real.
+
+NUNCA FINGIR INTEGRACION
+-----------------------------------------------------------
+
+Un candidato en evaluación no es un motor conectado. Los cuatro
+proveedores externos aparecen con el estado que les dio
+`docs/TERRITORIAL-PROVIDER-EVAL-01.md`, y ninguno está
+`OPERATIVO`: eso exige una prueba real contra Cuenca que
+todavía no se ha podido hacer en ninguno.
+
+El estado de los motores propios NO se escribe a mano: sale de
+`estadoAdapters()` y del universo de fuentes comprobado.
+===========================================================
+*/
+
+/*
+  Candidatos evaluados en TERRITORIAL-PROVIDER-EVAL-01. Viven
+  aquí como DECLARACION de la evaluación, no como integración:
+  ninguno tiene adapter.
+*/
+const CANDIDATOS_EXTERNOS = Object.freeze([
+  {
+    providerId: "gdelt_cloud",
+    nombre: "GDELT Cloud (BigQuery)",
+    tipo: "noticias · eventos · geo",
+    estado: "APTO_PARA_PRUEBA",
+    integrado: false,
+    trial: "Sandbox de BigQuery: sin tarjeta, 1 TB/mes",
+    coste: "0 USD en sandbox",
+    ecuador: "documentado a nivel país",
+    cuenca: "NO PROBADO",
+    aporta: "Histórico desde 1979 y extracción geográfica explícita: es el único que ataca las evidencias sin territorio resuelto.",
+    ranking: 1
+  },
+  {
+    providerId: "data365",
+    nombre: "Data365",
+    tipo: "conversación pública",
+    estado: "APTO_PARA_PRUEBA",
+    integrado: false,
+    trial: "14 días sin tarjeta, previa llamada",
+    coste: "desde ~300 EUR/mes tras el trial",
+    ecuador: "no documentado",
+    cuenca: "NO PROBADO",
+    aporta: "Conversación pública, que Sentinel no observa en absoluto. No es una mejora incremental: es una dimensión nueva.",
+    ranking: 2
+  },
+  {
+    providerId: "meltwater",
+    nombre: "Meltwater",
+    tipo: "medios · social",
+    estado: "REQUIERE_CONTACTO",
+    integrado: false,
+    trial: "no hay prueba autoservicio",
+    coste: "~65.000 USD/año (terceros)",
+    ecuador: "no documentado",
+    cuenca: "NO PROBADO",
+    aporta: "Cobertura profesional de medios y social en un solo proveedor. No se puede comprobar Cuenca sin contratar.",
+    ranking: 3
+  },
+  {
+    providerId: "brandwatch",
+    nombre: "Brandwatch",
+    tipo: "escucha social",
+    estado: "REQUIERE_CONTACTO",
+    integrado: false,
+    trial: "no hay prueba pública",
+    coste: "~50.000 USD/año (terceros)",
+    ecuador: "no documentado",
+    cuenca: "NO PROBADO",
+    aporta: "Conversación pública, pero su histórico asequible son 30 días: menos que nuestras ventanas de 90.",
+    ranking: 4
+  }
+]);
+
+
+router.get("/proveedores", async (req, res) => {
+  try {
+    /* --- motores propios: estado REAL, no escrito a mano --- */
+    const adapters = estadoAdapters();
+
+    const universo = reconstruirUniverso(await almacenDeFuentes().leerTodos());
+
+    const fichas = [...universo.values()];
+
+    const feedsValidos = feedsParaRecoleccion(fichas).length;
+
+    const rotacion = reconstruirRotacion(await almacenDeRotacion().leerTodos());
+
+    const ledger = crearLedgerFichero();
+
+    const observaciones = await ledger.leerTodos();
+
+    /* Qué proveedor aportó de verdad al corpus. */
+    const porProveedor = {};
+
+    observaciones.forEach((o) => {
+      if (!o.providerId) return;
+
+      porProveedor[o.providerId] = (porProveedor[o.providerId] || 0) + 1;
+    });
+
+    const motores = adapters.map((a) => {
+      const observadas = porProveedor[a.providerId] || 0;
+
+      /*
+        OPERATIVO exige haber aportado evidencia al corpus. Un
+        adapter configurado que nunca trajo nada no es un motor
+        operativo: es un adapter configurado.
+      */
+      const estado =
+        observadas > 0
+          ? "OPERATIVO"
+          : a.providerId === "gdelt_doc"
+            ? "NO_ALCANZABLE"
+            : a.estado;
+
+      return {
+        ...a,
+        integrado: true,
+        estado,
+        observacionesEnElCorpus: observadas,
+
+        nota:
+          a.providerId === "rss_directo"
+            ? `${feedsValidos} feed(s) con contenido comprobado · ${rotacion.pasada} pasada(s) de rotación registradas.`
+            : a.providerId === "gdelt_doc"
+              ? "Inalcanzable desde esta máquina: UND_ERR_CONNECT_TIMEOUT reproducible. Ver docs/TERRITORIAL-PROVIDER-EVAL-01.md."
+              : a.nota
+      };
+    });
+
+    /*
+      Motores que APORTARON al corpus y no figuran en
+      `estadoAdapters()`: `google_news` entra por el recolector
+      base, no por un adapter de ingesta. Omitirlo haria que la
+      vista de proveedores no explicase de donde salieron 227
+      observaciones reales.
+    */
+    const declarados = new Set(motores.map((m) => m.providerId));
+
+    const noDeclarados = Object.entries(porProveedor)
+      .filter(([id]) => !declarados.has(id))
+      .map(([id, n]) => ({
+        providerId: id,
+        nombre: id === "google_news" ? "Google News (recolector base)" : id,
+        tipo: "noticias",
+        implementado: true,
+        integrado: true,
+        requiereCredencial: false,
+        estado: "OPERATIVO",
+        observacionesEnElCorpus: n,
+
+        nota:
+          id === "google_news"
+            ? "Entra por el recolector base, no por un adapter de ingesta. Oculta al publicador: sus evidencias quedan con emisor NO_RESUELTO."
+            : "Aportó al corpus sin figurar en el registro de adapters."
+      }));
+
+    res.json({
+      gate: "TERRITORIAL-ACCELERATION-02",
+
+      motores: [...motores, ...noDeclarados].sort(
+        (a, b) => b.observacionesEnElCorpus - a.observacionesEnElCorpus
+      ),
+
+      candidatos: CANDIDATOS_EXTERNOS,
+
+      evaluacion: {
+        documento: "docs/TERRITORIAL-PROVIDER-EVAL-01.md",
+        proveedor1: "gdelt_cloud",
+        proveedor2: "data365",
+
+        declaracion:
+          "Ningún candidato está OPERATIVO: eso exige una prueba real contra Cuenca que todavía no se ha podido hacer en ninguno. Ecuador y Cuenca están NO VERIFICADO en los cuatro."
+      },
+
+      declaraciones: [
+        "OPERATIVO significa que el motor aportó evidencia al corpus, no que esté configurado.",
+        "Un candidato en evaluación NO es una integración: ninguno de los cuatro tiene adapter.",
+        "«Global coverage» en una página comercial no significa que Cuenca esté cubierta."
+      ]
+    });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo el estado de proveedores" });
+  }
+});
+
+
+/*
+===========================================================
+OBSERVAR — TERRITORIAL-ACCELERATION-02
+===========================================================
+
+Una pasada RSS que SI escribe en el libro de evidencias.
+
+POR QUE HACIA FALTA ESTA RUTA
+-----------------------------------------------------------
+
+Las pasadas de TERRITORIAL-RSS-ROTATION-01 midieron el dedup
+contra el corpus SIN escribir en el: era la decision
+conservadora de un gate sobre rotacion. El efecto secundario lo
+midio §13-terdecies: el corpus persistido seguia siendo de
+Google News, y los tres cruces reales salieron con CERO
+emisores resueltos.
+
+Sin escritura no hay historico, y sin historico no hay
+tendencia. Esta ruta cierra el circuito:
+
+    RSS -> normalizacion -> evidencia -> dedup -> libro
+        -> Tema x Territorio -> historico
+
+`/analisis` tambien persiste, pero recolecta con Google News.
+Esta ruta ejecuta SOLO `rss_directo`: coste 0 y ningun
+proveedor de pago.
+
+NO HAY BACKFILL
+-----------------------------------------------------------
+
+El historico empieza cuando empieza. No se fabrican dias
+anteriores ni se retrodata nada: `publishedAt` es del medio y
+`firstObservedAt` es de Sentinel, y ninguno se toca.
+===========================================================
+*/
+
+router.post("/observar", async (req, res) => {
+  try {
+    const cuerpo = req.body || {};
+
+    const territorioId = cuerpo.territorio || "ec-azuay-cuenca";
+
+    /*
+      El proyecto es el AMBITO. Se admite su ausencia —hay
+      pruebas y usos sin proyecto— pero entonces se declara
+      `null` y esa observacion no pertenece a ningun proyecto.
+    */
+    const projectId = cuerpo.proyectoId || null;
+
+    const retrievedAt = new Date().toISOString();
+
+    /* --- 1. feeds elegibles del universo comprobado --- */
+    const almacenFtes = almacenDeFuentes();
+
+    const universo = reconstruirUniverso(await almacenFtes.leerTodos());
+
+    const fichas = [...universo.values()];
+
+    const elegibles = feedsParaRecoleccion(fichas);
+
+    if (elegibles.length === 0) {
+      return res.json({
+        gate: "TERRITORIAL-ACCELERATION-02",
+        projectId,
+        territorioId,
+        persistidas: 0,
+
+        motivo:
+          "No hay feeds elegibles. Ejecutar POST /api/territorio/fuentes/verificar antes de observar."
+      });
+    }
+
+    /* --- 2. rotacion: que feeds toca esta pasada --- */
+    const presupuesto = PRESUPUESTO_RECOLECTOR.rss_directo;
+
+    const ambitoRot = ambitoDeRotacion({ projectId, territoryId: territorioId });
+
+    const almacenRot = almacenDeRotacion();
+
+    const previoRot = reconstruirRotacion(await almacenRot.leerTodos(), ambitoRot.scopeId);
+
+    const siguiente = siguienteCicloYPasada({
+      estado: previoRot.estado,
+      ciclo: previoRot.ciclo,
+      pasada: previoRot.pasada,
+      elegibles
+    });
+
+    const cohorte = seleccionarCohorte({
+      elegibles,
+      estado: previoRot.estado,
+      presupuesto,
+      ciclo: siguiente.ciclo,
+      pasada: siguiente.pasada
+    });
+
+    const feeds = cohorte.seleccionados.map((f) => ({
+      url: f.feedUrl,
+      publisher: f.publisher,
+      sourceId: f.sourceId,
+      prioridad: f.prioridad,
+      territorioDeclarado: f.territorioDeclarado
+    }));
+
+    /* --- 3. recoleccion: SOLO rss_directo --- */
+    const pasada = await recolectarAmpliado({
+      plan: [],
+      feeds,
+      observedAt: retrievedAt,
+      runId: `observar-${retrievedAt}`,
+      territoryId: territorioId,
+      habilitados: ["rss_directo"]
+    });
+
+    /* --- 4. emisor: el feed comprobado acredita al publicador --- */
+    const indice = indiceDeFeeds(fichas);
+
+    /*
+      Se ata cada evidencia a SU feed antes de resolver: el
+      recolector emite `queryLabel` con el sourceId, y el lote
+      lleva `feedUrl` desde TERRITORIAL-RSS-ROTATION-01.
+    */
+    const feedPorSource = new Map(feeds.map((f) => [f.sourceId, f.url]));
+
+    const conFeed = pasada.evidencias.map((e) => ({
+      ...e,
+      feedUrl: feedPorSource.get(e.sourceId) || e.provenance?.query || null,
+      domain: e.sourceId || null
+    }));
+
+    const emisores = resolverLoteDeEmisores(conFeed, { indice, instante: retrievedAt });
+
+    /* --- 5. persistir: dedup contra el corpus DEL PROYECTO --- */
+    const ledger = crearLedgerFichero();
+
+    const observaciones = await ledger.leerTodos();
+
+    const estadoPrevio = reconstruirEstado(observaciones, { projectId });
+
+    const registro = await registrarPasada({
+      ledger,
+      evidencias: emisores.evidencias,
+      estadoPrevio,
+      retrievedAt,
+      territoryId: territorioId,
+      projectId,
+      runId: `observar-${retrievedAt}`
+    });
+
+    /* --- 6. anotar la rotacion --- */
+    const lotesRss = (pasada.lotes || []).filter(
+      (l) => l.providerId === "rss_directo" && l.feedUrl
+    );
+
+    const rotacionAnotada = await registrarRotacion({
+      almacen: almacenRot,
+      scopeId: ambitoRot.scopeId,
+      cohorte,
+      resultados: lotesRss.map((l) => ({
+        feedUrl: l.feedUrl,
+        estado: clasificarIntento(l),
+        recibidas: l.recibidas ?? 0
+      })),
+      instante: retrievedAt,
+      estado: previoRot.estado,
+      runId: `observar-${retrievedAt}`
+    });
+
+    /* --- 7. frescura de lo recien observado --- */
+    const ventanaHoy = ventanaDelDia(retrievedAt);
+
+    const frescura = resumirFrescura(registro.evidencias, {
+      ventana: ventanaHoy,
+      retrievedAt
+    });
+
+    res.json({
+      gate: "TERRITORIAL-ACCELERATION-02",
+
+      projectId,
+      territorioId,
+      ambitoRotacion: ambitoRot,
+      retrievedAt,
+
+      rotacion: {
+        ciclo: cohorte.ciclo,
+        pasada: cohorte.pasada,
+        seleccionados: cohorte.seleccionados.map((f) => f.sourceId),
+        diferidos: cohorte.diferidos.length,
+        cicloCierra: cohorte.cicloCierra,
+        metricas: rotacionAnotada.metricas
+      },
+
+      persistencia: {
+        observadas: registro.metricas.observadas,
+        nuevas: registro.metricas.nuevasParaSentinel,
+        duplicadas: registro.metricas.yaConocidas,
+        corpusAcumulado: registro.metricas.corpusAcumulado,
+
+        declaracion:
+          "`firstObservedAt` es inmutable y `publishedAt` es del medio. No hay backfill: el histórico empieza cuando empieza."
+      },
+
+      emisores: emisores.metricas,
+
+      frescura: {
+        publicadoHoy: frescura.publicadoHoy,
+        encontradoHoyPublicadoAntes: frescura.encontradoHoyPublicadoAntes,
+        fechaNoResuelta: frescura.fechaNoResuelta
+      },
+
+      costes: {
+        usd: 0,
+        proveedores: { rss_directo: feeds.length, google_news: 0, youtube_data: 0, gdelt_doc: 0 },
+
+        motivo: "Solo `rss_directo`: feeds públicos del propio medio, sin credencial ni cuota."
+      },
+
+      declaraciones: [...emisores.declaraciones, ...registro.declaraciones]
+    });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo la observacion" });
+  }
+});
+
+
+/*
+===========================================================
 TEMA x TERRITORIO — TERRITORIAL-TOPIC-TERRITORY-01
 ===========================================================
 
@@ -450,12 +880,28 @@ router.post("/tema-territorio", async (req, res) => {
 
     const ahora = cuerpo.ahora || new Date().toISOString();
 
+    /*
+      AMBITO DE PROYECTO — TERRITORIAL-ACCELERATION-02
+
+      El libro es infraestructura compartida; la lectura es por
+      proyecto. Sin `proyectoId` se lee el corpus completo y la
+      respuesta lo DICE, para que nadie lea una cifra global
+      como si fuera de su campaña.
+
+      `incluirLegado` deja ver las 234 observaciones anteriores
+      a este gate, que no llevan proyecto. Por defecto NO se
+      cuentan dentro de un proyecto concreto.
+    */
+    const projectId = cuerpo.proyectoId || null;
+
+    const incluirLegado = cuerpo.incluirLegado === true;
+
     /* --- corpus persistido --- */
     const ledger = crearLedgerFichero();
 
     const observaciones = await ledger.leerTodos();
 
-    const estadoCorpus = reconstruirEstado(observaciones);
+    const estadoCorpus = reconstruirEstado(observaciones, { projectId, incluirLegado });
 
     /*
       El libro guarda el titular pero NO la descripcion, asi que
@@ -465,7 +911,9 @@ router.post("/tema-territorio", async (req, res) => {
     */
     const evidencias = [...estadoCorpus.values()].map((e) => ({
       titulo: e.title || null,
-      descripcion: null,
+
+      /* Si el libro guarda el resumen, se usa. */
+      descripcion: e.summary || null,
       url: e.canonicalUrl || null,
       enlace: e.canonicalUrl || null,
       dominio: e.sourceId || null,
@@ -476,7 +924,21 @@ router.post("/tema-territorio", async (req, res) => {
       lastObservedAt: e.lastObservedAt || null,
       evidenceId: e.evidenceId,
       providerId: (e.providers || [])[0] || null,
-      publisher: null
+
+      /*
+        Emisor REAL cuando el libro lo tiene. Antes de
+        TERRITORIAL-ACCELERATION-02 se forzaba `null` porque
+        ninguna observacion lo guardaba; ahora las de RSS si.
+      */
+      publisher: e.publisher || null,
+      emitterId: e.emitterId || null,
+      emitterStatus: e.emitterStatus || null,
+
+      /* Resumen si consta: mejora la extraccion de temas. */
+      descripcionReal: e.summary || null,
+
+      projectId: e.projectId || null,
+      feedUrl: e.feedUrl || null
     }));
 
     if (evidencias.length === 0) {
@@ -501,6 +963,24 @@ router.post("/tema-territorio", async (req, res) => {
 
     const temas = extraerTemas(evidencias, { ambito: ambitoId });
 
+    /*
+      SOBRE-FRAGMENTACION DEL DESCUBRIMIENTO ABIERTO
+
+      Medido en TERRITORIAL-ACCELERATION-02: con los resumenes
+      persistidos, el motor propone ~185 señales para 177
+      evidencias. Una señal por evidencia no es una agenda.
+
+      Se probo subir `documentosMinimos` de 2 a 3 y el numero
+      SUBIO —de 175 a 185— porque ese umbral gobierna la
+      formacion de clusters y no el ruido residual. Se dejo el
+      comportamiento por defecto en lugar de tocar un motor
+      compartido sin beneficio medido.
+
+      Lo que SI hace este gate es clasificar la señal —TEMA,
+      LUGAR, TEMPORAL— y declarar su soporte, para que el ruido
+      se pueda ver y filtrar en lugar de contarse como agenda.
+      Queda como pendiente abierto.
+    */
     const descubrimiento = descubrirTemas(evidencias, { ambito: ambitoId });
 
     const listaTemas = temas?.temas || [];
@@ -616,15 +1096,43 @@ router.post("/tema-territorio", async (req, res) => {
 
       territorioId: ambitoId,
 
+      /* AMBITO — TERRITORIAL-ACCELERATION-02 */
+      projectId,
+
+      ambito: {
+        tipo: projectId ? "PROYECTO" : "CORPUS_COMPLETO",
+        projectId,
+        incluirLegado,
+
+        declaracion: projectId
+          ? `Solo evidencia del proyecto «${projectId}»${incluirLegado ? " más el legado sin proyecto" : ""}. La cobertura de una campaña no incluye la de otra.`
+          : "SIN proyecto: se lee el corpus completo. Esta cifra NO es de ninguna campaña en particular."
+      },
+
       corpus: {
         observaciones: observaciones.length,
+        evidenciasDelAmbito: evidencias.length,
         evidencias: evidencias.length,
         conFecha: evidencias.filter((e) => e.publishedAt).length,
         dominios: new Set(evidencias.map((e) => e.dominio).filter(Boolean)).size,
         inicioDeObservacion: matriz.ventana.inicioDeObservacion,
 
+        conResumen: evidencias.filter((e) => e.descripcion).length,
+
+        emisores: {
+          resueltos: evidencias.filter((e) => e.emitterStatus === ESTADOS_EMISOR.RESUELTO).length,
+
+          observadosNoVerificados: evidencias.filter(
+            (e) => e.emitterStatus === ESTADOS_EMISOR.OBSERVADO_NO_VERIFICADO
+          ).length,
+
+          sinResolver: evidencias.filter(
+            (e) => !e.emitterStatus || e.emitterStatus === ESTADOS_EMISOR.NO_RESUELTO
+          ).length
+        },
+
         limitacion:
-          "El libro de evidencias guarda el titular pero no la descripción: la extracción de temas trabaja SOLO con titulares."
+          "Las observaciones anteriores a TERRITORIAL-ACCELERATION-02 no guardan resumen ni emisor: para ellas la extracción de temas trabaja solo con titulares."
       },
 
       señales: {
