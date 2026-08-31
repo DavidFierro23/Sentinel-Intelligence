@@ -172,8 +172,18 @@ export const PROVEEDORES = Object.freeze({
     nombre: "Bright Data",
     tipo: "SCRAPING_WEB_PUBLICA",
 
-    estadoComercial: "EN_REVISION",
+    /*
+      SOCIAL-PROVIDER-ALTERNATIVE-01: la cuenta sigue suspendida
+      pese a haberse enviado la verificacion. El bloqueo es del
+      proveedor y NO de Sentinel, del adapter ni del activo que
+      se iba a consultar: nunca se llego a hacer una peticion.
+
+      Deja de ser camino critico y se conserva como candidato
+      futuro.
+    */
+    estadoComercial: "BLOQUEADO_POR_PROVEEDOR",
     aprobadoParaOperar: false,
+    bloqueadoDesde: "2026-08-31",
 
     /*
       No es un proveedor licenciado por la plataforma. Se declara
@@ -194,14 +204,115 @@ export const PROVEEDORES = Object.freeze({
       "Su documentacion declara cobertura de las tres plataformas incluido texto de comentarios. NADA esta medido: todas las celdas son UNVERIFIED_PROVIDER hasta SOCIAL-PROVIDER-REAL-01."
   },
 
+  /*
+    ---------------------------------------------------------
+    SOCIAL-PROVIDER-ALTERNATIVE-01
+    ---------------------------------------------------------
+
+    Los dos que SI se pueden probar sin hablar con nadie: alta
+    autoservicio, 100 creditos gratis y sin tarjeta. Es la
+    diferencia que importa cuando hay una campana con fecha.
+
+    Sus endpoints cubren exactamente los huecos —Facebook
+    profile/posts/comments y TikTok profile/videos/comments, con
+    replies en ambas—, y aun asi entran como UNVERIFIED_PROVIDER:
+    la documentacion no es cobertura.
+    ---------------------------------------------------------
+  */
+  scrapecreators: {
+    id: "scrapecreators",
+    nombre: "ScrapeCreators",
+    tipo: "SCRAPING_WEB_PUBLICA",
+
+    estadoComercial: "AUTOSERVICIO_SIN_PROBAR",
+    aprobadoParaOperar: false,
+    datoLicenciadoPorLaPlataforma: false,
+
+    altaAutoservicio: true,
+    creditosGratis: 100,
+    requiereTarjeta: false,
+    requiereLlamadaComercial: false,
+
+    capacidades: {
+      facebook: todas("facebook", U),
+      tiktok: todas("tiktok", U),
+      instagram: todas("instagram", U)
+    },
+
+    /*
+      Los endpoints que cubren nuestros huecos, tal como los
+      publica su documentacion. Se guardan aqui para que el
+      cliente HTTP sea una envoltura fina y no haya que volver a
+      buscarlos.
+    */
+    endpoints: {
+      facebook: {
+        perfil: "/v1/facebook/profile",
+        publicaciones: "/v1/facebook/profile/posts",
+        comentarios: "/v1/facebook/post/comments",
+        respuestas: "/v1/facebook/post/comment/replies"
+      },
+      tiktok: {
+        perfil: "/v1/tiktok/profile",
+        publicaciones: "/v3/tiktok/profile/videos",
+        publicacion: "/v2/tiktok/video",
+        comentarios: "/v1/tiktok/video/comments",
+        respuestas: "/v1/tiktok/video/comment/replies"
+      }
+    },
+
+    base: "https://api.scrapecreators.com",
+    cabeceraDeClave: "x-api-key",
+    variableDeEntorno: "SCRAPECREATORS_API_KEY",
+
+    nota:
+      "Alta autoservicio con 100 creditos y sin tarjeta. Cubre en su documentacion los cuatro endpoints que faltan, incluido texto de comentarios y respuestas. NADA medido."
+  },
+
+  socialcrawl: {
+    id: "socialcrawl",
+    nombre: "SocialCrawl",
+    tipo: "SCRAPING_WEB_PUBLICA",
+
+    estadoComercial: "AUTOSERVICIO_SIN_PROBAR",
+    aprobadoParaOperar: false,
+    datoLicenciadoPorLaPlataforma: false,
+
+    altaAutoservicio: true,
+    creditosGratis: 100,
+    requiereTarjeta: false,
+    requiereLlamadaComercial: false,
+
+    capacidades: {
+      facebook: todas("facebook", U),
+      tiktok: todas("tiktok", U),
+      instagram: todas("instagram", U)
+    },
+
+    variableDeEntorno: "SOCIALCRAWL_API_KEY",
+
+    nota:
+      "Alta autoservicio con 100 creditos y sin tarjeta. Declara 24 endpoints de Facebook y 33 de TikTok con comentarios y respuestas. Segunda opcion por detras de ScrapeCreators solo porque su documentacion publica detalla menos los campos."
+  },
+
   data365: {
     id: "data365",
     nombre: "Data365",
     tipo: "SCRAPING_WEB_PUBLICA",
 
-    estadoComercial: "NO_CONTACTADO",
+    /*
+      Trial de 14 dias sin tarjeta, pero la documentacion y el
+      acceso llegan DESPUES de una llamada introductoria. Con una
+      campana encima, eso lo saca de la via rapida.
+    */
+    estadoComercial: "REQUIERE_LLAMADA_COMERCIAL",
     aprobadoParaOperar: false,
     datoLicenciadoPorLaPlataforma: false,
+
+    altaAutoservicio: false,
+    requiereTarjeta: false,
+    requiereLlamadaComercial: true,
+    precioPublicado: "~0,60 USD / 1.000 registros desde ~300 EUR/mes",
 
     capacidades: {
       facebook: todas("facebook", U),

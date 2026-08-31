@@ -102,14 +102,24 @@ await t("los tres fixtures se declaran NO_REAL_DATA", () => {
 
 bloque("Ningun proveedor esta verificado todavia");
 
+/*
+  ACTUALIZADO EN SOCIAL-PROVIDER-ALTERNATIVE-01: la cuenta paso
+  de EN_REVISION a BLOQUEADO_POR_PROVEEDOR. Lo que la prueba
+  defiende no cambia —sigue sin estar aprobado— y ahora tambien
+  fija que el bloqueo es del proveedor y no nuestro.
+*/
 await t("Bright Data existe y NO esta aprobado para operar", () => {
   const p = esp.proveedor("brightdata");
 
   return (
     p !== null &&
     p.aprobadoParaOperar === false &&
-    p.estadoComercial === "EN_REVISION"
+    p.estadoComercial === "BLOQUEADO_POR_PROVEEDOR"
   );
+});
+
+await t("y su bloqueo no ascendio a ningun otro proveedor", () => {
+  return esp.estadoDeProveedores().ningunoVerificado === true;
 });
 
 await t("todas sus capacidades son UNVERIFIED_PROVIDER", () => {
