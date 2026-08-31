@@ -6400,6 +6400,162 @@ habilita. Si lo unico medido hubiera sido `@jotalloretv`, seguiria en false.
 
 ---
 
+## 18-octricies. P-CAND-IG-ROUTE-01 (2026-08-31)
+
+**1131 comprobaciones, 27 suites, 0 fallos.** **2 llamadas Meta.**
+Cero llamadas a X, YouTube, TikTok y buscadores.
+
+Gate corto y de una sola cosa: hacer utilizable por la ruta normal el motor
+que el gate anterior dejo funcionando.
+
+### El problema, en una linea
+
+`POST /:proyectoId/candidatos/:candidatoId/observar` no pasaba
+`idParaBusinessDiscovery` ni `cuentasPropias` a `observarCandidato`, asi que
+`observarInstagram` devolvia `NO_EJECUTABLE` por HTTP mientras el mismo motor
+medía sin problema desde un script.
+
+### Causa raiz, que es mas interesante que el sintoma
+
+Los dos parametros no estan en el expediente del candidato: **se derivan del
+token**. Nadie los cableo porque el gate que construyo `observarInstagram` los
+resolvio a mano en su propio script, y ahi funcionaban.
+
+Y **1101 pruebas en verde no lo vieron**, porque todas las suites de servicio
+pasaban esos parametros a mano tambien. Probaban el motor; el cableado no
+tenia prueba. Un fallo que solo existe en la costura entre dos piezas no lo ve
+ninguna prueba que construya las piezas por separado.
+
+### La correccion
+
+**Nuevo `metaObservationContext.js`.** Resuelve el contexto y declara sus
+estados: `RESUELTO`, `NO_REQUERIDO`, `SIN_CREDENCIAL`,
+`SIN_VINCULO_INSTAGRAM`, `ERROR`.
+
+Vive en el **backend** y no es un detalle de organizacion: los dos datos se
+derivan del token, asi que resolverlos en el cliente exigiria mandarle la
+credencial de Meta al navegador. El cliente pide «observa a este candidato»;
+que Paginas administramos no es asunto suyo.
+
+Una llamada, y **solo si la ejecucion incluye Instagram**. Pedir
+`me/accounts` para observar YouTube seria gastar por nada, y hay test que lo
+fija.
+
+**Un activo personal declarado ya no gasta llamada.** La guarda vive en
+`observarInstagram` y no en la ruta, para que la regla alcance a todos los que
+llamen y no solo a este camino. Va *antes* del control de
+`idParaBusinessDiscovery` a proposito: que una cuenta sea personal no depende
+de nuestra configuracion, y decir `NO_EJECUTABLE` mandaria a revisar nuestras
+Paginas cuando no hay nada que revisar.
+
+**`procedenciaDelEstado`, nuevo campo.** El mismo `NO_SOPORTADO_PERSONAL`
+puede venir de una declaracion del analista o de un error de Meta, y no valen
+lo mismo:
+
+    DECLARADA   lo dijo el analista. No se pregunto.
+    MEDIDA      lo dijo Meta.
+
+**La respuesta HTTP ya distingue tercero de propio.** Antes devolvia
+`estado: OBSERVADA` para las dos, asi que en pantalla medir a un candidato y
+medir nuestra propia cuenta se veian igual. Ahora viajan
+`alcanceDeLaMedicion`, `notaAlcance`, `procedenciaDelEstado` y `assetType`.
+
+**Defecto encontrado de paso:** el lote de publicaciones se guardaba con
+`provider: "youtube_data"` fijo, asi que un lote de Instagram quedaba
+etiquetado como si viniera de YouTube. Ahora el proveedor del lote se deriva
+de lo observado.
+
+### Lo que NO viaja al cliente
+
+Ni el token, ni el App Secret, ni el id de nuestra cuenta de Instagram, ni los
+handles propios. La respuesta lleva `cuentasPropiasDetectadas` —un numero— y
+el estado. Dos tests lo fijan.
+
+### Prueba de ruta: 30 comprobaciones nuevas
+
+`tests/igRoute.test.mjs` **monta el router de verdad** y le habla por HTTP en
+un puerto efimero. Lo unico simulado es `graph.facebook.com`, con la forma
+real de las respuestas medidas en gates anteriores.
+
+Es la prueba que faltaba: la que recorre la costura.
+
+    HTTP -> observarCandidato -> observarInstagram -> adapter -> Lake
+
+Fija las tres distinciones sobre la misma carga simulada —identica para las
+dos cuentas, para que el alcance no pueda salir de la respuesta—, que multi-
+asset sigue en pie con dos activos del mismo candidato sin colapsarse, que la
+cuenta personal recibe **cero** llamadas, y que observar dos veces no duplica.
+
+### Prueba real, 2 llamadas
+
+Por la ruta HTTP normal, contra el proyecto piloto:
+
+    POST /api/proyectos/alcaldia-cuenca-2027-piloto
+         /candidatos/pedro-palacios-ullauri/observar
+         {"plataformas":["instagram"],"maximo":5}
+
+    HTTP 200
+    instagram:pedropalaciosu   OBSERVADA   MEDIDO_TERCERO
+    followers 9.718   media_count 1.635   5 publicaciones
+    contextoMeta RESUELTO      persistido true
+
+Idempotencia comprobada **entre gates**, que es la comprobacion que vale:
+
+    firstObservedAt  2026-08-31T15:53:08.897Z   (del gate anterior, intacto)
+    lastObservedAt   2026-08-31T17:06:16.410Z   (esta ejecucion)
+    publicaciones    5, sin duplicar
+    lotes            4, la serie acumula
+    snapshots        4 por publicacion
+
+Las cinco publicaciones conservan su `publicationId` y su `evidenceId`. Lo que
+avanza es `lastObservedAt` y lo que crece es la serie de metricas.
+
+### Deuda declarada: el puerto pide la credencial equivocada
+
+`business_discovery` viaja con el token de **Facebook Login**, pero el puerto
+de adaptadores pregunta por `estaConfigurado()`, que sigue significando «hay
+token de **Instagram** Login». Sin el, el adaptador entero queda
+`SIN_CREDENCIAL` y la via no se intenta.
+
+Se descubrio porque la prueba de ruta fallo con solo el token de Facebook
+puesto.
+
+**No se ha corregido**, y a proposito: esa semantica se fijo deliberadamente
+en META-FB-LOGIN-SETUP-01 por compatibilidad, y cambiarla es una decision
+sobre familias de credenciales, no parte de este cableado. Hoy no muerde
+porque el `.env` real tiene las dos.
+
+**Muerde el dia que alguien despliegue con solo el token que esta via
+necesita** y reciba un `NO_EJECUTABLE` que habla de la credencial equivocada.
+Queda escrito en el test que lo encontro.
+
+### Estado de la interfaz: NO EXPUESTA
+
+El backend esta operativo y **el frontend no llama a `/observar`**.
+Comprobado: los unicos endpoints de candidato que usa la interfaz son `foto`,
+`identidad`, `inteligencia` y `tipos-activo`.
+
+El boton «Observar cuentas» existe, en
+`apps/web/src/components/ProjectsModule.jsx` → `observarCuentas()`, y llama a
+`/inteligencia`, que es el camino de Account Intelligence y otro motor. No
+llega a este.
+
+No se toco: cambiar a donde apunta ese boton alteraria una funcion distinta y
+es alcance de un gate de UX.
+
+    BACKEND ROUTE   FUNCIONAL
+    UI REAL         NO EXPUESTA
+
+### Riesgos
+
+- **La capacidad no es alcanzable por el analista todavia.** Existe y esta
+  probada de punta a punta; falta un disparador en la interfaz.
+- La deuda de la credencial del puerto sigue abierta y hoy es invisible.
+- La cobertura maxima de Instagram sigue siendo 3 de 12 activos por razones
+  estructurales, no de cableado.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -6907,6 +7063,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-31 | P-CAND-IG-ROUTE-01 | Gate corto: hacer utilizable por la ruta normal el motor de Instagram que el gate anterior dejo funcionando. `POST /observar` no pasaba `idParaBusinessDiscovery` ni `cuentasPropias` a `observarCandidato`, asi que por HTTP `observarInstagram` devolvia NO_EJECUTABLE mientras el mismo motor medía sin problema desde un script. La causa raiz es mas interesante que el sintoma: los dos parametros no estan en el expediente porque se derivan del token, y el gate que construyo el motor los resolvio a mano en su propio script. Las 1101 pruebas en verde no lo vieron porque todas las suites de servicio los pasaban a mano tambien: probaban el motor, y el cableado no tenia prueba —un fallo que solo existe en la costura entre dos piezas no lo ve ninguna prueba que construya las piezas por separado—. Nuevo `metaObservationContext.js` con estados propios (RESUELTO, NO_REQUERIDO, SIN_CREDENCIAL, SIN_VINCULO_INSTAGRAM, ERROR), resuelto en el BACKEND porque los dos datos se derivan del token y hacerlo en el cliente exigiria mandarle la credencial de Meta al navegador; una sola llamada y solo si la ejecucion incluye Instagram, con test que fija que pedir me/accounts para observar YouTube no ocurre. Un activo personal declarado ya no gasta llamada, con la guarda en `observarInstagram` y no en la ruta para que alcance a todos los llamantes, y colocada ANTES del control de idParaBusinessDiscovery porque que una cuenta sea personal no depende de nuestra configuracion. Nuevo campo `procedenciaDelEstado`: el mismo NO_SOPORTADO_PERSONAL puede venir de una declaracion del analista (DECLARADA) o de un error de Meta (MEDIDA), y no valen lo mismo. La respuesta HTTP ya distingue tercero de propio —antes las dos eran «OBSERVADA» y en pantalla medir a un candidato y medir nuestra propia cuenta se veian igual— con alcanceDeLaMedicion, notaAlcance, procedenciaDelEstado y assetType. Defecto encontrado de paso: el lote de publicaciones se guardaba con provider youtube_data fijo, asi que un lote de Instagram quedaba etiquetado como de YouTube; ahora se deriva de lo observado. Nueva suite `igRoute.test.mjs` con 30 comprobaciones que monta el router de verdad y le habla por HTTP en un puerto efimero, simulando solo graph.facebook.com: es la prueba que recorre la costura, y fija las tres distinciones sobre una carga identica para las dos cuentas para que el alcance no pueda salir de la respuesta, que multi-asset sigue en pie, que la cuenta personal recibe cero llamadas y que observar dos veces no duplica. Prueba real por HTTP con Pedro Palacios: 200, MEDIDO_TERCERO, 9.718 seguidores, 5 publicaciones, persistido, con idempotencia comprobada ENTRE gates —firstObservedAt sigue en 15:53:08.897Z del gate anterior, lastObservedAt avanza a 17:06:16.410Z, 5 publicaciones sin duplicar, 4 lotes acumulados—. Deuda declarada y NO corregida: el puerto de adaptadores pregunta por estaConfigurado(), que significa «hay token de Instagram Login», mientras business_discovery viaja con el de Facebook Login; se fijo asi a proposito en META-FB-LOGIN-SETUP-01 y cambiarlo es una decision sobre familias de credenciales, no parte de este cableado. Hoy no muerde porque el .env tiene las dos, y morderia el dia que alguien despliegue con solo el token que esta via necesita. Estado de interfaz: BACKEND ROUTE FUNCIONAL y UI REAL NO EXPUESTA —el frontend no llama a /observar, y el boton «Observar cuentas» de ProjectsModule.jsx llama a /inteligencia, que es otro motor—; no se toco porque es alcance de un gate de UX. 1131 pruebas, 0 fallos, 2 llamadas Meta. Nueva §18-octricies. |
 | 2026-08-31 | P-CAND-IG-MULTICANDIDATO-01 | Instagram pasa de motor a datos: primera medicion multicandidato de terceros, cuatro llamadas Meta en total. Antes del gate se determino que el PASO 5 ya estaba hecho y no constaba en ninguna parte —ni commit, ni log, ni este documento—: `debug_token` mostro un token emitido el 2026-08-31T05:06:31Z que caduca el 2026-10-30, unos 60 dias, con acceso a datos hasta el 2026-11-29 y los cinco permisos necesarios. No se regenero, y la caducidad queda escrita aqui porque vive en Meta y no en el repositorio, que es como se pierde. El contrato sigue siendo FACEBOOK_USER_ACCESS_TOKEN y no se creo variable nueva. De los doce activos de Instagram solo los tres elegibles gastaron llamada; los nueve declarados INSTAGRAM_PERSONAL no se consultaron porque `elegibilidadMeta` ya afirma que ninguna via oficial los abre y la llamada solo habria confirmado el contrato, asi que quedan NO_SOPORTADO_PERSONAL con procedencia DECLARADA y no MEDIDA, con la etiqueta puesta. Resultado: @pedropalaciosu y @yakuperezg MEDIDO_TERCERO con 9.718 y 83.233 seguidores, y @jotalloretv MEDIDO_PROPIO_AUTORIZADO con 10.822 porque aparece en me/accounts —la respuesta de Meta es identica a la de un tercero, mismo 200 y mismos campos, y sin esa comprobacion previa el gate habria contado tres terceros donde hay dos—. Quince publicaciones con permalink, timestamp y metricas; likes 12 DISPONIBLE y 3 NO_DISPONIBLE porque tres publicaciones de Lloret no traen like_count y quedan ausentes en lugar de en cero; comments_count medido en las quince, con dos ceros reales en Palacios; comments_text sigue NO_SOPORTADO por esta via hasta PPCA; reach, impressions, saved y shares no se pidieron por ser OWNER_INSIGHT. Dedup verificado sin gastar Meta reescribiendo el mismo lote: los lotes suben de 3 a 4 y las publicaciones se quedan en 5 con publicationId y evidenceId unicos. Instagram deja de ser NO_PROBADO en los siete candidatos y queda 1 MEDIDO, 1 PARCIAL, 1 MEDIDO_PROPIO y 4 NO_SOPORTADO, con las dos reglas del gate anterior cumplidas sobre datos reales: Yaku PARCIAL con uno de dos activos y Lloret MEDIDO_PROPIO sin contar como cobertura. X y YouTube se reconstruyeron de lo ya persistido en el Lake, sin volver a preguntar. habilitaBenchmark("instagram") sigue TRUE y este gate no lo cambio: lo respaldo, porque lo que antes sostenia un tercero genuino ahora lo sostienen dos. Riesgo estructural declarado: 9 de 12 activos son personales y ninguna revision de Meta los abre, asi que el techo de esta via son 3 de 12 y hoy se alcanzo entero. Detectado y no tocado: la ruta POST /observar no pasa idParaBusinessDiscovery ni cuentasPropias, asi que por HTTP Instagram devuelve NO_EJECUTABLE y falta cablear dos parametros. 1101 pruebas, 0 fallos. Nueva §18-septricies. |
 | 2026-08-30 | P-CAND-SOCIAL-COVERAGE-01 | El gate iba a pasar Instagram de prueba a operacion sobre los siete candidatos y no llego a ejecutarse: el token de Facebook caduco entre gates, por cincuenta y seis segundos, porque los del Graph API Explorer viven alrededor de una hora y las pruebas anteriores duraban minutos. Es un hallazgo de operacion y no de arquitectura, y produjo la distincion que faltaba: CREDENCIAL_EXPIRADA no es CREDENCIAL_RECHAZADA, porque una manda a revisar de donde salio el token y la otra a conseguir uno de larga duracion —regenerar otro corto caduca igual—. Nuevo tokenDeLargaDuracion() para el intercambio a ~60 dias, que exige META_APP_ID y META_APP_SECRET y no intenta la llamada si faltan. Lo que si quedo construido: observarInstagram bajo el mismo contrato que observarX y observarYouTube, con una sola llamada por activo porque Meta permite anidar la muestra en el propio fields; el campo alcanceDeLaMedicion que separa MEDIDO_TERCERO de MEDIDO_PROPIO_AUTORIZADO y que NO sale de la respuesta de Meta —sobre una cuenta propia y una ajena la respuesta es identica, y ahi estuvo el riesgo del gate anterior— sino de cruzar el handle con me/accounts; el estado NO_SOPORTADO_PERSONAL, porque business_discovery solo responde sobre cuentas Business o Creator y leer ese error como CUENTA_NO_RESUELTA diria «no encontramos la cuenta» cuando la verdad es que la cuenta esta ahi y la via no la abre; Instagram registrado en el puerto de adaptadores, donde una sola funcion cumple las cuatro capacidades; matrizSocialDelProyecto con siete estados de celda que se niegan a colapsar en «sin datos», con dos reglas fijadas por test —dos de tres activos medidos es PARCIAL y no MEDIDO, y MEDIDO_PROPIO no cuenta como cobertura—; y evidenceId derivado del permalink, estable entre ejecuciones, que es lo que impide duplicar una publicacion al reobservar. Sobre Facebook se determino la via exacta: de las tres alternativas que Meta nombraba en su error, pages_read_engagement no aplica a terceros y Page Public Metadata Access esta sustituida, asi que solo queda Page Public Content Access, que exige App Review y Business Verification verbatim y en modo desarrollo solo alcanza Paginas cuyo administrador tenga rol en la app —exactamente lo medido—. No hay ningun cambio de configuracion que abra terceros sin revision. Y un dato que cambia la prioridad: PPCA habilita /page-post/comments, o sea texto de comentarios publicos, que Instagram no entrega; PPCA no es «tambien Facebook», es la condicion para que Comments Intelligence tenga fuente. Preparado docs/META-FB-PUBLIC-ACCESS-REQUEST.md sin enviar nada. 1101 pruebas, 0 fallos, 1 llamada Meta. Nueva §18-sextricies. |
 | 2026-08-30 | META-THIRD-PARTY-REAL-02 | Reintento con la credencial correcta, siete llamadas. El hallazgo que casi rompe el gate llego en la llamada de prerequisito: `me/accounts` revelo que el token ADMINISTRA la Pagina del candidato patron y su Instagram vinculado, asi que las dos primeras sondas preguntaron por nuestro propio activo y devolvieron datos reales —10.821 y 55.859 seguidores— con cero evidencia sobre terceros. Un resultado positivo con el sujeto equivocado se lee exactamente igual que un exito, y sin esa llamada el gate habria declarado MEDIDO_TERCERO con evidencia de MEDIDO_PROPIO. Se repitio contra un candidato ausente de me/accounts. INSTAGRAM: MEDIDO_TERCERO — business_discovery devolvio username, name, followers_count 9.719, media_count 1.635 y cinco publicaciones con id, permalink, timestamp, media_type, like_count y comments_count; no volvieron follows_count ni view_count y no se pidieron los owner insights. FACEBOOK: BLOQUEADO_PERMISOS — la Page que administramos dio 200 y la de un tercero 400 code 100, con TRES alternativas nombradas por Meta que no cuestan lo mismo (pages_read_engagement, Page Public Content Access, Page Public Metadata Access) y sin mencionar Business Verification; esta si es causa demostrada porque el error llega a evaluar permisos. COMENTARIOS de Instagram PARCIAL: el recuento llega y el texto no, medido con un 400 code 100 al pedir comments{text} dentro de business_discovery.media, asi que Comments Intelligence sigue sin fuente por esta via. Tres activos pasan a META_API/VERIFICADA porque business_discovery solo responde sobre cuentas profesionales y responder ES la evidencia del tipo; los otros veinte quedan intactos. habilitaBenchmark("instagram") pasa a true con siete capacidades sobre un tercero genuino, el mismo baremo con el que entraron X y YouTube, mientras views y shares se quedan en PROPIO porque son OWNER_INSIGHT y no vinieron del tercero. Registrada una discrepancia con META-PUBLIC-ACCESS-01, que documentaba Advanced Access y Business Verification como obligatorios: la llamada funciono sin que consten, y POR QUE funciona no esta demostrado. Corregido un defecto encontrado de paso: guardarDeclaracionesDeTipo usaba candidato + fecha como clave de entidad, asi que dos lotes con el mismo declaradoEn colisionaban y el primero dejaba de leerse devolviendo escrito true. Once aserciones cambiaron y ninguna se debilito. 1076 pruebas, 0 fallos. Nueva §18-quintricies. |

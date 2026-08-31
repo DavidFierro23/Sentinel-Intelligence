@@ -809,7 +809,17 @@ export async function observarInstagram(entrada = {}) {
     cuentasPropias = [],
     maximoPublicaciones = 5,
     observedAt = new Date().toISOString(),
-    fetchImpl = undefined
+    fetchImpl = undefined,
+
+    /*
+      Tipo YA declarado para este activo, si se conoce. Se recibe
+      en lugar de deducirlo aqui porque la declaracion vive en el
+      Lake y esta funcion no lee del Lake.
+
+      `null` significa «no se sabe», y entonces se pregunta: no
+      saber no es lo mismo que saber que no.
+    */
+    assetType = null
   } = entrada;
 
   const traza = { plataformaId: "instagram", llamadas: [], unidadesConsumidas: 0 };
@@ -841,6 +851,36 @@ export async function observarInstagram(entrada = {}) {
   if (!cuenta?.handle) {
     return salida(ESTADOS_OBSERVACION_REAL.CUENTA_NO_RESUELTA, {
       motivo: "la cuenta del expediente no trae handle"
+    });
+  }
+
+  /*
+    -----------------------------------------------------------
+    UN ACTIVO PERSONAL DECLARADO NO SE PREGUNTA
+    -----------------------------------------------------------
+
+    `business_discovery` solo responde sobre cuentas Business o
+    Creator. Si el tipo ya esta declarado como personal, la
+    llamada solo confirmaria lo que ya consta, y se gastaria una
+    unidad por activo para no aprender nada.
+
+    Va ANTES del control de `idParaBusinessDiscovery` a
+    proposito: que la cuenta sea personal no depende de nuestra
+    configuracion. Decir NO_EJECUTABLE aqui mandaria a revisar
+    nuestras Paginas cuando no hay nada que revisar.
+
+    `procedenciaDelEstado` es lo que impide que esto se lea como
+    una medicion: el estado sale de una declaracion, no de una
+    respuesta de Meta.
+    -----------------------------------------------------------
+  */
+  if (assetType === "INSTAGRAM_PERSONAL") {
+    return salida(ESTADOS_OBSERVACION_REAL.NO_SOPORTADO_PERSONAL, {
+      procedenciaDelEstado: "DECLARADA",
+      assetType,
+
+      motivo:
+        `@${cuenta.handle} esta declarada como cuenta personal, y business_discovery solo alcanza cuentas Business o Creator. No se pide: la respuesta ya consta. NO significa que la cuenta no exista.`
     });
   }
 
@@ -920,6 +960,14 @@ export async function observarInstagram(entrada = {}) {
         ? ESTADOS_OBSERVACION_REAL.NO_SOPORTADO_PERSONAL
         : ESTADOS_OBSERVACION_REAL.CUENTA_NO_RESUELTA,
       {
+        /*
+          Este NO_SOPORTADO_PERSONAL si lo dijo Meta. El de la
+          guarda de arriba lo dijo el analista, y por eso los dos
+          llevan la procedencia puesta: el mismo estado no vale lo
+          mismo segun quien lo afirme.
+        */
+        procedenciaDelEstado: "MEDIDA",
+        assetType,
         esPropia,
         httpStatus: r.httpStatus ?? null,
         codigoMeta: r.codigo ?? null,
@@ -1020,6 +1068,14 @@ export async function observarInstagram(entrada = {}) {
     metricasDeCuenta,
     publicaciones,
 
+    procedenciaDelEstado: "MEDIDA",
+
+    /*
+      Se devuelve tambien cuando se midio: quien lee el resultado
+      necesita saber con que tipo declarado se entro, no solo
+      cuando se salto la llamada.
+    */
+    assetType,
     esPropia,
 
     /*
@@ -1062,7 +1118,17 @@ export async function observarCandidato(entrada = {}) {
     maximoPublicaciones = 5,
     observedAt = new Date().toISOString(),
     fetchImpl = undefined,
-    plataformas = ["youtube"]
+    plataformas = ["youtube"],
+
+    /*
+      Tipo declarado por activo, indexado por accountId. Lo
+      resuelve quien lee el Lake —hoy la ruta del proyecto— y
+      viaja hasta observarInstagram para que un activo personal
+      no gaste llamada.
+
+      Un mapa vacio no rompe nada: sin dato se pregunta.
+    */
+    tiposDeActivo = {}
   } = entrada;
 
   const resultados = [];
@@ -1115,6 +1181,7 @@ export async function observarCandidato(entrada = {}) {
         cuenta,
         idParaBusinessDiscovery: entrada.idParaBusinessDiscovery || null,
         cuentasPropias: entrada.cuentasPropias || [],
+        assetType: tiposDeActivo[cuenta.id] || null,
         maximoPublicaciones,
         observedAt,
         fetchImpl

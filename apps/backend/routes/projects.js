@@ -63,6 +63,11 @@ import { preparacionParaObservacionReal } from "../services/intelligence/platfor
 /* P-CAND-03 */
 import { observarCandidato } from "../services/intelligence/candidateObservation.js";
 
+import {
+  contextoMetaDeObservacion,
+  ESTADOS_CONTEXTO_META
+} from "../services/intelligence/metaObservationContext.js";
+
 import { matrizDeCapacidades } from "../services/intelligence/socialCapabilityMatrix.js";
 
 /* P-CAND-BENCH-01 */
@@ -1281,23 +1286,83 @@ router.post("/:proyectoId/candidatos/:candidatoId/observar", async (req, res) =>
 
     const cuentas = ficha.plataformas.flatMap((p) => p.cuentas || []);
 
+    const plataformas = req.body?.plataformas || ["youtube"];
+
+    /*
+      ---------------------------------------------------------
+      CONTEXTO META — P-CAND-IG-ROUTE-01
+      ---------------------------------------------------------
+
+      El motor de Instagram ya existia y por esta ruta devolvia
+      NO_EJECUTABLE, porque los dos datos que `business_discovery`
+      necesita no llegaban: desde que cuenta propia se pregunta y
+      que handles administramos.
+
+      Se resuelven AQUI, en el backend, porque los dos se derivan
+      del token. Pedirselos al cliente exigiria mandarle la
+      credencial al navegador.
+
+      Una llamada, y solo si la ejecucion incluye Instagram.
+      ---------------------------------------------------------
+    */
+    const contextoMeta = await contextoMetaDeObservacion({ plataformas });
+
+    /*
+      Tipo declarado por activo. Sale del Lake y no de la red: es
+      lo que permite que un Instagram personal quede
+      NO_SOPORTADO_PERSONAL sin gastar una llamada en confirmar
+      lo que ya consta.
+    */
+    const tipos = await declaracionesDeTipoDe(proyectoId, candidatoId);
+
+    const inventario = activosDeCandidato({
+      candidateId: candidatoId,
+      cuentas,
+      declaraciones: tipos.declaraciones
+    });
+
+    const tiposDeActivo = {};
+
+    (inventario.activos || []).forEach((a) => {
+      if (a.accountId) tiposDeActivo[a.accountId] = a.assetType;
+    });
+
     const r = await observarCandidato({
       candidateId: candidatoId,
       projectId: proyectoId,
       cuentas,
       maximoPublicaciones: Math.min(Number(req.body?.maximo) || 5, 10),
-      plataformas: req.body?.plataformas || ["youtube"]
+      plataformas,
+
+      idParaBusinessDiscovery: contextoMeta.idParaBusinessDiscovery,
+      cuentasPropias: contextoMeta.cuentasPropias,
+      tiposDeActivo
     });
 
     /* Persistencia append-only: las metricas son snapshots. */
     let guardado = null;
 
     if (r.publicaciones.length) {
+      /*
+        El proveedor del LOTE se deriva de lo que se observo. Era
+        fijo "youtube_data", asi que un lote de Instagram quedaba
+        etiquetado como si viniera de YouTube. Cada publicacion
+        lleva ademas su propio `provider`, que es el que manda;
+        esto es la etiqueta del lote y tambien tiene que ser
+        cierta.
+      */
+      const proveedores = [
+        ...new Set(r.publicaciones.map((p) => p.provider).filter(Boolean))
+      ];
+
       guardado = await guardarPublicaciones(
         proyectoId,
         candidatoId,
         r.publicaciones,
-        { observadoEn: r.observedAt, provider: "youtube_data" }
+        {
+          observadoEn: r.observedAt,
+          provider: proveedores.length === 1 ? proveedores[0] : proveedores.join("+")
+        }
       );
     }
 
@@ -1326,11 +1391,37 @@ router.post("/:proyectoId/candidatos/:candidatoId/observar", async (req, res) =>
         metricasDeCuenta: x.metricasDeCuenta || [],
         publicaciones: (x.publicaciones || []).length,
         traza: x.traza || null,
-        notaIdentidad: x.notaIdentidad || null
+        notaIdentidad: x.notaIdentidad || null,
+
+        /*
+          Sin estos dos campos la respuesta no distingue haber
+          medido a un tercero de haber medido nuestra propia
+          cuenta, y en pantalla las dos se verian «OBSERVADA».
+        */
+        alcanceDeLaMedicion: x.alcanceDeLaMedicion || null,
+        notaAlcance: x.notaAlcance || null,
+
+        /* Si el estado lo dijo Meta o lo dijo el analista. */
+        procedenciaDelEstado: x.procedenciaDelEstado || null,
+        assetType: x.assetType || null
       })),
 
       resumen: r.resumen,
       unidadesConsumidas: r.unidadesConsumidas,
+
+      /*
+        Estado del contexto Meta, SIN el id ni la credencial. Que
+        la via este resuelta o no es lo que el analista necesita
+        para leer un NO_EJECUTABLE.
+      */
+      contextoMeta: {
+        estado: contextoMeta.estado,
+        resuelto: contextoMeta.estado === ESTADOS_CONTEXTO_META.RESUELTO,
+        cuentasPropiasDetectadas: (contextoMeta.cuentasPropias || []).length,
+        llamadas: contextoMeta.llamadas || 0,
+        motivo: contextoMeta.motivo || null,
+        nota: contextoMeta.nota || null
+      },
 
       persistido: guardado?.escrito === true,
 
