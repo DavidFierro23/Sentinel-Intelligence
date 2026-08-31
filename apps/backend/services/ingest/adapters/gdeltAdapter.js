@@ -305,12 +305,35 @@ export async function buscar(consulta, opciones = {}) {
   } catch (error) {
     clearTimeout(temporizador);
 
+    /*
+      `fetch failed` no dice nada. La causa real vive en
+      `error.cause.code` —UND_ERR_CONNECT_TIMEOUT, ENOTFOUND,
+      ECONNREFUSED— y es lo que distingue «GDELT no responde
+      desde esta maquina» de «GDELT rechazo la consulta».
+
+      Medido: las cuatro llamadas de la primera prueba real
+      devolvieron «fetch failed» a secas y hubo que diagnosticar
+      la causa por separado.
+    */
+    const causa = error?.cause?.code || error?.cause?.message || null;
+
+    const inalcanzable = /TIMEOUT|ENOTFOUND|ECONNREFUSED|EAI_AGAIN/i.test(causa || "");
+
     return {
-      estado: error?.name === "AbortError" ? "TIEMPO_AGOTADO" : "ERROR",
+      estado: error?.name === "AbortError" || inalcanzable ? "TIEMPO_AGOTADO" : "ERROR",
       evidencias: [],
       recibidas: 0,
       latenciaMs: Date.now() - inicio,
-      motivo: error?.message || "fallo de red"
+
+      motivo: causa
+        ? `${error?.message || "fallo de red"} (${causa})`
+        : error?.message || "fallo de red",
+
+      inalcanzable,
+
+      declaracion: inalcanzable
+        ? "GDELT no es alcanzable desde esta máquina. NO significa que no haya publicaciones: significa que no se pudo preguntar."
+        : null
     };
   }
 }

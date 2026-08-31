@@ -1273,7 +1273,111 @@ La comparación se hace sobre **evidencias únicas** y **emisores identificados*
 
 ---
 
-## 13-nonies. Roadmap territorial
+## 13-nonies. TERRITORIAL-FRESH-01 — escucha actual (2026-08-28)
+
+✅ Territorio responde **«¿qué está pasando HOY en Cuenca?»**.
+
+### La distinción que define el gate
+
+> **ENCONTRADO HOY ≠ PUBLICADO HOY**
+
+Cuatro instantes, y ninguno sustituye a otro:
+
+| campo | qué es |
+|---|---|
+| `publishedAt` | lo que declara la fuente |
+| `firstObservedAt` | primera vez que Sentinel la vio — **inmutable** |
+| `lastObservedAt` | última vez que volvió a verla |
+| `retrievedAt` | instante de **esta** ejecución |
+
+Usar `retrievedAt` como `publishedAt` convertiría cada recolección en «hoy han pasado 60 cosas», que es falso **y crece cada vez que se pulsa actualizar**.
+
+### Prueba real, 28 ago 2026 · ventana HOY · escucha ampliada
+
+| | |
+|---|---|
+| corpus | **63 evidencias** |
+| **publicado hoy** | **8** |
+| encontrado hoy, publicado antes | **55** |
+| fecha no resuelta | 0 |
+
+Sin separar esas dos cifras, la pantalla habría dicho «63 cosas hoy». Había 8. **Un orden de magnitud.**
+
+Distribución por `publishedAt`: hoy 8 · ayer 0 · 2–7 días 6 · anterior **49**.
+
+> Hallazgo: **el recolector base no respeta la ventana pedida.** Google News devuelve su ventana móvil completa independientemente de `desde`/`hasta`. Pedir HOY no restringe lo que entra; lo que hace el sistema es **clasificarlo correctamente**. Sin la distinción de frescura, pedir «hoy» habría devuelto 49 evidencias de hace más de una semana presentadas como actuales.
+
+### Por qué un día calendario y no 24 horas rodantes
+
+Ecuador va a **UTC−5**. Entre las 19:00 y la medianoche de Cuenca, el servidor en UTC ya está en el día siguiente: **calculando en UTC, «hoy» se vaciaría cada tarde.**
+
+La ventana se calcula con `Intl.DateTimeFormat` en `America/Guayaquil`. Comprobado: a las 02:00 UTC del 28, la fecha local sigue siendo el 27.
+
+**Ninguna fecha está fija en el código.** El 27 de agosto era la fecha esperada de la validación; el reloj marcó el 28 y el sistema lo calculó solo.
+
+### Reejecutar no multiplica el corpus
+
+`territorial/evidenceLedger.js`, append-only. Dos pasadas seguidas el mismo día:
+
+| | pasada 1 | pasada 2 |
+|---|---|---|
+| observadas | 57 | 57 |
+| **nuevas para Sentinel** | 57 | **0** |
+| ya conocidas | 0 | **57** |
+| corpus acumulado | 64 | **64** |
+
+> Defecto corregido durante la prueba: el ledger solo admitía evidencias con `evidenceId`, campo que únicamente emiten los adapters de INGEST-REAL-01. **56 de 63 evidencias quedaban fuera — el 89 %.** «Reejecutar no duplica» solo era cierto para el 11 % del corpus. Ahora la huella se calcula con el mismo contrato para todo el corpus.
+
+`firstObservedAt` es inmutable: si cada pasada lo reescribiera, el histórico diría que Sentinel se enteró de todo hoy.
+
+### Adapters conectados, no reimplementados
+
+Auditoría: `ingestOrchestrator`, `evidenceContract`, `crossProviderDedup` y los adapters RSS/GDELT/YouTube **existían y nadie los invocaba**. `ingest/territorialCollector.js` los conecta; `conversationHarvester` sigue exactamente igual.
+
+Presupuesto por pasada: RSS 8 feeds · GDELT 2 consultas · **YouTube 1**. Una búsqueda de YouTube cuesta 100 de 10.000 unidades diarias; cuatro actualizaciones al día ya son 400.
+
+### Proveedores en la prueba real: 2 de 9 aportaron
+
+```
+Google News    OK              56 evidencias
+YouTube        OK               7 evidencias · 5 canales · 100 unidades
+GDELT          TIEMPO_AGOTADO   no alcanzable desde esta máquina
+RSS directo    SIN_FUENTES      no hay feeds declarados todavía
+SerpAPI · Brave · DuckDuckGo    NO_EJECUTADO (modo sin coste web)
+Bing           NO_IMPLEMENTADO
+```
+
+> Defecto corregido: GDELT devolvía `fetch failed` a secas. La causa real vive en `error.cause.code` —`UND_ERR_CONNECT_TIMEOUT`— y es lo que distingue «no responde desde esta máquina» de «rechazó la consulta». Hubo que diagnosticarlo por separado; ahora viaja en el motivo.
+
+El panel declara **cuántos aportaron**, no cuántos existen. «No ejecutado» y «ejecutado sin resultados» no son lo mismo: solo el segundo permite decir que no hay nada.
+
+### HOY ⊂ 7 días, verificado
+
+```
+HOY  2026-08-28T05:00:00Z → 2026-08-29T04:59:59Z
+7D   2026-08-22T05:00:00Z → 2026-08-29T04:59:59Z
+```
+
+Las dos ventanas se calculan por calendario en la misma zona. Si HOY fuera calendario y 7d resta de milisegundos, el subconjunto no lo sería.
+
+### Ficheros
+
+| Pieza | Fichero |
+|---|---|
+| Ventana del día y frescura | `territorial/dayWindow.js` |
+| Libro de observaciones | `territorial/evidenceLedger.js` |
+| Conexión de adapters | `ingest/territorialCollector.js` |
+| Interfaz | `territorio/panels/{FreshnessPanel,ProvidersStatusPanel}.jsx` |
+
+### Pruebas
+
+`territorial` 160 · `c2` 53 · `d` 39 · `d2` 92 · `ingest-real` 93 · **`territorial-fresh` 50** · SSR **114** = **601**.
+
+> La suite `territorial-fresh` salía a internet en su primera versión: dos peticiones reales a `api.gdeltproject.org`. Se añadió inyección de `fetch` y `parseURL`, y se verificó con un contador que ahora hace **cero** llamadas de red. «Sin red» tiene que ser comprobable, no una intención.
+
+---
+
+## 13-decies. Roadmap territorial
 
 Orden oficial:
 

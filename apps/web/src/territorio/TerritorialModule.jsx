@@ -20,6 +20,10 @@ import UnknownsBlock from "./panels/UnknownsBlock";
 /* Gate D */
 import ExecutiveHeader from "./panels/ExecutiveHeader";
 import CoverageWarning from "./panels/CoverageWarning";
+
+/* --- TERRITORIAL-FRESH-01 --- */
+import FreshnessPanel from "./panels/FreshnessPanel";
+import ProvidersStatusPanel from "./panels/ProvidersStatusPanel";
 import AgendaPanel from "./agenda/AgendaPanel";
 import RadarPanel from "./agenda/RadarPanel";
 import TopicDrawer from "./agenda/TopicDrawer";
@@ -84,6 +88,22 @@ const MODOS = [
     detalle: "Añade titulares de Google News por RSS. No gasta cuota."
   },
   {
+    /*
+      Escucha ampliada: activa los adapters que INGEST-REAL-01
+      dejo escritos —RSS directo, GDELT y YouTube—. No es un
+      motor nuevo: el recolector base sigue funcionando igual y
+      sus evidencias se funden con estas.
+
+      Cuesta cuota de YouTube (100 unidades por pasada, de
+      10.000 diarias) y por eso se pide explicitamente.
+    */
+    id: "ampliado",
+    texto: "Escucha ampliada",
+    coste: "cuota de YouTube",
+    detalle:
+      "Añade RSS directo, GDELT y YouTube al recolector base. Una búsqueda de YouTube cuesta 100 de las 10.000 unidades diarias."
+  },
+  {
     id: "web",
     texto: "Añadir búsqueda web",
     coste: "gasta cuota",
@@ -98,7 +118,7 @@ function Barra() {
 
   const modoActual = MODOS.find((m) => m.id === modo);
 
-  const gasta = modo === "web";
+  const gasta = modo === "web" || modo === "ampliado";
 
   return (
     <section
@@ -208,7 +228,11 @@ function Barra() {
             <Play size={14} />
           )}
 
-          {cargando ? "Analizando…" : datos ? "Volver a analizar" : "Analizar"}
+          {cargando
+            ? "Recolectando…"
+            : datos
+              ? "Actualizar ahora"
+              : "Analizar"}
         </button>
 
         {datos?.costo && (
@@ -360,6 +384,16 @@ function Contenido() {
           <ExecutiveHeader datos={datos} />
 
           <CoverageWarning limitaciones={datos.coverageLimitations} />
+
+          {/*
+            La frescura va ARRIBA, antes de la agenda. Un
+            analista que lee «14 temas» sin saber que 55 de 63
+            evidencias son de otros días interpreta mal la
+            pantalla entera.
+          */}
+          <FreshnessPanel frescura={datos.frescura} />
+
+          <ProvidersStatusPanel datos={datos} />
 
           <AgendaPanel
             agenda={datos.agenda}

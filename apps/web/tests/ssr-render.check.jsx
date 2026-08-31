@@ -20,6 +20,8 @@ import PlacesWithoutGeometry from "../src/territorio/map/PlacesWithoutGeometry";
 import TerritoryPanel from "../src/territorio/map/TerritoryPanel";
 import EntitiesPanel from "../src/territorio/agenda/EntitiesPanel";
 import SourceAgendasPanel from "../src/territorio/agenda/SourceAgendasPanel";
+import FreshnessPanel from "../src/territorio/panels/FreshnessPanel";
+import ProvidersStatusPanel from "../src/territorio/panels/ProvidersStatusPanel";
 
 /*
   Renderiza los paneles con la respuesta REAL de la API y
@@ -169,6 +171,12 @@ htmls.agendasFuente = render(
   "SourceAgendasPanel",
   <SourceAgendasPanel escucha={datos.escuchaAbierta} />
 );
+
+/* --- TERRITORIAL-FRESH-01 --- */
+
+htmls.frescura = render("FreshnessPanel", <FreshnessPanel frescura={datos.frescura} />);
+
+htmls.proveedores = render("ProvidersStatusPanel", <ProvidersStatusPanel datos={datos} />);
 
 const todo = Object.values(htmls).join("\n");
 
@@ -483,6 +491,80 @@ t(
 );
 
 
+console.log("\n[C4] FRESCURA — publicado hoy ≠ encontrado hoy");
+
+t(
+  "las cuatro cifras de frescura se muestran",
+  ["Publicado hoy", "Encontrado hoy, publicado antes", "Fecha no resuelta"].every((x) =>
+    htmls.frescura.includes(x)
+  )
+);
+
+t(
+  "«publicado hoy» y el total NO son la misma cifra cuando difieren",
+  datos.frescura?.resumen &&
+    datos.frescura.resumen.publicadoHoy !== datos.frescura.resumen.total
+    ? htmls.frescura.includes(String(datos.frescura.resumen.publicadoHoy)) &&
+      htmls.frescura.includes(String(datos.frescura.resumen.total))
+    : true
+);
+
+t(
+  "se declara que encontrar algo hoy no lo publica hoy",
+  /Encontrar algo hoy no\s*lo publica hoy|no lo publica hoy/i.test(htmls.frescura)
+);
+
+t(
+  "se muestra la zona horaria del territorio",
+  /America\/Guayaquil/.test(htmls.frescura)
+);
+
+t(
+  "se muestra la última actualización",
+  /[ÚU]ltima actualizaci[óo]n/i.test(htmls.frescura)
+);
+
+t(
+  "la distribución temporal tiene casilla propia para «fecha no resuelta»",
+  /Fecha no resuelta/.test(htmls.frescura)
+);
+
+t(
+  "NO se dice que el corpus entero se publicó hoy",
+  datos.frescura?.resumen?.encontradoHoyPublicadoAntes > 0
+    ? /publicado antes/i.test(htmls.frescura)
+    : true
+);
+
+
+console.log("\n[C5] PROVEEDORES — sin inflar la participación");
+
+t(
+  "el panel declara cuántos APORTARON, no cuántos existen",
+  /aportaron evidencia/i.test(htmls.proveedores)
+);
+
+t(
+  "«no ejecutado» se distingue de «ejecutado sin resultados»",
+  /no son lo mismo|Solo el segundo permite decir/i.test(htmls.proveedores)
+);
+
+t(
+  "un proveedor no alcanzable se declara, no se omite",
+  (datos.escuchaAmpliada?.lotes || []).some((l) =>
+    ["TIEMPO_AGOTADO", "ERROR", "SIN_FUENTES"].includes(l.estado)
+  )
+    ? /No alcanzable|Error|Sin fuentes/i.test(htmls.proveedores)
+    : true
+);
+
+t(
+  "se advierte que la cobertura es parcial cuando faltan proveedores",
+  /cobertura de esta vista es parcial|pudo existir igualmente/i.test(htmls.proveedores) ||
+    !/aportaron evidencia/i.test(htmls.proveedores)
+);
+
+
 console.log("\n[D] HONESTIDAD OBLIGATORIA");
 
 t(
@@ -658,6 +740,18 @@ render("TerritoryPanel sin unidad", <TerritoryPanel unidad={null} onCerrar={() =
 render("EntitiesPanel sin entidades", <EntitiesPanel escucha={{ entidades: [] }} />);
 render("EntitiesPanel null", <EntitiesPanel escucha={null} />);
 render("SourceAgendasPanel null", <SourceAgendasPanel escucha={null} />);
+render("FreshnessPanel null", <FreshnessPanel frescura={null} />);
+render("ProvidersStatusPanel null", <ProvidersStatusPanel datos={null} />);
+
+const frescuraRota = render(
+  "FreshnessPanel con error",
+  <FreshnessPanel frescura={{ error: "x", declaracion: "Sin frescura calculada NO se puede afirmar qué se publicó hoy." }} />
+);
+
+t(
+  "si la frescura falla, se dice qué NO se puede afirmar",
+  /NO se puede afirmar qu[ée] se public[óo] hoy/i.test(frescuraRota)
+);
 
 
 console.log("\n===========================================");

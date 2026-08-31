@@ -52,6 +52,17 @@ export function TerritorialProvider({ children }) {
 
   const [ventana, setVentana] = useState(ventanaPorDefecto);
 
+  /*
+    Identificador de la ventana: "hoy", "7d", "15d", "30d",
+    "90d" o null si el analista movio las fechas a mano.
+
+    Se envia al backend APARTE de `desde`/`hasta` porque «hoy»
+    no es un intervalo cualquiera: es el dia de calendario en
+    la zona del territorio, y solo el backend sabe calcularlo
+    —el navegador puede estar en otro huso—.
+  */
+  const [ventanaId, setVentanaId] = useState("30d");
+
   const [resolucion, setResolucion] = useState("parroquia");
 
   const [normalizacion, setNormalizacion] = useState("absoluto");
@@ -105,6 +116,16 @@ export function TerritorialProvider({ children }) {
           resolucion,
           normalizacion,
           granularidad,
+
+          /*
+            Si hay `ventanaId`, el backend recalcula el
+            intervalo en la zona del territorio y manda sobre
+            estas fechas. Se envian igual para que una ventana
+            manual siga funcionando.
+          */
+          ventana: ventanaId,
+          zona: "America/Guayaquil",
+
           desde: ventana.desde,
           hasta: ventana.hasta
         })
@@ -130,6 +151,7 @@ export function TerritorialProvider({ children }) {
     proyectoId,
     territorio,
     modo,
+    ventanaId,
     resolucion,
     normalizacion,
     granularidad,
@@ -148,6 +170,9 @@ export function TerritorialProvider({ children }) {
 
       ventana,
       setVentana,
+
+      ventanaId,
+      setVentanaId,
 
       resolucion,
       setResolucion,
@@ -180,12 +205,16 @@ export function TerritorialProvider({ children }) {
       conversacion: datos?.conversacion || null,
       loQueNoSabemos: datos?.loQueNoSabemos || [],
       costo: datos?.costo || null,
+      frescura: datos?.frescura || null,
+      escuchaAmpliada: datos?.escuchaAmpliada || null,
+      adapters: datos?.adapters || [],
       carencias: datos?.territorio?.registroTerritorial?.carencias || []
     }),
     [
       territorio,
       proyectoId,
       ventana,
+      ventanaId,
       resolucion,
       normalizacion,
       granularidad,

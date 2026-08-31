@@ -1,0 +1,368 @@
+// apps/backend/services/territorial/evidenceLedger.js
+
+import { appendFile, readFile, mkdir, readdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { join, dirname } from "node:path";
+
+/*
+===========================================================
+LIBRO DE OBSERVACIONES — TERRITORIAL-FRESH-01
+===========================================================
+
+Qué evidencias ha visto Sentinel, cuándo las vio por primera
+vez y cuántas veces ha vuelto a verlas.
+
+EL PROBLEMA QUE RESUELVE
+-----------------------------------------------------------
+
+`crossProviderDedup` deduplica DENTRO de una ejecución. Es lo
+que hace falta cuando cinco proveedores traen la misma nota en
+la misma pasada.
+
+No sirve para lo otro: pulsar «actualizar» a las 08:00, a las
+12:00 y a las 16:00. En cada pasada el dedup empieza de cero,
+así que la misma nota entraría tres veces y el corpus crecería
+sin que ocurriera nada en el territorio.
+
+Con este registro, la segunda observación no crea evidencia:
+avanza `lastObservedAt` y suma una a `observationCount`.
+
+EL CAMPO QUE NO SE TOCA
+-----------------------------------------------------------
+
+`firstObservedAt` es INMUTABLE. Es la respuesta a «¿desde
+cuándo lo sabemos?», y si cada pasada lo reescribiera, todo el
+histórico diría que Sentinel se enteró de todo hoy.
+
+CUATRO INSTANTES, NINGUNO SUSTITUYE A OTRO
+-----------------------------------------------------------
+
+    publishedAt      lo declara la fuente
+    firstObservedAt  primera vez que Sentinel la vio
+    lastObservedAt   última vez que volvió a verla
+    retrievedAt      instante de ESTA ejecución
+
+`retrievedAt` NO se guarda como campo único: cada observación
+lleva el suyo, porque hubo tantos como pasadas.
+
+APPEND-ONLY
+-----------------------------------------------------------
+
+Mismo criterio que el Knowledge Lake y los snapshots: cada
+observación se ANEXA. El estado actual de una evidencia se
+reconstruye leyendo sus observaciones en orden, no
+sobrescribiendo una fila.
+
+No existe `writeFile` en este módulo.
+===========================================================
+*/
+
+
+export const VERSION_LEDGER = "1.0";
+
+
+export function crearLedgerMemoria() {
+  const lineas = [];
+
+  return {
+    id: "memoria",
+    persistente: false,
+
+    async anexar(registro) {
+      lineas.push(registro);
+
+      return { anexado: true, total: lineas.length };
+    },
+
+    async leerTodos() {
+      return [...lineas];
+    }
+  };
+}
+
+
+function particionDe(instante) {
+  const m = String(instante || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+
+  return m ? `${m[1]}/${m[2]}/${m[3]}` : "sin-fecha";
+}
+
+
+export function crearLedgerFichero(opciones = {}) {
+  const raiz = opciones.raiz || join(process.cwd(), "data", "territorial-evidence");
+
+  async function listar(dir = raiz) {
+    if (!existsSync(dir)) return [];
+
+    const entradas = await readdir(dir, { withFileTypes: true });
+
+    const ficheros = [];
+
+    for (const e of entradas) {
+      const ruta = join(dir, e.name);
+
+      if (e.isDirectory()) ficheros.push(...(await listar(ruta)));
+      else if (e.name.endsWith(".jsonl")) ficheros.push(ruta);
+    }
+
+    return ficheros.sort();
+  }
+
+  return {
+    id: "fichero",
+    persistente: true,
+    raiz,
+
+    async anexar(registro) {
+      const ruta = join(raiz, `${particionDe(registro.retrievedAt)}.jsonl`);
+
+      const dir = dirname(ruta);
+
+      if (!existsSync(dir)) await mkdir(dir, { recursive: true });
+
+      await appendFile(ruta, `${JSON.stringify(registro)}\n`, "utf8");
+
+      return { anexado: true, ruta };
+    },
+
+    async leerTodos() {
+      const ficheros = await listar();
+
+      const salida = [];
+
+      for (const f of ficheros) {
+        const texto = await readFile(f, "utf8");
+
+        texto
+          .split("\n")
+          .filter(Boolean)
+          .forEach((linea) => {
+            try {
+              salida.push(JSON.parse(linea));
+            } catch {
+              /* Una línea corrupta no invalida el fichero entero. */
+            }
+          });
+      }
+
+      return salida;
+    }
+  };
+}
+
+
+/*
+===========================================================
+RECONSTRUIR EL ESTADO
+
+De la lista de observaciones al estado actual de cada
+evidencia. Se ordena por `retrievedAt` para que
+`firstObservedAt` sea el mínimo real aunque el fichero se haya
+leído desordenado.
+===========================================================
+*/
+
+export function reconstruirEstado(observaciones = []) {
+  const porId = new Map();
+
+  [...observaciones]
+    .sort((a, b) => String(a.retrievedAt).localeCompare(String(b.retrievedAt)))
+    .forEach((o) => {
+      const previo = porId.get(o.evidenceId);
+
+      if (!previo) {
+        porId.set(o.evidenceId, {
+          evidenceId: o.evidenceId,
+          canonicalUrl: o.canonicalUrl || null,
+          title: o.title || null,
+          publishedAt: o.publishedAt || null,
+          sourceId: o.sourceId || null,
+
+          /* INMUTABLE a partir de aquí. */
+          firstObservedAt: o.retrievedAt,
+
+          lastObservedAt: o.retrievedAt,
+          observationCount: 1,
+
+          providers: o.providerId ? [o.providerId] : [],
+
+          territoryId: o.territoryId || null
+        });
+
+        return;
+      }
+
+      /*
+        `firstObservedAt` NO se toca. Solo avanza el último y
+        se cuenta la observación.
+      */
+      previo.lastObservedAt = o.retrievedAt;
+
+      previo.observationCount += 1;
+
+      if (o.providerId && !previo.providers.includes(o.providerId)) {
+        previo.providers.push(o.providerId);
+      }
+
+      /*
+        Los campos que faltaban se COMPLETAN; los que ya
+        estaban afirmados NO se pisan. Un proveedor puede
+        aportar la fecha que otro no traía, pero ninguno puede
+        reescribir la que ya constaba.
+      */
+      if (!previo.publishedAt && o.publishedAt) previo.publishedAt = o.publishedAt;
+
+      if (!previo.title && o.title) previo.title = o.title;
+
+      if (!previo.sourceId && o.sourceId) previo.sourceId = o.sourceId;
+    });
+
+  return porId;
+}
+
+
+/*
+===========================================================
+REGISTRAR UNA PASADA
+
+Devuelve las evidencias enriquecidas con sus cuatro instantes,
+más el reparto entre nuevas y ya conocidas.
+
+`estadoPrevio` es el Map devuelto por `reconstruirEstado`. Se
+pasa en lugar de releerlo aquí para que la función sea pura y
+comprobable sin disco.
+===========================================================
+*/
+
+export async function registrarPasada({
+  ledger = null,
+  evidencias = [],
+  estadoPrevio = new Map(),
+  retrievedAt,
+  territoryId = null,
+  runId = null
+}) {
+  if (!retrievedAt) {
+    throw new Error(
+      "Una pasada sin `retrievedAt` no se registra: sin instante no se puede distinguir una observación nueva de una repetida."
+    );
+  }
+
+  const nuevas = [];
+
+  const revistas = [];
+
+  const enriquecidas = evidencias.map((ev) => {
+    const previo = estadoPrevio.get(ev.evidenceId);
+
+    const esNueva = !previo;
+
+    const firstObservedAt = previo ? previo.firstObservedAt : retrievedAt;
+
+    const observationCount = previo ? previo.observationCount + 1 : 1;
+
+    /*
+      Proveedores acumulados: los de esta pasada MÁS los
+      históricos. Que hace tres días lo trajera GDELT sigue
+      siendo cierto hoy.
+    */
+    const deEstaPasada = ev.providersSeenBy || (ev.providerId ? [ev.providerId] : []);
+
+    const providers = [...new Set([...(previo?.providers || []), ...deEstaPasada])];
+
+    const salida = {
+      ...ev,
+
+      firstObservedAt,
+      lastObservedAt: retrievedAt,
+      retrievedAt,
+      observationCount,
+
+      providersSeenBy: providers,
+
+      esNuevaParaSentinel: esNueva
+    };
+
+    if (esNueva) nuevas.push(salida);
+    else revistas.push(salida);
+
+    return salida;
+  });
+
+  /* --- persistir una observación por evidencia --- */
+  if (ledger) {
+    for (const ev of enriquecidas) {
+      await ledger.anexar({
+        version: VERSION_LEDGER,
+        evidenceId: ev.evidenceId,
+        canonicalUrl: ev.canonicalUrl || null,
+        title: ev.title || null,
+        publishedAt: ev.publishedAt || null,
+        sourceId: ev.sourceId || null,
+        providerId: (ev.providersSeenBy || [])[0] || ev.providerId || null,
+        territoryId,
+        runId,
+        retrievedAt
+      });
+    }
+  }
+
+  return {
+    evidencias: enriquecidas,
+
+    metricas: {
+      observadas: enriquecidas.length,
+      nuevasParaSentinel: nuevas.length,
+      yaConocidas: revistas.length,
+
+      /*
+        La cifra que responde «¿ha cambiado algo desde la última
+        vez?». Cero evidencias nuevas con veinte observadas
+        significa que el territorio no ha producido nada nuevo,
+        no que la recolección haya fallado.
+      */
+      corpusAcumulado: estadoPrevio.size + nuevas.length
+    },
+
+    declaraciones: [
+      "Volver a observar una evidencia NO crea otra: avanza `lastObservedAt` y suma a `observationCount`.",
+      "`firstObservedAt` es inmutable. Si cada pasada lo reescribiera, el histórico diría que Sentinel se enteró de todo hoy.",
+      "Cero evidencias nuevas no es un fallo de recolección: puede ser que no haya pasado nada nuevo."
+    ]
+  };
+}
+
+
+export async function estadoLedger(ledger) {
+  const obs = await ledger.leerTodos();
+
+  const estado = reconstruirEstado(obs);
+
+  const valores = [...estado.values()];
+
+  return {
+    evidenciasDistintas: valores.length,
+    observacionesTotales: obs.length,
+
+    reobservadas: valores.filter((e) => e.observationCount > 1).length,
+
+    conFecha: valores.filter((e) => e.publishedAt).length,
+    sinFecha: valores.filter((e) => !e.publishedAt).length,
+
+    primeraObservacion: valores.length
+      ? valores.reduce((m, e) => (e.firstObservedAt < m ? e.firstObservedAt : m), valores[0].firstObservedAt)
+      : null,
+
+    modo: "append-only"
+  };
+}
+
+
+export default {
+  VERSION_LEDGER,
+  crearLedgerMemoria,
+  crearLedgerFichero,
+  reconstruirEstado,
+  registrarPasada,
+  estadoLedger
+};

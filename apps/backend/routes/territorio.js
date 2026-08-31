@@ -40,6 +40,7 @@ import {
 
 import {
   construirUniverso,
+  crearUniverso,
   listarFuentes,
   estadoUniverso
 } from "../services/conversation/sourceUniverse.js";
@@ -81,6 +82,34 @@ import { estadoViabilidadSocial } from "../services/contracts/socialPlatformFeas
 import { fichaComparacion } from "../services/contracts/ingestBenchmark.js";
 
 import { estadoScheduler } from "../services/ingest/collectorScheduler.js";
+
+/* --- TERRITORIAL-FRESH-01 --- */
+
+import {
+  ventanaDelDia,
+  ventanaDeDias,
+  resumirFrescura,
+  distribucionTemporal,
+  clasificarFrescura,
+  ZONA_POR_DEFECTO
+} from "../services/territorial/dayWindow.js";
+
+import {
+  crearLedgerFichero,
+  reconstruirEstado,
+  registrarPasada
+} from "../services/territorial/evidenceLedger.js";
+
+import {
+  recolectarAmpliado,
+  estadoAdapters
+} from "../services/ingest/territorialCollector.js";
+
+import { crearRegistroMedios, listarMedios } from "../services/ingest/mediaSourceRegistry.js";
+
+import { huellaDeEvidencia } from "../services/ingest/evidenceContract.js";
+
+import { normalizarUrl } from "../services/textUtils.js";
 
 import { listarUnidades } from "../services/geo/territoryRegistry.js";
 
@@ -301,6 +330,41 @@ router.post("/analisis", async (req, res) => {
 
     /*
       -------------------------------------------------------
+      1-bis. VENTANA TERRITORIAL — TERRITORIAL-FRESH-01
+
+      `ventana: "hoy"` es un DIA DE CALENDARIO en la zona del
+      territorio, no las ultimas 24 horas. A las 21:00 en
+      Cuenca el servidor UTC ya esta en el dia siguiente:
+      calculando en UTC, «hoy» se vaciaria cada tarde.
+      -------------------------------------------------------
+    */
+    const zonaTerritorial = cuerpo.zona || ZONA_POR_DEFECTO;
+
+    const retrievedAt = new Date().toISOString();
+
+    const ventanaPedida = String(cuerpo.ventana || "").toLowerCase();
+
+    const ventanaTerritorial = ventanaPedida
+      ? ventanaPedida === "hoy"
+        ? ventanaDelDia(retrievedAt, zonaTerritorial)
+        : ventanaDeDias(
+            Number(ventanaPedida.replace(/\D/g, "")) || 30,
+            retrievedAt,
+            zonaTerritorial
+          )
+      : null;
+
+    /*
+      Si se pidio ventana territorial, manda sobre `desde` y
+      `hasta` sueltos. Dos fuentes de verdad para el mismo
+      intervalo acabarian discrepando.
+    */
+    const desdeEfectivo = ventanaTerritorial?.desde || cuerpo.desde;
+
+    const hastaEfectivo = ventanaTerritorial?.hasta || cuerpo.hasta;
+
+    /*
+      -------------------------------------------------------
       2. CONVERSACION PUBLICA — recoleccion y analisis
       -------------------------------------------------------
     */
@@ -310,8 +374,8 @@ router.post("/analisis", async (req, res) => {
       proyectoId: cuerpo.proyectoId || null,
       modo: cuerpo.modo,
       maxConsultasWeb: cuerpo.maxConsultasWeb,
-      desde: cuerpo.desde,
-      hasta: cuerpo.hasta,
+      desde: desdeEfectivo,
+      hasta: hastaEfectivo,
       granularidad: cuerpo.granularidad,
       temasSemilla: cuerpo.temasSemilla || []
     });
@@ -324,6 +388,85 @@ router.post("/analisis", async (req, res) => {
       nada de conversation/.
       -------------------------------------------------------
     */
+    /*
+      -------------------------------------------------------
+      2-bis. ESCUCHA AMPLIADA — TERRITORIAL-FRESH-01
+
+      Los adapters de INGEST-REAL-01 —RSS, GDELT, YouTube—
+      estaban escritos y sin conectar. Se invocan AQUI, no en
+      un motor nuevo: `conversationHarvester` sigue haciendo lo
+      suyo y sus evidencias se funden con estas.
+
+      Solo en modo `ampliado`. Los modos `lake` y `noticias`
+      quedan exactamente como estaban.
+      -------------------------------------------------------
+    */
+    const modoAmpliado = cuerpo.modo === "ampliado";
+
+    let ampliada = null;
+
+    const universoIngesta = crearUniverso();
+
+    const registroMediosIngesta = crearRegistroMedios();
+
+    if (modoAmpliado) {
+      try {
+        ampliada = await recolectarAmpliado({
+          plan: conversacion?.recoleccion?.consultasPlanificadas || [],
+
+          /*
+            Feeds CONOCIDOS. No se sale a descubrirlos en mitad
+            de una recoleccion: pedir la portada de cada medio
+            es otra operacion con su propio presupuesto.
+          */
+          feeds: (cuerpo.feeds || []).filter((f) => f?.url),
+
+          ventana: ventanaTerritorial,
+          observedAt: retrievedAt,
+          runId: `run-${retrievedAt}`,
+          territoryId: ambito.unidadId || null,
+          universo: universoIngesta,
+          registroMedios: registroMediosIngesta,
+          habilitados: cuerpo.proveedores || null
+        });
+
+        /*
+          Las evidencias de los adapters se AÑADEN al corpus que
+          analizan los motores. Sin esto, la escucha ampliada
+          recolectaria y no se veria en la agenda.
+        */
+        conversacion.evidencias = [
+          ...conversacion.evidencias,
+          ...ampliada.evidencias.map((e) => ({
+            titulo: e.title,
+            descripcion: e.snippet,
+            enlace: e.url,
+            url: e.url,
+            dominio: e.sourceId,
+            fecha: e.publishedAt,
+            fuenteDeclarada: e.publisher,
+            origen: e.providerId,
+            motorId: e.providerId,
+            consultasOrigen: [e.provenance?.queryLabel].filter(Boolean),
+
+            /* Los cuatro instantes viajan con la evidencia. */
+            publishedAt: e.publishedAt,
+            retrievedAt,
+            evidenceId: e.evidenceId,
+            canonicalUrl: e.canonicalUrl,
+            providersSeenBy: e.providersSeenBy || [e.providerId]
+          }))
+        ];
+      } catch (error) {
+        ampliada = {
+          error: error?.message || "fallo de la escucha ampliada",
+
+          declaracion:
+            "La escucha ampliada falló. El resto del análisis sigue siendo válido con el corpus del recolector base, y esta ausencia se declara en lugar de silenciarse."
+        };
+      }
+    }
+
     const territorio = await analizarTerritorio(conversacion.evidencias, {
       ambitoId: ambito.unidadId,
       territorio: cuerpo.territorio || contextoProyecto?.proyecto || {},
@@ -678,6 +821,128 @@ router.post("/analisis", async (req, res) => {
       }
     }
 
+    /*
+      -------------------------------------------------------
+      10. FRESCURA — TERRITORIAL-FRESH-01
+
+      «Publicado hoy» exige `publishedAt` verificable dentro del
+      dia territorial. Encontrar algo hoy NO lo publica hoy, y
+      `retrievedAt` no rellena una fecha que falta.
+
+      El ledger hace que reejecutar no multiplique el corpus:
+      la segunda observacion avanza `lastObservedAt` en lugar de
+      crear otra evidencia.
+      -------------------------------------------------------
+    */
+    let frescura = null;
+
+    try {
+      const ledger = crearLedgerFichero();
+
+      const estadoPrevio = reconstruirEstado(await ledger.leerTodos());
+
+      /*
+        TODO el corpus entra al ledger, no solo lo que trae
+        `evidenceId` de fábrica.
+
+        El recolector base no emite ese campo —lo añadió
+        INGEST-REAL-01 a los adapters nuevos—, así que en la
+        primera prueba real 56 de 63 evidencias quedaron fuera:
+        el 89 %. Con eso, «reejecutar no duplica» solo era
+        cierto para el 11 % del corpus.
+
+        La huella se calcula con el MISMO contrato, así que una
+        nota traída por Google News y por un adapter da el mismo
+        identificador y se reconoce como la misma.
+      */
+      const paraLedger = conversacion.evidencias
+        .map((e) => {
+          const canonical = e.canonicalUrl || normalizarUrl(e.enlace || e.url || "");
+
+          const title = e.titulo || e.title || null;
+
+          if (!canonical && !title) return null;
+
+          return {
+            evidenceId:
+              e.evidenceId || `ev-${huellaDeEvidencia({ canonicalUrl: canonical, title })}`,
+            canonicalUrl: canonical,
+            title,
+            publishedAt: e.publishedAt || e.fecha || null,
+            sourceId: e.dominio || null,
+            providersSeenBy: e.providersSeenBy || [e.motorId].filter(Boolean)
+          };
+        })
+        .filter(Boolean);
+
+      const pasada = paraLedger.length
+        ? await registrarPasada({
+            ledger,
+            evidencias: paraLedger,
+            estadoPrevio,
+            retrievedAt,
+            territoryId: ambito.unidadId || null,
+            runId: `run-${retrievedAt}`
+          })
+        : null;
+
+      /*
+        La frescura se mide sobre TODO el corpus, no solo sobre
+        lo que pasó por el ledger: el recolector base no emite
+        `evidenceId` y sus evidencias también tienen fecha.
+      */
+      const corpusFechado = conversacion.evidencias.map((e) => ({
+        publishedAt: e.publishedAt || e.fecha || null,
+        retrievedAt: e.retrievedAt || retrievedAt
+      }));
+
+      const ventanaFrescura = ventanaTerritorial || ventanaDelDia(retrievedAt, zonaTerritorial);
+
+      frescura = {
+        ventana: ventanaFrescura,
+        zona: zonaTerritorial,
+
+        ultimaActualizacion: retrievedAt,
+
+        resumen: resumirFrescura(corpusFechado, {
+          ventana: ventanaDelDia(retrievedAt, zonaTerritorial),
+          retrievedAt
+        }),
+
+        distribucion: distribucionTemporal(corpusFechado, {
+          instante: retrievedAt,
+          zona: zonaTerritorial
+        }),
+
+        ledger: pasada
+          ? {
+              ...pasada.metricas,
+              declaraciones: pasada.declaraciones
+            }
+          : {
+              observadas: 0,
+
+              motivo:
+                "El corpus de esta pasada está vacío: no hay nada que registrar."
+            },
+
+        declaracion:
+          "«Publicado hoy» ≠ «encontrado hoy». Son cuatro instantes distintos y ninguno sustituye a otro."
+      };
+    } catch (error) {
+      frescura = {
+        error: error?.message || "fallo al calcular la frescura",
+        declaracion: "Sin frescura calculada NO se puede afirmar qué se publicó hoy."
+      };
+    }
+
+    /*
+      Estado REAL de los adapters. Se comprueba, no se supone:
+      un fichero adapter que existe no es un proveedor que
+      funciona.
+    */
+    const adaptersDeclarados = estadoAdapters();
+
     res.json({
       modulo: "inteligencia_territorial",
       version: "1.0",
@@ -687,6 +952,10 @@ router.post("/analisis", async (req, res) => {
       evidenciasEnriquecidas,
 
       temaPorTerritorio,
+
+      /* --- TERRITORIAL-FRESH-01 --- */
+
+      frescura,
 
       /* Gate D */
       agenda: agendaCompuesta,
@@ -741,6 +1010,25 @@ router.post("/analisis", async (req, res) => {
           clasificacion: clasificacion.metricas
         }
       },
+
+      escuchaAmpliada: modoAmpliado
+        ? {
+            ejecutada: !ampliada?.error,
+            error: ampliada?.error || null,
+            lotes: ampliada?.lotes || [],
+            dedup: ampliada?.dedup || null,
+            nuevasFuentes: ampliada?.nuevasFuentes || [],
+            presupuesto: ampliada?.presupuesto || null,
+            run: ampliada?.run || null,
+            declaracion: ampliada?.declaracion || null
+          }
+        : {
+            ejecutada: false,
+
+            motivo: `Modo «${cuerpo.modo || "noticias"}». La escucha ampliada solo se ejecuta con modo «ampliado».`
+          },
+
+      adapters: adaptersDeclarados,
 
       /* Base E1: se acumula ya, se compara despues. */
       snapshot: {

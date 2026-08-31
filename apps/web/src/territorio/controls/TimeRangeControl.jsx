@@ -21,27 +21,49 @@ Por eso el rango largo lleva su propio aviso, y el defecto son
 */
 
 const RANGOS = [
-  { dias: 7, texto: "7 días" },
-  { dias: 15, texto: "15 días" },
-  { dias: 30, texto: "30 días" },
-  { dias: 90, texto: "90 días", aviso: true }
+  /*
+    HOY es distinto de los demas y por eso va aparte.
+
+    Los otros rangos son ventanas RODANTES: restan dias al
+    instante actual. HOY es un DIA DE CALENDARIO en la zona del
+    territorio, y quien lo calcula es el backend —el navegador
+    puede estar en otro huso, y a las 21:00 de Cuenca el
+    navegador de un analista en Madrid ya esta en el dia
+    siguiente—.
+
+    Por eso `id` viaja al backend y las fechas de aqui son solo
+    una aproximacion para pintar el control.
+  */
+  { id: "hoy", dias: 1, texto: "Hoy", esDia: true },
+  { id: "7d", dias: 7, texto: "7 días" },
+  { id: "15d", dias: 15, texto: "15 días" },
+  { id: "30d", dias: 30, texto: "30 días" },
+  { id: "90d", dias: 90, texto: "90 días", aviso: true }
 ];
 
 
 export default function TimeRangeControl() {
-  const { ventana, setVentana, granularidad, setGranularidad } =
+  const { ventana, setVentana, ventanaId, setVentanaId, granularidad, setGranularidad } =
     useTerritorial();
 
   const diasActuales = Math.round(
     (new Date(ventana.hasta) - new Date(ventana.desde)) / 86400000
   );
 
-  const aplicar = (dias) => {
+  const aplicar = (rango) => {
     const hasta = new Date();
 
-    const desde = new Date(hasta.getTime() - dias * 86400000);
+    const desde = new Date(hasta.getTime() - rango.dias * 86400000);
 
     setVentana({ desde: desde.toISOString(), hasta: hasta.toISOString() });
+
+    /*
+      El identificador es lo que manda. El backend recalcula el
+      intervalo en la zona del territorio a partir de el.
+    */
+    setVentanaId(rango.id);
+
+    const dias = rango.dias;
 
     /*
       Mas de 30 dias en cubos diarios produce un grafico de 90
@@ -71,12 +93,20 @@ export default function TimeRangeControl() {
 
       <div style={{ display: "flex", gap: "6px" }}>
         {RANGOS.map((r) => {
-          const activo = Math.abs(diasActuales - r.dias) <= 1;
+          /*
+            Se compara por identificador, no por duracion. HOY y
+            «7 dias» rodantes pueden dar duraciones parecidas
+            segun la hora, y con la comparacion antigua el boton
+            activo saltaba solo.
+          */
+          const activo = ventanaId
+            ? ventanaId === r.id
+            : Math.abs(diasActuales - r.dias) <= 1;
 
           return (
             <button
-              key={r.dias}
-              onClick={() => aplicar(r.dias)}
+              key={r.id}
+              onClick={() => aplicar(r)}
               style={{
                 padding: "5px 11px",
                 borderRadius: "var(--radio-pill)",
