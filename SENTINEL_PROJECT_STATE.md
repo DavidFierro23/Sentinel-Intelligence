@@ -9,10 +9,10 @@
 
 | Campo | Valor comprobado |
 |---|---|
-| Fecha de actualización | **2026-08-31** (última sección añadida: §13-terdecies) |
+| Fecha de actualización | **2026-08-31** (última sección añadida: §13-quaterdecies) |
 | Rama | `dev` |
 | Último commit **base** de esta actualización | `a369ed2` — *feat(candidate): close Facebook coverage assessment* (Terminal 1 comiteó 4 veces mientras se cerraba este gate) |
-| Último commit **territorial** | `098809e` — *feat(territorial): rotate verified RSS sources* → le sigue el de §13-terdecies |
+| Último commit **territorial** | `f09481c` — *feat(territorial): add topic territory intelligence* → le siguen los de §13-quaterdecies |
 | Versión monorepo | `sentinel-intelligence-platform` 0.1.0 |
 | Versión backend | `sentinel-backend` 1.0.0 |
 | Versión frontend | `web` 0.0.0 (sin versionar) |
@@ -1974,6 +1974,253 @@ sobre `fetch` que marca cero.
 
 ---
 
+## 13-quaterdecies. TERRITORIAL-ACCELERATION-02 — histórico, proyecto, proveedores y UX (2026-08-31)
+
+✅ El circuito se cierra: **RSS → ledger → Tema×Territorio → histórico**, con el
+proyecto como ámbito.
+
+### 1 · RSS al libro de evidencias
+
+Las pasadas de §13-duodecies midieron el dedup **sin escribir** en el corpus: era la
+decisión conservadora de un gate sobre rotación. El efecto secundario lo midió
+§13-terdecies —los tres cruces reales salieron con **cero emisores resueltos**— porque
+el corpus persistido seguía siendo de Google News.
+
+Sin escritura no hay histórico, y sin histórico no hay tendencia.
+
+`POST /api/territorio/observar` ejecuta **solo `rss_directo`** y persiste. Tres pasadas
+reales:
+
+| pasada | ciclo | feeds | observadas | **nuevas** | duplicadas | corpus | publicado hoy |
+|---|---|---|---|---|---|---|---|
+| 10 | 5 | 3 | 101 | **101** | 0 | 101 | 43 |
+| 11 | 6 | 8 | 76 | **76** | 0 | 177 | 22 |
+| 12 | 6 | 3 | 101 | **0** | **101** | 177 | 43 |
+
+La tercera pasada es la prueba del dedup contra el corpus **ya persistido**: releyó 101
+evidencias y ninguna era nueva. El corpus se queda en 177.
+
+**No hay backfill.** `publishedAt` es del medio, `firstObservedAt` de Sentinel, y
+ninguno se toca. El histórico empieza cuando empieza.
+
+### 2 · Emisores: de 0 a 177
+
+| | |
+|---|---|
+| **RESUELTO** | **177 de 177** |
+| vía | `feed_comprobado_del_medio` en el 100 % |
+| emisores distintos | **11** |
+| OBSERVADO_NO_VERIFICADO · NO_RESUELTO | 0 · 0 |
+
+`emitterResolver.js` acredita por una sola vía: **el feed es del propio medio y está
+comprobado en el universo de fuentes**. Leer al medio en su casa es lo único que
+acredita.
+
+Tres estados, y la diferencia importa:
+
+| estado | qué significa |
+|---|---|
+| `RESUELTO` | feed del propio medio, comprobado |
+| `OBSERVADO_NO_VERIFICADO` | señal razonable sin comprobar: título de un feed desconocido, o dominio en el catálogo semilla |
+| `NO_RESUELTO` | no se sabe. **Un agregador cae aquí, y eso no es un fallo**: es un hecho sobre el agregador |
+
+No se infiere emisor por parecido de cadenas. Rescatar al publicador del sufijo del
+titular ya estaba marcado como frágil y no se usa.
+
+### 3 · Todo pertenece a un proyecto
+
+El libro es infraestructura **compartida**; la lectura es **por proyecto**.
+`reconstruirEstado(observaciones, { projectId })` filtra, y sin `projectId` se lee el
+corpus completo **y la respuesta lo dice**.
+
+Las 234 observaciones anteriores a este gate no llevan proyecto. No se descartan en
+silencio —serían 234 observaciones reales desaparecidas— ni se cuentan dentro de una
+campaña: quedan como **legado**, fuera de cualquier proyecto salvo que se pidan con
+`incluirLegado`.
+
+Comprobado con dos proyectos y evidencia distinta:
+
+```
+A → 4 evidencias, ninguna de B
+B → 3 evidencias, ninguna de A
+legado → 2, fuera de ambos
+proyecto inexistente → 0, no el corpus entero
+```
+
+> **La prueba que sostiene a las demás** quita `projectId` de los registros y **exige
+> que el aislamiento se rompa**: A pasa a 0 y el corpus sigue en 9. Sin ese caso, una
+> prueba de aislamiento podría estar pasando por casualidad y nadie se enteraría.
+
+Se aisla también la rotación (`proyecto:` vs `territorio:`), la matriz, los conteos, las
+fuentes y las ventanas.
+
+### 4 · Baseline del proyecto piloto
+
+`alcaldia-cuenca-2027-piloto` — «Elecciones Alcaldía Cuenca 2027», cantón Cuenca. Es un
+proyecto **real** del almacén, no una cadena inventada.
+
+| | |
+|---|---|
+| Evidencias del proyecto | **177** |
+| Dominios | 11 |
+| Con resumen persistido | **176 de 177** |
+| Emisores resueltos | **177** |
+| Territorio resuelto | 79 · **98 sin resolver** |
+| Señales | 22 clasificadas + ~185 descubiertas |
+| Territorios observados | 11 |
+| Celdas por ventana | hoy 266 · 7d 375 · 15d 416 · 30d 418 · 90d 474 |
+| Tendencias declarables | **0** |
+
+Se midió dinámicamente. **No está hardcodeado**: si el ledger cambia, el baseline
+cambia.
+
+### 5 · Dos regresiones de calidad, declaradas
+
+**a · El territorio resuelto cayó de 4/81 sin resolver a 98/177.** No es un defecto del
+resolutor: el corpus RSS trae medios **nacionales** —Expreso, Extra, Teleamazonas, Plan
+V— cuyos artículos no mencionan Cuenca. Un artículo nacional sin topónimo cantonal no se
+puede ubicar, y **no se fuerza**. Es exactamente el hueco que un proveedor con
+extracción geográfica cerraría.
+
+**b · El descubrimiento abierto se sobre-fragmenta.** Con los resúmenes persistidos, el
+motor propone ~185 señales para 177 evidencias: una señal por evidencia no es una
+agenda. Se probó subir `documentosMinimos` de 2 a 3 y **el número subió** —de 175 a
+185—, porque ese umbral gobierna la formación de clusters y no el ruido residual. Se
+revirtió en lugar de tocar un motor compartido sin beneficio medido.
+
+Lo que sí hace este gate: **clasificar la señal**. Se añadió `TIPOS_SENAL.TEMPORAL`
+porque el motor empezó a proponer «agosto · lunes» con ocho evidencias —la fecha del
+artículo, no su asunto—. Los nombres de mes y de día son una lista cerrada del idioma:
+comprobable, no inventada. Con `LUGAR` y `TEMPORAL`, el ruido se puede **ver y filtrar**
+en lugar de contarse como agenda.
+
+### 6 · Evaluación de proveedores
+
+Documento: **`docs/TERRITORIAL-PROVIDER-EVAL-01.md`**. Coste **0 USD**, ninguna cuenta
+creada, ninguna tarjeta.
+
+| proveedor | estado | trial | coste | Cuenca |
+|---|---|---|---|---|
+| **#1 GDELT Cloud (BigQuery)** | `APTO_PARA_PRUEBA` | **sandbox sin tarjeta** | **0 USD** | NO PROBADO |
+| **#2 Data365** | `APTO_PARA_PRUEBA` | 14 días sin tarjeta | ~300 EUR/mes | NO PROBADO |
+| #3 Meltwater | `REQUIERE_CONTACTO` | no hay | ~65.000 USD/año | NO PROBADO |
+| #4 Brandwatch | `REQUIERE_CONTACTO` | no hay | ~50.000 USD/año | NO PROBADO |
+
+**Ecuador y Cuenca están `NO VERIFICADO` en los cuatro.** Ninguno se marca `OPERATIVO`:
+eso exige una prueba real que no se pudo ejecutar en ninguno. No se produce puntuación
+numérica: con el 20 % del peso sin verificar, cualquier total sería falsa precisión.
+
+**#1 GDELT Cloud** porque es el único que se puede **comprobar antes de decidir**, gratis
+y sin tarjeta, y el único con extracción geográfica explícita —lo que ataca las 98
+evidencias sin territorio— más histórico desde 1979.
+
+**#2 Data365** porque aporta **conversación pública, que Sentinel no observa en
+absoluto**. No es una mejora incremental: es una dimensión nueva.
+
+Meltwater y Brandwatch exigen contrato de cinco cifras **antes** de poder comprobar si
+Cuenca está cubierta. Para un proyecto cantonal, ese es exactamente el riesgo que la
+evaluación existe para evitar.
+
+#### Evidencia propia — PROBADO
+
+La vía **DOC API** de GDELT sigue inalcanzable desde esta máquina, medida dos veces:
+
+```
+Cuenca Ecuador   TIEMPO_AGOTADO   UND_ERR_CONNECT_TIMEOUT   10.619 ms
+Azuay Ecuador    TIEMPO_AGOTADO   UND_ERR_CONNECT_TIMEOUT   10.640 ms
+```
+
+Fallo en la **fase de conexión**, el mismo que TERRITORIAL-FRESH-01: bloqueo
+**reproducible**, no un incidente. Eso **refuerza** BigQuery —otro endpoint— y a la vez
+significa que la cobertura de GDELT sobre Cuenca **sigue sin medir**.
+
+`GET /api/territorio/proveedores` declara el estado real, y `OPERATIVO` exige haber
+aportado evidencia al corpus:
+
+```
+rss_directo    OPERATIVO       278 observaciones
+google_news    OPERATIVO       227 observaciones
+youtube_data   OPERATIVO         7 observaciones
+gdelt_doc      NO_ALCANZABLE     0 observaciones
+```
+
+### 7 · Interfaz: nueve secciones
+
+`TerritorialWorkspace.jsx` sustituye a `TopicTerritoryPanel.jsx`, que hacía solo la
+matriz y **se retiró** para no dejar dos implementaciones de la misma vista.
+
+Cabecera permanente: **proyecto activo · territorio base · ventana**. Sin proyecto no se
+muestra corpus, se pide uno: *«una cifra global leída como si fuera de una campaña
+informa peor que no tener cifra»*.
+
+| sección | qué responde |
+|---|---|
+| Resumen | panorama en ~10 s: evidencias, fuentes, emisores, temas, territorios, publicado hoy, cobertura temporal |
+| Temas | asuntos, con su cambio |
+| Territorios | dónde aparecen, con la geometría ausente declarada |
+| Tema × Territorio | la matriz aprobada en §13-terdecies, integrada, con cajón de evidencia |
+| Tendencias | cambios entre ventanas comparables |
+| Fuentes | 28 fichas: tipo, territorio, estado, feed, última comprobación |
+| Evidencias | título, fuente, emisor, publicado, observado, territorio, proveedor, id |
+| Cobertura | qué observamos y **qué todavía no** |
+| Proveedores | 4 motores reales + 4 candidatos en evaluación |
+
+Tendencias **no maquilla**: con 0 declarables dice *«Sentinel está acumulando
+observaciones para establecer una línea base temporal comparable»*.
+
+**No se tocaron `App.jsx` ni `Sidebar.jsx`** —los tiene Media Intelligence sin
+commitear—: el workspace se monta dentro de `TerritorialModule.jsx`.
+
+### 8 · Certificación de la interfaz
+
+Vite sirve en `localhost:5173` (HTTP 200) y `TerritorialWorkspace.jsx` se transpila y
+sirve (134 KB). Los tres endpoints que consume devuelven 200 con payloads reales (671 KB
+· 54 KB · 3,1 KB).
+
+Y hay una comprobación nueva más fuerte que «renderiza sin romperse»:
+`tests/workspace-real.check.jsx` renderiza **las nueve secciones con los payloads
+reales** y exige **contenido** —las cifras del corpus, nombres de tema, territorios,
+fuentes y proveedores—, más que ninguna sección imprima un porcentaje poblacional. **15
+casos, todos en verde.**
+
+> **Lo que NO se pudo hacer: mirar la pantalla.** No hay navegador en este entorno, así
+> que color, espaciado y jerarquía **no están certificados visualmente**. Por eso este
+> gate se reporta **PARCIAL** y no aprobado.
+
+### 9 · Preparación de Sentinel AI
+
+Cada celda de la matriz ya es un objeto consumible con `projectId`, tema, territorio,
+ventana, cambio, conteos de evidencia y fuente, `evidenceIds`, `coverageStatus` y
+limitaciones. Toda conclusión futura de IA puede **llegar a la evidencia** por id, sin
+duplicarla.
+
+### 10 · Ficheros
+
+| Pieza | Fichero |
+|---|---|
+| Ledger con proyecto y campos completos | `territorial/evidenceLedger.js` |
+| Resolución de emisor | `territorial/emitterResolver.js` |
+| Señal TEMPORAL | `geo/topicTerritoryCrosstab.js` |
+| Observar, proveedores, ámbito de proyecto | `routes/territorio.js` |
+| Interfaz | `territorio/TerritorialWorkspace.jsx` |
+| Evaluación | `docs/TERRITORIAL-PROVIDER-EVAL-01.md` |
+
+### 11 · Pruebas
+
+`territorial` 160 · `c2` 53 · `d` 39 · `d2` 92 · `ingest-real` 93 · `fresh` 50 ·
+`sources` 61 · `rotation` 42 · `topic` 49 · **`project` 29** = **668** en backend.
+
+SSR **127** + **workspace con datos reales 15** = **810** en total.
+
+`npm run test:territorial` ejecuta las diez suites territoriales. Sin red, con contador
+sobre `fetch` que marca cero.
+
+**Coste del gate: 0 USD.** Peticiones externas: solo RSS público (14 lecturas de feed en
+tres pasadas) y 2 intentos fallidos a GDELT. Google News 0 · YouTube 0 · SerpAPI 0 ·
+Brave 0.
+
+---
+
 ## 13-decies. Roadmap territorial
 
 Orden oficial:
@@ -1991,6 +2238,7 @@ Orden oficial:
 ✅ TERRITORIAL-SOURCE-UNIVERSE-01   Fuentes locales comprobadas · RSS operativo
 ✅ TERRITORIAL-RSS-ROTATION-01      Rotación del universo RSS · sin starvation
 ✅ TERRITORIAL-TOPIC-TERRITORY-01   Matriz tema × territorio · evidencia auditable
+🟡 TERRITORIAL-ACCELERATION-02      RSS al ledger · proyecto · proveedores · UX — PARCIAL: sin certificación visual
 →  1.  Primera prueba real multifuente        ← siguiente, EXIGE CREDENCIALES
    2.  DATA-PROVIDER-EVAL real
    3.  Ampliar providers donde el benchmark demuestre valor
@@ -2058,11 +2306,18 @@ Evaluaciones registradas: **`DATA-PROVIDER-EVAL-01`** (estructura definida, ning
 | 41 | **Los feeds de comentarios no se aprovechan** | escucha de la reacción ciudadana | 🟡 8 feeds de comentarios están comprobados y **excluidos** de la recolección de noticias, con razón. Serían la primera fuente ciudadana real del módulo, pero exigen su propio contrato: un comentario no es una nota de prensa |
 | 42 | **`gk.city` alterna entre alcanzable e inaccesible** | estabilidad del universo elegible | 🟡 el número de feeds elegibles varía entre 11 y 12 según la última comprobación. La rotación lo tolera —el universo variable está cubierto por pruebas— pero la cobertura declarada cambia de denominador |
 
-| 43 | **El corpus persistido no incluye las evidencias del universo RSS** | emisores resueltos en la matriz | 🔴 el libro es de Google News y YouTube, así que los tres cruces reales salieron con **cero emisores resueltos**. Las pasadas de rotación midieron el dedup **sin escribir** en el corpus; con RSS persistido serían 8 de 8 publicadores. Es la limitación más visible de §13-terdecies |
-| 44 | **El libro de evidencias no guarda la descripción** | calidad de la extracción de temas | 🟡 solo guarda el titular, así que los temas se extraen de titulares. Funciona —34 señales reales— pero con el texto completo sería mejor |
+| 43 | ~~El corpus persistido no incluye las evidencias del universo RSS~~ | — | ✅ **RESUELTO** (§13-quaterdecies): `POST /observar` persiste. 177 evidencias del proyecto y **177 de 177 emisores RESUELTOS** por feed comprobado del propio medio |
+| 44 | ~~El libro de evidencias no guarda la descripción~~ | — | ✅ **RESUELTO** (§13-quaterdecies): el ledger guarda `summary`. **176 de 177** evidencias del proyecto lo traen. Efecto secundario en #48 |
 | 45 | **`publishedAt` no está normalizado en el contrato de evidencia** | cualquier orden o serie temporal | 🟡 el libro mezcla ISO y RFC 2822 según el proveedor. Ya rompió el rango de publicación una vez; la matriz ordena por instante, pero el contrato debería normalizarlo en la entrada |
-| 46 | **Sin histórico observado, ninguna tendencia es declarable** | Trend Radar | 🟡 la observación empezó el 2026-08-28: 34 de 34 señales quedan en `HISTORICO_INSUFICIENTE` en 7d/15d/30d. El mecanismo funciona y está probado; lo que falta es **tiempo observando**, no código |
+| 46 | **Sin histórico observado, ninguna tendencia es declarable** | Trend Radar | 🟡 **el histórico ya acumula** desde §13-quaterdecies, pero empezó hoy: 0 tendencias declarables. El mecanismo funciona y está probado; lo que falta es **tiempo observando**, no código |
 | 47 | **La matriz no se expone dentro de `/analisis`** | leer temas y recolección en una sola vista | 🟡 vive en `POST /tema-territorio` a propósito, para que abrir la vista no cueste una recolección. Integrarlas exigiría separar análisis de recolección en la propia ruta |
+
+| 48 | **El descubrimiento abierto se sobre-fragmenta con el texto completo** | que la agenda sea legible | 🔴 ~185 señales para 177 evidencias: una señal por evidencia no es una agenda. Subir `documentosMinimos` de 2 a 3 **empeoró** el número (175→185): el umbral gobierna clusters, no el ruido residual. Mitigado clasificando la señal (LUGAR, TEMPORAL) para poder filtrarla; exige trabajo en el motor |
+| 49 | **98 de 177 evidencias sin territorio resuelto** | lectura territorial del corpus RSS | 🔴 los medios nacionales del universo publican artículos sin topónimo cantonal y **no se fuerza** una parroquia. Es el hueco que atacaría un proveedor con extracción geográfica explícita —por eso GDELT Cloud es el #1 de la evaluación |
+| 50 | **La interfaz territorial no está certificada visualmente** | cerrar §13-quaterdecies como APROBADO | 🟡 no hay navegador en el entorno de trabajo. Vite sirve (200), los tres endpoints devuelven payloads reales y las nueve secciones renderizan con **contenido real** verificado (15 casos), pero **color, espaciado y jerarquía no se han mirado**. Requiere revisión humana en `localhost:5173` |
+| 51 | **234 observaciones de legado sin `projectId`** | cobertura histórica del proyecto | 🟡 anteriores a §13-quaterdecies. No se descartan ni se cuentan dentro de una campaña: quedan como legado, visibles solo con `incluirLegado`. Asignarlas exigiría decidir a qué proyecto perteneció cada una, y eso **no se inventa** |
+| 52 | **Prueba real de GDELT Cloud pendiente de una cuenta de Google** | decidir el proveedor #1 | 🔴 el sandbox de BigQuery no pide tarjeta, pero **exige un alta manual** que Sentinel no puede hacer. Pasos exactos en `docs/TERRITORIAL-PROVIDER-EVAL-01.md` §7 |
+| 53 | **Términos y licencias de los cuatro proveedores sin leer** | cualquier uso comercial | 🔴 incluido GDELT, que es condición previa a explotarlo comercialmente |
 
 `POST /api/territorio/recargar` integra 1–4 **sin reiniciar el backend y sin
 cambiar arquitectura**.

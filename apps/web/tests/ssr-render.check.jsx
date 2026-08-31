@@ -22,7 +22,7 @@ import EntitiesPanel from "../src/territorio/agenda/EntitiesPanel";
 import SourceAgendasPanel from "../src/territorio/agenda/SourceAgendasPanel";
 import FreshnessPanel from "../src/territorio/panels/FreshnessPanel";
 import ProvidersStatusPanel from "../src/territorio/panels/ProvidersStatusPanel";
-import TopicTerritoryPanel from "../src/territorio/panels/TopicTerritoryPanel";
+import TerritorialWorkspace from "../src/territorio/TerritorialWorkspace";
 
 /*
   Renderiza los paneles con la respuesta REAL de la API y
@@ -819,42 +819,63 @@ t(
 );
 
 /*
-  TEMA x TERRITORIO — TERRITORIAL-TOPIC-TERRITORY-01
+  WORKSPACE TERRITORIAL — TERRITORIAL-ACCELERATION-02
 
-  Se renderiza el estado SIN CARGAR, que es el que se ve al
-  abrir la vista. Tres cosas que este panel tiene que decir
-  antes de tener un solo dato:
+  Sustituye los casos de `TopicTerritoryPanel`, que este gate
+  retira. Se comprueban las tres cosas que esta vista tiene que
+  decir ANTES de tener un dato:
 
-    - que leer el cruce no cuesta una recoleccion;
-    - que la metrica es conteo absoluto;
-    - que no hay porcentajes de poblacion.
+    - sin proyecto no se muestra corpus;
+    - la metrica es conteo absoluto;
+    - no hay porcentajes de poblacion.
 */
-const topicoVacio = render("TopicTerritoryPanel sin cargar", <TopicTerritoryPanel />);
+const sinProyecto = render("TerritorialWorkspace sin proyecto", <TerritorialWorkspace />);
 
 t(
-  "declara que no sale a internet antes de tener datos",
-  () => /No sale a internet/i.test(topicoVacio) && /conteo absoluto/i.test(topicoVacio)
-);
-
-t(
-  "el panel sin cargar no finge una matriz",
-  () => /Sin cargar/i.test(topicoVacio) && !/Observado/.test(topicoVacio)
-);
-
-t(
-  "no aparece ningun porcentaje de poblacion en el panel",
+  "sin proyecto se pide uno en lugar de mostrar corpus global",
   () =>
-    !/% de poblaci/i.test(topicoVacio) &&
-    !/penetraci/i.test(topicoVacio) &&
-    !/per c\u00e1pita/i.test(topicoVacio)
+    /Selecciona un proyecto/i.test(sinProyecto) &&
+    /no se muestra un corpus global/i.test(sinProyecto)
 );
 
-const topicoConDatos = render(
-  "TopicTerritoryPanel con matriz",
-  <TopicTerritoryPanel territorioId="ec-azuay-cuenca" />
+t(
+  "sin proyecto no se dibuja ninguna seccion de datos",
+  () => !/Tema × Territorio/.test(sinProyecto) && !/Observado/.test(sinProyecto)
 );
 
-t("el panel con territorio declarado renderiza", () => topicoConDatos.length > 0);
+const conProyecto = render(
+  "TerritorialWorkspace con proyecto",
+  <TerritorialWorkspace
+    projectId="alcaldia-cuenca-2027-piloto"
+    projectName="Elecciones Alcaldía Cuenca 2027"
+    territorioId="ec-azuay-cuenca"
+  />
+);
+
+t(
+  "la cabecera declara proyecto, territorio base y ventanas",
+  () =>
+    /Elecciones Alcald/i.test(conProyecto) &&
+    /Cuenca · Azuay · Ecuador/.test(conProyecto) &&
+    /90D/.test(conProyecto)
+);
+
+t(
+  "las nueve secciones estan en la navegacion",
+  () =>
+    ["Resumen", "Temas", "Territorios", "Tema × Territorio", "Tendencias", "Fuentes", "Evidencias", "Cobertura", "Proveedores"].every(
+      (s) => conProyecto.includes(s)
+    )
+);
+
+t(
+  "la metrica declarada es conteo absoluto y no hay porcentajes",
+  () =>
+    /conteo absoluto/i.test(conProyecto) &&
+    !/% de poblaci/i.test(conProyecto) &&
+    !/penetraci/i.test(conProyecto) &&
+    !/intención de voto/i.test(conProyecto)
+);
 
 const frescuraRota = render(
   "FreshnessPanel con error",

@@ -24,7 +24,7 @@ import CoverageWarning from "./panels/CoverageWarning";
 /* --- TERRITORIAL-FRESH-01 --- */
 import FreshnessPanel from "./panels/FreshnessPanel";
 import ProvidersStatusPanel from "./panels/ProvidersStatusPanel";
-import TopicTerritoryPanel from "./panels/TopicTerritoryPanel";
+import TerritorialWorkspace from "./TerritorialWorkspace";
 import AgendaPanel from "./agenda/AgendaPanel";
 import RadarPanel from "./agenda/RadarPanel";
 import TopicDrawer from "./agenda/TopicDrawer";
@@ -397,13 +397,21 @@ function Contenido() {
           <ProvidersStatusPanel datos={datos} />
 
           {/*
-            TEMA x TERRITORIO — TERRITORIAL-TOPIC-TERRITORY-01
+            WORKSPACE TERRITORIAL — TERRITORIAL-ACCELERATION-02
 
-            Se carga A DEMANDA y contra el corpus persistido:
+            Sustituye a `TopicTerritoryPanel`, que hacia solo la
+            matriz. Nueve secciones sobre el mismo corpus y con el
+            proyecto como ambito; sin proyecto no se muestra nada,
+            porque una cifra global leida como si fuera de una
+            campaña informa peor que no tener cifra.
+
+            Se carga A DEMANDA contra el corpus persistido:
             `/analisis` recolecta —invoca Google News— y abrir una
             vista de temas no puede costar una recoleccion.
           */}
-          <TopicTerritoryPanel
+          <TerritorialWorkspace
+            projectId={datos?.proyecto?.id || datos?.proyecto?.proyectoId || null}
+            projectName={datos?.proyecto?.nombre || null}
             territorioId={datos?.territorio?.ambito?.unidadId || datos?.ambito?.unidadId || null}
           />
 
