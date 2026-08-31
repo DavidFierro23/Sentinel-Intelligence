@@ -67,10 +67,51 @@ const VERSION = process.env.META_API_VERSION || "v23.0";
 
 const TIEMPO_MAXIMO_MS = 12000;
 
-const NOMBRES_VARIABLE = [
-  "INSTAGRAM_ACCESS_TOKEN",
-  "IG_ACCESS_TOKEN",
-  "META_ACCESS_TOKEN"
+/*
+===========================================================
+DOS HOSTS, DOS FAMILIAS DE TOKEN
+===========================================================
+
+Este bloque existe por lo que midio META-THIRD-PARTY-REAL-01.
+
+Antes habia UNA lista de variables y una sola funcion
+`credencial()`, y el token que devolvia se enviaba a los dos
+hosts. Con un solo token configurado eso parece inofensivo.
+No lo es: `graph.facebook.com` recibio el token de Instagram
+Login y devolvio
+
+    400 · code 190 · «Cannot parse access token»
+
+que leido literalmente manda a regenerar el token. El token
+estaba perfecto; iba al sitio equivocado.
+
+Y el defecto sobreviviria a la solucion: al anadir un token de
+Facebook, `graph.facebook.com` habria seguido recibiendo el de
+Instagram, porque era el primero de la lista. El mismo 190,
+ahora con la credencial correcta guardada al lado y sin usarse
+— el peor caso posible, porque parece que la configuracion ya
+esta hecha.
+
+Asi que la eleccion del token la decide el HOST, no el orden de
+una lista.
+
+    graph.instagram.com   Instagram User access token
+                          flujo: Instagram Login
+
+    graph.facebook.com    Facebook User access token
+                          flujo: Facebook Login for Business
+
+Y NO hay respaldo cruzado. Si falta el de Facebook, la llamada
+se detiene con un bloqueo declarado en lugar de mandar el de
+Instagram y recibir un error que habla de otra cosa.
+===========================================================
+*/
+const VARIABLES_IG = ["INSTAGRAM_ACCESS_TOKEN", "IG_ACCESS_TOKEN"];
+
+const VARIABLES_FB = [
+  "FACEBOOK_USER_ACCESS_TOKEN",
+  "FACEBOOK_ACCESS_TOKEN",
+  "FB_USER_ACCESS_TOKEN"
 ];
 
 
@@ -78,8 +119,8 @@ const NOMBRES_VARIABLE = [
   Lectura PEREZOSA: en server.js los `import` se evaluan antes
   que `dotenv.config()`. Mismo motivo que en youtubeAdapter.
 */
-function credencial() {
-  for (const nombre of NOMBRES_VARIABLE) {
+function primeraDefinida(nombres) {
+  for (const nombre of nombres) {
     const v = process.env[nombre];
 
     if (v && v.trim()) return v.trim();
@@ -89,8 +130,94 @@ function credencial() {
 }
 
 
+export const FAMILIA = Object.freeze({
+  INSTAGRAM_LOGIN: "INSTAGRAM_USER_ACCESS_TOKEN",
+  FACEBOOK_LOGIN: "FACEBOOK_USER_ACCESS_TOKEN"
+});
+
+
+export function familiaDeHost(base) {
+  return String(base || "").includes("graph.facebook.com")
+    ? FAMILIA.FACEBOOK_LOGIN
+    : FAMILIA.INSTAGRAM_LOGIN;
+}
+
+
+/*
+  El token que corresponde a un host. `null` si no esta
+  configurado, y nunca el del otro host.
+*/
+function credencialDeHost(base) {
+  return familiaDeHost(base) === FAMILIA.FACEBOOK_LOGIN
+    ? primeraDefinida(VARIABLES_FB)
+    : primeraDefinida(VARIABLES_IG);
+}
+
+
+/*
+  Compatibilidad: `credencial()` sigue significando «el token de
+  Instagram Login», que es lo que significaba antes en la
+  practica. No se le da otro sentido para no romper a quien la
+  use esperando eso.
+*/
+function credencial() {
+  return primeraDefinida(VARIABLES_IG);
+}
+
+
 export function estaConfigurado() {
   return Boolean(credencial());
+}
+
+
+/*
+  Estado de credenciales por familia, sin valores. Es lo que
+  puede mirar un diagnostico o la matriz de capacidades sin
+  riesgo de filtrar nada.
+*/
+export function estadoDeCredenciales() {
+  const ig = Boolean(primeraDefinida(VARIABLES_IG));
+  const fb = Boolean(primeraDefinida(VARIABLES_FB));
+
+  return {
+    instagramLogin: {
+      familia: FAMILIA.INSTAGRAM_LOGIN,
+      configurada: ig,
+      host: BASE_IG,
+      variables: VARIABLES_IG,
+      alcanza: ig ? ["cuenta propia y su contenido"] : []
+    },
+
+    facebookLogin: {
+      familia: FAMILIA.FACEBOOK_LOGIN,
+      configurada: fb,
+      host: BASE_FB,
+      variables: VARIABLES_FB,
+
+      /*
+        Deliberadamente vacio incluso cuando esta configurada.
+        Tener el token no dice a quien alcanza: eso lo decide el
+        nivel de acceso de la app, y se sabra al llamar.
+      */
+      alcanza: [],
+
+      nota: fb
+        ? "Token presente. CREDENCIAL_PARSEABLE no es acceso a terceros: el alcance lo decide el nivel de acceso de la app y se mide llamando."
+        : "Sin token de Facebook Login no hay ninguna llamada posible a graph.facebook.com. No se usa el de Instagram como respaldo."
+    },
+
+    /*
+      El estado que este gate podia alcanzar, y ni uno mas.
+    */
+    listoParaReintentarTerceros: fb,
+
+    noSignifica: [
+      "BUSINESS_DISCOVERY_FUNCIONA",
+      "FACEBOOK_PAGE_TERCERO_FUNCIONA",
+      "MEDIDO_TERCERO",
+      "BENCHMARK_HABILITADO"
+    ]
+  };
 }
 
 
@@ -102,11 +229,20 @@ export function estaConfigurado() {
 export function sanitizar(texto) {
   const t = String(texto || "");
 
-  const clave = credencial();
-
   let limpio = t.replace(/access_token=[^&\s"']+/gi, "access_token=REDACTADO");
 
-  if (clave) limpio = limpio.split(clave).join("REDACTADO");
+  /*
+    LAS DOS FAMILIAS. Antes se redactaba solo la de Instagram, y
+    con un unico token daba igual. Ahora hay dos y el mensaje de
+    error de un host puede traer el token del otro: redactar solo
+    uno seria dejar el otro a la vista precisamente en el fallo
+    que alguien va a copiar y pegar.
+  */
+  [primeraDefinida(VARIABLES_IG), primeraDefinida(VARIABLES_FB)]
+    .filter(Boolean)
+    .forEach((clave) => {
+      limpio = limpio.split(clave).join("REDACTADO");
+    });
 
   return limpio;
 }
@@ -166,7 +302,28 @@ function clasificar(status, cuerpo) {
 
 
 async function pedir(base, ruta, params, opciones = {}) {
-  const clave = credencial();
+  const clave = credencialDeHost(base);
+
+  /*
+    Sin la credencial de ESTE host no se llama. Antes se enviaba
+    la del otro y Meta devolvia un 190 que hablaba de la
+    credencial cuando el problema era el flujo. Un bloqueo
+    declarado aqui ahorra la llamada y el diagnostico erroneo.
+  */
+  if (!clave) {
+    const familia = familiaDeHost(base);
+
+    return {
+      ok: false,
+      httpStatus: null,
+      endpoint: `${base.replace("https://", "")}/${VERSION}${ruta}`,
+      estado: "SIN_CREDENCIAL",
+      familiaRequerida: familia,
+      motivo:
+        `no hay token de la familia ${familia} configurado, y no se usa el del otro host como respaldo. La llamada no se realizo.`,
+      codigo: null
+    };
+  }
 
   const fetchImpl = opciones.fetch || globalThis.fetch;
 
@@ -255,8 +412,23 @@ Content Access.
 ===========================================================
 */
 export async function paginaDeTercero(identificador, opciones = {}) {
-  if (!estaConfigurado()) {
-    return { estado: "SIN_CREDENCIAL", pagina: null, llamadas: 0 };
+  /*
+    La guarda pregunta por la credencial de Facebook, no por la
+    de Instagram: son familias distintas y esta llamada vive en
+    graph.facebook.com. Con la guarda anterior, tener token de
+    Instagram bastaba para intentar una llamada que no podia
+    funcionar.
+  */
+  const estado = estadoDeCredenciales();
+
+  if (!estado.facebookLogin.configurada) {
+    return {
+      estado: "SIN_CREDENCIAL",
+      pagina: null,
+      llamadas: 0,
+      familiaRequerida: FAMILIA.FACEBOOK_LOGIN,
+      motivo: estado.facebookLogin.nota
+    };
   }
 
   const limpio = String(identificador || "").trim().replace(/^@+/, "");
@@ -285,7 +457,14 @@ export async function paginaDeTercero(identificador, opciones = {}) {
     return {
       estado: r.estado,
       pagina: null,
-      llamadas: 1,
+
+      /*
+        Cero si la llamada nunca salio. El presupuesto de este
+        proyecto se cuenta en llamadas reales, asi que contar una
+        que no se hizo falsea el unico numero que importa.
+      */
+      llamadas: r.estado === "SIN_CREDENCIAL" ? 0 : 1,
+      familiaRequerida: r.familiaRequerida || null,
       httpStatus: r.httpStatus,
       endpoint: r.endpoint,
       motivo: r.motivo,
@@ -432,7 +611,7 @@ export async function resolverCuentaPropia(opciones = {}) {
       estado: "SIN_CREDENCIAL",
       perfil: null,
       llamadas: 0,
-      motivo: `Falta ${NOMBRES_VARIABLE[0]} en apps/backend/.env. El adapter esta completo; sin credencial no se invoca y Sentinel sigue funcionando.`
+      motivo: `Falta ${VARIABLES_IG[0]} en apps/backend/.env. El adapter esta completo; sin credencial no se invoca y Sentinel sigue funcionando.`
     };
   }
 
@@ -751,7 +930,8 @@ export async function descubrirCuentaProfesional(igUserId, usuarioObjetivo, opci
         : r.estado,
 
       cuenta: null,
-      llamadas: 1,
+      llamadas: r.estado === "SIN_CREDENCIAL" ? 0 : 1,
+      familiaRequerida: r.familiaRequerida || null,
       httpStatus: r.httpStatus,
       endpoint: r.endpoint,
       motivo: r.motivo,
@@ -830,7 +1010,7 @@ export function diagnostico() {
     credencial: configurado ? "presente" : "ausente",
     estado: configurado ? "OK" : "SIN_CREDENCIAL",
 
-    variableEntorno: NOMBRES_VARIABLE[0],
+    variableEntorno: VARIABLES_IG[0],
     version: VERSION,
 
     /*

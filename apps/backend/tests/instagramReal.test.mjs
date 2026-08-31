@@ -38,6 +38,23 @@ process.env.SENTINEL_LAKE_ADAPTER = "memoria";
 /* Credencial ficticia con forma reconocible, para el test de fugas. */
 process.env.INSTAGRAM_ACCESS_TOKEN = "IGQ-TOKEN-FICTICIO-NO-REAL-000";
 
+/*
+  LAS DOS FAMILIAS, desde META-FB-LOGIN-SETUP-01.
+
+  Antes bastaba con la de Instagram porque el adaptador la
+  enviaba a los dos hosts. Ese era el defecto, y estas pruebas
+  vivian de el sin saberlo: pedian una respuesta de
+  `graph.facebook.com` y llegaban hasta el `fetch` inyectado
+  usando un token que ese host nunca habria aceptado.
+
+  Ahora el token lo decide el host, asi que las pruebas que
+  simulan una respuesta de Facebook necesitan la credencial de
+  Facebook. Las que comprueban su ausencia la borran
+  explicitamente, que es mas honesto que depender de que no
+  este.
+*/
+process.env.FACEBOOK_USER_ACCESS_TOKEN = "EAA-TOKEN-FICTICIO-NO-REAL-000";
+
 const ig = await import("../services/ingest/adapters/instagramAdapter.js");
 
 const scm = await import("../services/intelligence/socialCapabilityMatrix.js");
@@ -803,6 +820,182 @@ await t("ningun registro de la matriz contiene un token", () => {
     !/AIza[A-Za-z0-9_-]{20,}/.test(texto)
   );
 });
+
+
+/* =========================================================
+   META-FB-LOGIN-SETUP-01
+
+   Dos hosts, dos familias de token, cero respaldo cruzado.
+
+   El defecto que estas pruebas fijan no era visible con un solo
+   token configurado, y habria sobrevivido a la solucion: al
+   anadir el token de Facebook, graph.facebook.com habria
+   seguido recibiendo el de Instagram porque era el primero de
+   la lista. El mismo 190, ahora con la credencial correcta
+   guardada al lado y sin usarse.
+========================================================= */
+
+bloque("El token de Instagram no se usa como token de Facebook");
+
+/* Guarda del entorno: se restaura al final del bloque. */
+const envPrevio = {
+  ig: process.env.INSTAGRAM_ACCESS_TOKEN,
+  fb: process.env.FACEBOOK_USER_ACCESS_TOKEN
+};
+
+await t("cada host resuelve su propia familia", () => {
+  return (
+    ig.familiaDeHost(ig.BASE_IG) === ig.FAMILIA.INSTAGRAM_LOGIN &&
+    ig.familiaDeHost(ig.BASE_FB) === ig.FAMILIA.FACEBOOK_LOGIN
+  );
+});
+
+await t("sin token de Facebook, la llamada a graph.facebook.com NO se hace", async () => {
+  process.env.INSTAGRAM_ACCESS_TOKEN = "token-de-instagram-ficticio";
+
+  delete process.env.FACEBOOK_USER_ACCESS_TOKEN;
+
+  /*
+    Si el adaptador intentara la red, este fetch lo delata. Es
+    la unica forma de demostrar que NO usa el token de al lado
+    como respaldo.
+  */
+  const fetchQueNoDebeUsarse = async () => {
+    throw new Error("se intento una llamada sin la credencial de ese host");
+  };
+
+  const r = await ig.paginaDeTercero("pagina_ficticia", {
+    fetch: fetchQueNoDebeUsarse
+  });
+
+  return (
+    r.estado === "SIN_CREDENCIAL" &&
+    r.pagina === null &&
+    /* Cero: contar una llamada que no salio falsea el presupuesto. */
+    r.llamadas === 0 &&
+    r.familiaRequerida === ig.FAMILIA.FACEBOOK_LOGIN
+  );
+});
+
+await t("business_discovery en graph.facebook.com se detiene igual", async () => {
+  process.env.INSTAGRAM_ACCESS_TOKEN = "token-de-instagram-ficticio";
+
+  delete process.env.FACEBOOK_USER_ACCESS_TOKEN;
+
+  const r = await ig.descubrirCuentaProfesional("123", "objetivo_ficticio", {
+    host: ig.BASE_FB,
+    fetch: async () => {
+      throw new Error("se intento una llamada sin la credencial de ese host");
+    }
+  });
+
+  return (
+    r.estado === "SIN_CREDENCIAL" &&
+    r.llamadas === 0 &&
+    r.familiaRequerida === ig.FAMILIA.FACEBOOK_LOGIN
+  );
+});
+
+await t("con token de Facebook presente, la llamada SI sale", async () => {
+  process.env.FACEBOOK_USER_ACCESS_TOKEN = "token-de-facebook-ficticio";
+
+  let urlVista = null;
+
+  const fetchEspia = async (url) => {
+    urlVista = String(url);
+
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ id: "1", name: "Pagina" })
+    };
+  };
+
+  const r = await ig.paginaDeTercero("ficticia", { fetch: fetchEspia });
+
+  /* Y sale con EL SUYO, no con el de Instagram. */
+  return (
+    r.estado === "OK" &&
+    urlVista.includes("graph.facebook.com") &&
+    urlVista.includes("token-de-facebook-ficticio") &&
+    !urlVista.includes("token-de-instagram-ficticio")
+  );
+});
+
+bloque("Ningun token sale en texto");
+
+await t("sanitizar redacta las DOS familias", () => {
+  process.env.INSTAGRAM_ACCESS_TOKEN = "token-de-instagram-ficticio";
+  process.env.FACEBOOK_USER_ACCESS_TOKEN = "token-de-facebook-ficticio";
+
+  /*
+    Meta a veces devuelve la peticion completa dentro del
+    mensaje de error, y el error de un host puede traer el token
+    del otro. Redactar solo uno lo dejaria a la vista justo en
+    el mensaje que alguien va a copiar y pegar.
+  */
+  const texto = ig.sanitizar(
+    "fallo con access_token=token-de-facebook-ficticio y tambien token-de-instagram-ficticio"
+  );
+
+  return (
+    !texto.includes("token-de-facebook-ficticio") &&
+    !texto.includes("token-de-instagram-ficticio") &&
+    texto.includes("REDACTADO")
+  );
+});
+
+await t("el estado de credenciales no contiene ningun valor", () => {
+  const e = ig.estadoDeCredenciales();
+
+  const texto = JSON.stringify(e);
+
+  return (
+    !texto.includes("token-de-instagram-ficticio") &&
+    !texto.includes("token-de-facebook-ficticio") &&
+    /* Declara los NOMBRES de las variables, que no son secretos. */
+    e.facebookLogin.variables.includes("FACEBOOK_USER_ACCESS_TOKEN")
+  );
+});
+
+bloque("Credencial lista no es acceso a terceros");
+
+await t("con token de Facebook, `alcanza` sigue vacio", () => {
+  process.env.FACEBOOK_USER_ACCESS_TOKEN = "token-de-facebook-ficticio";
+
+  const e = ig.estadoDeCredenciales();
+
+  /*
+    LA CONFUSION QUE ESTE GATE NO DEBE DEJAR PASAR. Tener el
+    token no dice a quien alcanza: eso lo decide el nivel de
+    acceso de la app, y se sabra al llamar.
+  */
+  return (
+    e.facebookLogin.configurada === true &&
+    e.facebookLogin.alcanza.length === 0 &&
+    e.listoParaReintentarTerceros === true &&
+    e.noSignifica.includes("MEDIDO_TERCERO") &&
+    e.noSignifica.includes("BENCHMARK_HABILITADO")
+  );
+});
+
+await t("tener la credencial NO habilita el benchmark", () => {
+  process.env.FACEBOOK_USER_ACCESS_TOKEN = "token-de-facebook-ficticio";
+
+  return (
+    scm.habilitaBenchmark("instagram").habilita === false &&
+    scm.habilitaBenchmark("facebook").habilita === false &&
+    scm.habilitaBenchmark("x").habilita === true &&
+    scm.habilitaBenchmark("youtube").habilita === true
+  );
+});
+
+/* Entorno restaurado: una prueba no debe dejar rastro. */
+if (envPrevio.ig === undefined) delete process.env.INSTAGRAM_ACCESS_TOKEN;
+else process.env.INSTAGRAM_ACCESS_TOKEN = envPrevio.ig;
+
+if (envPrevio.fb === undefined) delete process.env.FACEBOOK_USER_ACCESS_TOKEN;
+else process.env.FACEBOOK_USER_ACCESS_TOKEN = envPrevio.fb;
 
 
 /* ---------------------------------------------------------

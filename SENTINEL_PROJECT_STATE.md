@@ -5820,6 +5820,99 @@ degradaron.
 
 ---
 
+## 18-quatertricies. META-FB-LOGIN-SETUP-01 (2026-08-30)
+
+Commit `fix(candidate): select Meta token by host family`.
+
+**1059 comprobaciones, 25 suites, 0 fallos.** **Cero llamadas Meta.**
+
+### El defecto que habia detras del bloqueo
+
+META-THIRD-PARTY-REAL-01 concluyo «falta un token de Facebook Login». Cierto, y
+no era todo.
+
+El adaptador tenia UNA lista de variables y una sola `credencial()`, y el token
+que devolvia se enviaba a los dos hosts. Con un solo token configurado eso
+parece inofensivo: es justo lo que produjo el `400 · code 190`.
+
+Y **habria sobrevivido a la solucion**. Al anadir el token de Facebook,
+`graph.facebook.com` habria seguido recibiendo el de Instagram porque era el
+primero de la lista. El mismo 190, ahora con la credencial correcta guardada al
+lado y sin usarse — el peor caso posible, porque parece que la configuracion ya
+esta hecha y el error dice «regenera el token».
+
+Este gate era «preparar la credencial». Lo que habia que preparar primero era el
+codigo que la elige.
+
+### Corregido
+
+El token lo decide el HOST, no el orden de una lista:
+
+    graph.instagram.com   INSTAGRAM_ACCESS_TOKEN        Instagram Login
+    graph.facebook.com    FACEBOOK_USER_ACCESS_TOKEN    Facebook Login
+
+Sin respaldo cruzado. Si falta el que toca, la llamada **no se hace**:
+`SIN_CREDENCIAL`, `llamadas: 0` y la familia que falta. Contar una llamada que
+no salio falsearia el unico numero que este proyecto vigila.
+
+`sanitizar()` redacta las dos familias: el error de un host puede traer el token
+del otro, y redactar solo uno lo dejaria a la vista precisamente en el mensaje
+que alguien va a copiar y pegar.
+
+### Ocho pruebas antiguas cambiaron, y no se debilitaron
+
+Pedian una respuesta simulada de `graph.facebook.com` y llegaban al `fetch`
+inyectado usando un token que ese host nunca habria aceptado: **vivian del
+defecto sin saberlo**. Ahora la suite declara las dos credenciales ficticias, y
+las pruebas que comprueban la ausencia de una la borran explicitamente, que es
+mas honesto que depender de que no este.
+
+### Credencial requerida, por via
+
+Las dos vias comparten familia de token —Facebook User access token, flujo
+Facebook Login for Business— y no comparten permiso:
+
+    business_discovery   instagram_basic, instagram_manage_insights,
+                         pages_read_engagement, pages_show_list
+
+    Page publica         Page Public Content Access
+
+### Lo que un token NO resuelve
+
+Standard Access alcanza **solo a usuarios y Paginas con un rol en la app**. Un
+candidato nunca lo va a tener, asi que con la credencial correcta y sin Advanced
+Access el reintento sobre un candidato seguira fallando.
+
+Pero fallara con un error de **permisos**, y eso es informacion que hoy no
+tenemos. Es exactamente lo que mediria META-THIRD-PARTY-REAL-02: convertir una
+hipotesis documental en una causa demostrada.
+
+    CREDENCIAL_PARSEABLE != MEDIDO_TERCERO
+
+`estadoDeCredenciales()` lo declara en el propio dato: con el token presente,
+`facebookLogin.alcanza` sigue **vacio**, porque tener la credencial no dice a
+quien alcanza.
+
+### App Review y Business Verification: todavia no demostrados
+
+La documentacion dice que Advanced Access exige Business Verification y que
+terceros exigen Advanced Access. Pero ninguna respuesta de Meta nos lo ha dicho:
+ninguna llamada ha llegado a evaluar permisos.
+
+La distincion no es un tecnicismo. Es la diferencia entre «lo lei» y «lo medi»,
+y este proyecto lleva cuatro gates sosteniendola.
+
+### Riesgos
+
+- **El gate no entrega la credencial.** Generarla exige entrar a la consola de
+  Meta; queda esperando accion del usuario.
+- Incluso con el token, el reintento sobre un candidato fallara mientras la app
+  este en Standard Access. Lo que se gana es saber por que.
+- El coste de no hacer nada sigue siendo cero: X y YouTube sostienen el
+  benchmark.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -5969,6 +6062,9 @@ resueltos y verificados.
 | **Tipificacion de los 23 activos Meta** | 🔴 **0 de 23 clasificados**. La capacidad de declararlos ya existe (§18-untricies); falta que el analista los clasifique. Es el dato que bloquea la decision sobre Meta |
 | **Instagram de terceros** | 🔴 **CERRADO POR FLUJO** (§18-tertricies): `business_discovery` no existe en `graph.instagram.com`. Medido, no supuesto |
 | **Facebook de terceros** | 🔴 **BLOQUEADO POR CREDENCIAL** (§18-tertricies): no hay token de Facebook Login. El error NO demuestra que haga falta App Review |
+| Eleccion de token por host | 🟢 **CORREGIDO** (§18-quatertricies): cada host recibe su familia y no hay respaldo cruzado. Sin el que toca, la llamada no se hace |
+| `FACEBOOK_USER_ACCESS_TOKEN` | 🔴 **falta**: es la unica pieza que separa a Sentinel de reintentar terceros. La genera el usuario en la consola de Meta |
+| App Review / Business Verification | 🟡 **TODAVIA NO DEMOSTRADOS**: la documentacion los exige para Advanced Access, pero ninguna llamada ha llegado a evaluar permisos |
 | Comments Intelligence | 🟡 `COMMENTS_NOT_TESTED` en IG y FB: el bloqueo esta aguas arriba. Regla ya fijada: comentarios observados != todos los comentarios |
 | Declaracion de tipo por el analista | 🟢 **FUNCIONAL Y VISIBLE** (§18-untricies, corregida en §18-duotricies): selector dentro de «Editar identidad digital», serie propia en el Lake, procedencia y verificacion separadas |
 | Cobertura de pruebas sobre la UI | 🟡 **parcial**: hay render check para el editor de identidad (§18-duotricies) y para los paneles territoriales. El resto de pantallas solo tienen pruebas de dominio, que no ven el HTML |
@@ -6319,6 +6415,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-30 | META-FB-LOGIN-SETUP-01 | Gate de preparacion, cero llamadas Meta. El gate anterior concluyo «falta un token de Facebook Login», que era cierto y no era todo: el adaptador tenia UNA lista de variables y una sola funcion credencial(), y el token que devolvia se enviaba a los dos hosts. Eso es lo que produjo el 400 code 190, y habria sobrevivido a la solucion — al anadir el token de Facebook, graph.facebook.com habria seguido recibiendo el de Instagram porque era el primero de la lista, con el mismo 190 y la credencial correcta guardada al lado sin usarse, que es el peor caso posible porque parece que la configuracion ya esta hecha. Corregido: el token lo decide el host y no el orden de una lista, sin respaldo cruzado, y si falta el que toca la llamada no se hace —SIN_CREDENCIAL con llamadas 0 y la familia que falta—, porque contar una llamada que no salio falsearia el unico numero que este proyecto vigila. sanitizar() redacta ahora las dos familias, ya que el error de un host puede traer el token del otro y redactar solo uno lo dejaria a la vista precisamente en el mensaje que alguien va a copiar y pegar. Ocho pruebas antiguas cambiaron y no se debilitaron: pedian una respuesta simulada de graph.facebook.com y llegaban al fetch inyectado con un token que ese host nunca habria aceptado, asi que vivian del defecto sin saberlo. Documentada la credencial requerida por via —las dos comparten familia, Facebook User access token del flujo Facebook Login for Business, y no comparten permiso— y declarado que un token no resuelve el acceso: Standard Access alcanza solo a usuarios y Paginas con un rol en la app y un candidato nunca lo tendra, asi que el reintento seguira fallando, pero fallara con un error de permisos, que es informacion que hoy no existe. estadoDeCredenciales() lo declara en el dato: con el token presente, alcanza sigue vacio. App Review y Business Verification siguen TODAVIA NO DEMOSTRADOS porque ninguna llamada ha llegado a evaluar permisos, y la distincion entre «lo lei» y «lo medi» es la que sostiene los ultimos cuatro gates. 1059 pruebas, 0 fallos. Nueva §18-quatertricies. |
 | 2026-08-30 | META-THIRD-PARTY-REAL-01 | Prueba quirurgica de si Sentinel puede observar hoy una cuenta de candidato tercero por via oficial de Meta, en cuatro llamadas y sobre los dos mejores activos posibles del expediente: un Instagram declarado INSTAGRAM_PROFESSIONAL y un Facebook declarado FACEBOOK_PAGE. No puede, y ahora se sabe por que. La llamada que aporta la informacion nueva es business_discovery contra graph.instagram.com, que nunca se habia probado: META-IG-REAL-01 lo habia medido contra graph.facebook.com y recibido un 190 que podia estar tapando otra cosa, y faltaba preguntar al host que SI acepta nuestro token. La respuesta fue HTTP 400 code 100, «Tried accessing nonexisting field (business_discovery)»: no es un permiso que falte, el campo no existe ahi, asi que la via de Instagram Login no descubre terceros y ningun permiso sobre este token lo va a producir. Un 400 asi es mejor que un 403 porque cierra la pregunta. La lectura de la Page de Facebook devolvio 190 OAuthException, y lo que eso demuestra es que no tenemos credencial para ese host; lo que NO demuestra —y es exactamente lo que se sobreinterpreta— es que haga falta App Review o Business Verification, porque el error se detiene antes de evaluar permisos, al parsear la credencial. Lo hace legible el control de la primera llamada: graph.instagram.com/me devolvio 200 con el mismo token en la misma sesion, asi que la credencial esta viva y el host es otro; sin ese control, «Invalid OAuth access token» manda a regenerar el token, que es justo lo que no hay que hacer. Comentarios: NO_PROBADO y no NO_DISPONIBLE, porque ninguna plataforma devolvio publicacion de tercero y no habia nada a lo que preguntar. Queda fijada la obligacion de lenguaje COMENTARIOS OBSERVADOS != TODOS LOS COMENTARIOS. Nada se persistio: cero publicaciones, cero snapshots, cero metricas, con un test que fija que una llamada bloqueada no puede devolver cifras en cero porque un cero es una medicion y la ausencia no lo es. habilitaBenchmark() sin cambios y las declaraciones del analista siguen NO_VERIFICADA. 1051 pruebas, 0 fallos. Nueva §18-tertricies y `docs/META-THIRD-PARTY-REAL.md`. |
 | 2026-08-29 | P-CAND-ASSET-TYPE-UI-FIX-01 | El gate anterior reporto el selector de tipo Meta como hecho y no era falso: existia y funcionaba, pero en AccountIntelligencePanel, que es otra pantalla. Donde el analista edita cuentas —«Editar identidad digital», CandidateIdentityForm— no habia nada. Y detras habia un segundo fallo mas importante: la ruta GET /identidad que alimenta ese editor no devolvia los tipos, que solo viajaban por /inteligencia, asi que aunque el selector hubiera estado en el componente correcto no habria tenido con que pintarse; comprobado contra el backend en ejecucion, cuya ficha no traia activosMeta. Las 1037 pruebas no lo vieron porque ninguna miraba HTML: el dominio estaba bien y el fallo vivia entero en la distancia entre que la funcion devuelva el dato y que la pantalla lo pinte. Esa distancia ahora tiene prueba propia —identity-form.check.jsx renderiza la pantalla real con la respuesta real de la API y cuenta los select—. Corregido: /identidad devuelve activosMeta.porActivo con tipo, procedencia, verificacion y tipos admitidos, y el selector vive dentro de la tarjeta de cada cuenta, debajo del estado de identidad y separado de el, porque de quien es la cuenta y que clase de cuenta es son dos preguntas distintas. Se guarda al cambiarlo y no al pulsar «Guardar cambios», porque declarar el tipo no es una edicion de identidad y no debe viajar en el mismo PATCH. Validado por HTTP en un proyecto desechable con dos Facebook y dos Instagram: los cuatro tipos distintos sobreviven a releer la ficha, cambiar uno no movio a los otros y las cuentas quedaron identicas. De paso aparecio un defecto de accesibilidad que encontro la propia prueba de render: Lloret usa el mismo handle en Facebook y en Instagram, asi que dos selectores tenian etiqueta identica; ahora lleva la plataforma delante. habilitaBenchmark() sin cambios. 1042 pruebas de backend y 13 de render, 0 fallos. Requiere reiniciar el backend, que corre sin watcher. Nueva §18-duotricies. |
 | 2026-08-28 | P-CAND-ASSET-TYPE-DECLARE-01 | La auditoria anterior clasifico 0 de 23 activos Meta y demostro que el HTML publico no distingue perfil de pagina ni Business de personal, asi que el camino no era afinar el clasificador: una persona que abre la cuenta lo ve en un segundo. Ahora el analista declara el tipo y Sentinel no llama a eso una verificacion. Tres campos que viajan juntos —assetType, assetTypeSource y assetTypeVerification— sostienen la regla ANALYST_DECLARATION != VERIFICADO_TECNICAMENTE, que es facil de escribir y facil de perder: basta con que alguien pinte un check verde al lado de un tipo declarado. Ninguna acumulacion de declaraciones asciende a VERIFICADA, porque solo lo hace una fuente de FUENTES_VERIFICADAS y hoy esa lista contiene unicamente META_API; PUBLIC_METADATA quedo fuera a proposito por lo que paso en la auditoria. Instagram admite INSTAGRAM_PROFESSIONAL ademas de Business y Creator, porque el analista suele saber que una cuenta es profesional sin saber cual de las dos y obligarle a elegir seria obligarle a inventar. Las declaraciones se guardan en una serie aparte del Lake y no dentro de cuentasReferencia: meterlas ahi habria hecho que cada clasificacion reescribiera el registro que sostiene la URL, el handle y el estado de identidad por un campo que no tiene nada que ver, y ademas se gana el historial —quien dijo que, cuando, y que dijo antes—. La cobertura pasa a tres niveles que no se suman: CONFIRMADA verificada contra API, DECLARADA dicha por el analista, DESCONOCIDA sin clasificar; un solo UNKNOWN devuelve al candidato a DESCONOCIDA y no tener cuenta en una plataforma es SIN_ACTIVO, no NO_ELEGIBLE. Ensayado con los dos Facebook de Lloret: admiten Page y Profile a la vez sin deduplicarse, el candidato pasa a DECLARADA por la pagina y su perfil sigue NO_ELEGIBLE. habilitaBenchmark() sin cambios, con un test que declara dos activos elegibles y comprueba que la funcion real no se mueve. 1037 pruebas, 0 fallos. Nueva §18-untricies. |

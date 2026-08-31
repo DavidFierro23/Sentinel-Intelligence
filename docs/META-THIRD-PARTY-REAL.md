@@ -164,6 +164,74 @@ Antes teníamos una hipótesis razonable con un indicio ambiguo. Ahora:
 
 ---
 
+## META-FB-LOGIN-SETUP-01 (2026-08-30)
+
+Gate de preparación. **Cero llamadas Meta.**
+
+### El defecto que había detrás del bloqueo
+
+El adaptador tenía **una** lista de variables y una sola función `credencial()`,
+y el token que devolvía se enviaba a los dos hosts. Con un único token
+configurado eso parece inofensivo. No lo era: es lo que produjo el
+`400 · code 190` de la llamada 3.
+
+Y el defecto habría **sobrevivido a la solución**. Al añadir un token de
+Facebook, `graph.facebook.com` habría seguido recibiendo el de Instagram,
+porque era el primero de la lista. El mismo 190 — ahora con la credencial
+correcta guardada al lado y sin usarse, que es el peor caso: parece que la
+configuración ya está hecha.
+
+### Corregido
+
+El token lo decide el **host**, no el orden de una lista:
+
+| Host | Familia | Variable |
+|---|---|---|
+| `graph.instagram.com` | Instagram User access token | `INSTAGRAM_ACCESS_TOKEN` |
+| `graph.facebook.com` | Facebook User access token | `FACEBOOK_USER_ACCESS_TOKEN` |
+
+**Sin respaldo cruzado.** Si falta el que toca, la llamada no se hace: devuelve
+`SIN_CREDENCIAL` con `llamadas: 0` y la familia que falta. Contar una llamada
+que no salió falsearía el único número que este proyecto vigila.
+
+`sanitizar()` redacta ahora las dos familias — el error de un host puede traer
+el token del otro, y redactar solo uno lo dejaría a la vista justo en el
+mensaje que alguien va a copiar y pegar.
+
+### Credencial requerida, por vía
+
+| | Instagram `business_discovery` | Facebook Page pública |
+|---|---|---|
+| credencial | Facebook User access token | Facebook User access token |
+| flujo | Facebook Login for Business | Facebook Login for Business |
+| permisos | `instagram_basic`, `instagram_manage_insights`, `pages_read_engagement`, `pages_show_list` | Page Public Content Access |
+| nivel para terceros | Advanced Access | Advanced Access |
+
+Las dos vías comparten familia de token. Lo que no comparten es el permiso.
+
+### Lo que un token NO resuelve
+
+Standard Access alcanza **solo a usuarios y Páginas con un rol en la app**. Un
+candidato nunca lo va a tener. Así que con la credencial correcta y sin Advanced
+Access, el reintento sobre un candidato seguirá fallando — pero fallará con un
+error de **permisos**, que es información que hoy no tenemos.
+
+Eso es exactamente lo que mediría `META-THIRD-PARTY-REAL-02`, y es la razón de
+hacerlo: convierte una hipótesis documental en una causa demostrada.
+
+    CREDENCIAL_PARSEABLE  !=  MEDIDO_TERCERO
+
+### App Review y Business Verification
+
+**Todavía no demostrados.** La documentación dice que Advanced Access exige
+Business Verification, y Advanced Access es necesario para terceros. Pero
+ninguna respuesta de Meta nos lo ha dicho aún, porque ninguna llamada ha llegado
+a evaluar permisos.
+
+La distinción no es un tecnicismo: es la diferencia entre «lo leí» y «lo medí».
+
+---
+
 ## Siguiente decisión
 
 Con Meta oficial cerrado por credencial, hay dos caminos y son excluyentes en
