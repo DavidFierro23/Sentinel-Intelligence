@@ -6556,6 +6556,170 @@ es alcance de un gate de UX.
 
 ---
 
+## 18-nonricies. P-CAND-TIKTOK-01 (2026-08-31)
+
+**1165 comprobaciones, 28 suites, 0 fallos.** **8 peticiones HTTP a TikTok.**
+**Coste 0 USD.** Cero llamadas a X, Meta, YouTube y buscadores.
+
+Gate de factibilidad: que puede medir Sentinel HOY en TikTok, con evidencia y
+sin contratar a nadie.
+
+### Inventario
+
+Siete activos TikTok persistidos, **uno por candidato**, ninguno SIN_CUENTA y
+**cero publicaciones** persistidas antes de este gate.
+
+    Paul Carrasco       @lafondadecarrasco   REVALIDADA    corresp  0
+    J. C. Lloret        @jotalloretv         REVALIDADA    corresp 20
+    Pedro Palacios      @pedropalaciosu      DECLARADA     corresp 20
+    Juan Carlos Vega    @jcvega76            DECLARADA     corresp 15
+    Yaku Perez          @yaku.perez          REVALIDADA    corresp 40
+    Marcelo Cabrera     @hmarcelocabrera     DECLARADA     corresp 25  SerpAPI
+    Leonardo Morales    @leomoralesordo      DECLARADA     corresp  0
+
+Dos con **correspondencia 0** —`@lafondadecarrasco` y `@leomoralesordo`— que no
+se tocan en este gate y conviene mirar: un handle atribuido con correspondencia
+cero es una atribucion sin sostener, y «La Fonda de Carrasco» no suena a cuenta
+personal de un candidato.
+
+### Vias oficiales: ninguna aplica, y ya estaba estudiado
+
+No se repitio la investigacion. `socialCapabilityMatrix` ya documentaba las
+tres, y sigue siendo cierto:
+
+| API | Por que no |
+|---|---|
+| Display API | opera sobre la cuenta que INICIA SESION. El candidato tendria que darnos acceso a la suya |
+| Research API | si cubre terceros, y su elegibilidad es academica sin animo de lucro. Sentinel es un producto comercial |
+| Commercial Content API | solo contenido publicitario. Ninguna metrica organica |
+
+Es la unica plataforma del grupo donde el problema **no es un permiso que pedir
+ni un plan que pagar**: el caso de uso no encaja en ningun programa.
+
+### Via publica: `oembed`, y SI entrega algo
+
+Endpoint publico y documentado de TikTok, sin credencial y sin coste. Sobre la
+URL de un **perfil** devuelve HTTP 200 con:
+
+    author_name        el nombre visible REAL
+    author_url         la URL canonica
+    embed_product_id   el handle
+    embed_type         "profile"
+
+Y **nada mas**. Ni un seguidor.
+
+**El control que lo hace utilizable.** Un endpoint que responde 200 a cualquier
+cosa no prueba existencia. Se probo con dos handles inventados:
+
+    @sentinel_control_no_existe_0987654321   HTTP 400
+    @zzzz_handle_inexistente_qwerty_31082026 HTTP 400
+
+Asi que un 200 aqui **si es evidencia de que la cuenta existe**. Sin ese control
+esto no se podria usar como senal, y la leccion viene de
+META-COVERAGE-AUDIT-01, donde un clasificador dio «perfil» con confianza media
+para Meta, BBC y NASA.
+
+**Y el nombre visible no es un eco del handle**, que es lo que lo convierte en
+senal de identidad y no en un espejo:
+
+    @jotalloretv  ->  "Jota Lloret Valdivieso"
+    @yaku.perez   ->  "Yaku"
+
+### El HTML publico: 200 vacio, y ahi se para
+
+Tambien se midio. HTTP 200, **1.462 bytes**, sin Open Graph, sin
+`followerCount`, sin ninguna cifra. No es un bloqueo y no es un captcha: TikTok
+no sirve datos a un cliente que no ejecuta JavaScript.
+
+Sacar cifras de ahi exigiria ejecutar su JavaScript o firmar sus peticiones, y
+eso es **raspado evasivo**. No se hace, y no solo por lo legal: un dato asi no
+se puede citar en un informe, no se puede auditar y desaparece en cuanto la
+plataforma cambia algo.
+
+### Prueba real: 2 activos, 2 llamadas
+
+Los dos de mejor identidad resuelta segun el expediente y de candidatos
+distintos. Se verifico contra el inventario en lugar de reutilizar
+`@jotalloretv` por costumbre:
+
+    @yaku.perez    CUENTA_CONFIRMADA  200  displayName "Yaku"
+    @jotalloretv   CUENTA_CONFIRMADA  200  displayName "Jota Lloret Valdivieso"
+
+Persistido con el contrato social existente —`crearSnapshot` y
+`guardarSnapshots`, sin ningun modelo TikTok paralelo—, y con
+`followers: null`. **No 0.** Un 0 seria una medicion; esto es una ausencia.
+
+### Nuevo `tiktokAdapter.js`
+
+Deliberadamente pequeno: no es un adaptador a medio hacer, es del tamano de la
+unica via que existe. Estados propios —`CUENTA_CONFIRMADA`,
+`CUENTA_NO_EXISTE`, `RESPUESTA_INESPERADA`, `ERROR_PROVEEDOR`— y la lista de lo
+que no entrega **viaja con cada resultado**, no en un comentario.
+
+### Dos defectos encontrados por el camino
+
+**1 · `habilitaBenchmark` era demasiado laxa.** La regla miraba si habia
+ALGUNA celda `MEDIDO`. Al marcar `identidad` como medida, TikTok habria entrado
+al benchmark multicandidato **sin un seguidor, sin una publicacion y sin una
+metrica**.
+
+Ahora exige que lo medido sea una **cifra**: followers, publicaciones, views,
+likes, comments o shares. Saber que una cuenta existe es identidad, y la
+identidad no se compara. X, YouTube e Instagram no se mueven —las tres tienen
+metricas medidas sobre terceros— y TikTok se queda en false con el motivo
+explicado en el dato.
+
+**2 · La clave de los snapshots colapsaba el multi-activo.** Era
+`candidato + plataforma + instante`, sin el activo. Un candidato con dos cuentas
+en la misma plataforma observadas en la misma ejecucion producia **la misma
+entidad**, y el Lake devuelve la ultima version: el primer activo seguia escrito
+y dejaba de leerse.
+
+Y fallaba en silencio, porque la escritura devuelve `escrito: true`. Es el mismo
+defecto que META-THIRD-PARTY-REAL-02 encontro en
+`guardarDeclaracionesDeTipo`, en otro sitio. Lo encontro el test de multi-activo
+de este gate.
+
+No afecta solo a TikTok: cualquier candidato con dos cuentas de X observadas en
+una misma ejecucion estaba perdiendo una de la serie. La lectura es por prefijo
+`snapshot-<candidato>-`, asi que **lo ya escrito sigue leyendose y no hay que
+migrar nada**.
+
+### Techo real de cobertura
+
+    MEDIDO_PUBLICO     existencia, handle, displayName, URL canonica
+    NO_DISPONIBLE      followers, following, likes totales, media_count,
+                       publicaciones, views, likes, comments_count, shares,
+                       texto de comentarios, historico
+
+El techo no es «poco»: es **identidad sin metricas**. Sirve para confirmar que
+una cuenta existe y como se llama —util para sostener una atribucion—, y no
+sirve para medir a un candidato ni para compararlo con otro.
+
+### ¿SUFICIENTE PARA CAMPANA? **NO**
+
+Una campana necesita saber si un candidato crece, que publica y que rendimiento
+tiene. Por esta via no hay ni una cifra, asi que no se puede responder a nada de
+eso.
+
+**Requiere SOCIAL-PROVIDER-EVAL-01**, y con alcance exacto: followers,
+publicaciones con permalink y fecha, views, likes, comments_count, shares, texto
+de comentarios, acceso historico, limites de rate, estabilidad del contrato y
+condiciones de licencia que permitan citar el dato en un informe.
+
+No se contrato ni se integro nada.
+
+### Riesgos
+
+- **Dos atribuciones con correspondencia 0** siguen en el expediente sin
+  sostener. `oembed` puede ayudar: confirma existencia y nombre visible por
+  cuatro llamadas y cero dolares.
+- El techo de TikTok no lo mueve ningun trabajo de ingenieria nuestro. Lo mueve
+  una licencia.
+- La deuda del puerto de adaptadores de P-CAND-IG-ROUTE-01 sigue abierta.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -7063,6 +7227,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-31 | P-CAND-TIKTOK-01 | Factibilidad real de TikTok, 8 peticiones HTTP y 0 USD. Inventario: siete activos persistidos, uno por candidato, ninguno SIN_CUENTA y cero publicaciones previas; dos con correspondencia 0 —@lafondadecarrasco y @leomoralesordo— que quedan senalados como atribuciones sin sostener. Las tres APIs oficiales seguian sin aplicar y no se repitio la investigacion: Display API opera sobre la cuenta que inicia sesion, Research API es academica sin animo de lucro y Commercial Content API solo cubre publicidad; es la unica plataforma del grupo donde el problema no es un permiso que pedir ni un plan que pagar, porque el caso de uso no encaja en ningun programa. Lo nuevo es que la via publica SI entrega algo y quedo MEDIDA: oembed, endpoint publico documentado sin credencial y sin coste, devuelve sobre la URL de un perfil el nombre visible real, la URL canonica y el handle. Con control, que es lo que lo hace utilizable: dos handles inventados devolvieron HTTP 400, asi que un 200 es evidencia de existencia y no un 200 de cortesia —la leccion de META-COVERAGE-AUDIT-01, donde un clasificador dio «perfil» para Meta, BBC y NASA—. Y el nombre visible no es un eco del handle: @jotalloretv devuelve «Jota Lloret Valdivieso», lo que lo convierte en senal de identidad. El HTML publico tambien se midio: 200 con 1.462 bytes de armazon vacio, sin Open Graph y sin una cifra; no es bloqueo ni captcha, TikTok no sirve datos sin JavaScript, y sacar cifras de ahi exigiria ejecutar su JS o firmar sus peticiones, que es raspado evasivo y produce datos que no se pueden auditar ni citar. Prueba real sobre los dos activos de mejor identidad resuelta segun el expediente y de candidatos distintos, verificado contra el inventario en lugar de reutilizar @jotalloretv por costumbre: @yaku.perez y @jotalloretv, los dos CUENTA_CONFIRMADA con 200, persistidos con el contrato social existente y followers en null y no en 0. Nuevo tiktokAdapter.js deliberadamente pequeno, del tamano de la unica via que existe, con la lista de lo que no entrega viajando en cada resultado. Dos defectos encontrados por el camino: habilitaBenchmark miraba si habia ALGUNA celda MEDIDO, asi que marcar identidad habria metido TikTok al benchmark multicandidato sin un seguidor ni una metrica —ahora exige que lo medido sea una cifra, y X, YouTube e Instagram no se mueven porque las tres tienen metricas sobre terceros—; y la clave de los snapshots era candidato + plataforma + instante sin el activo, asi que un candidato con dos cuentas en la misma plataforma observadas en la misma ejecucion producia la MISMA entidad y el Lake devolvia solo la ultima, fallando en silencio con escrito true, el mismo defecto que META-THIRD-PARTY-REAL-02 encontro en guardarDeclaracionesDeTipo y que no afecta solo a TikTok: cualquier candidato con dos cuentas de X estaba perdiendo una de la serie; la lectura es por prefijo asi que no hay que migrar nada. Techo real: identidad sin metricas. Respuesta explicita a si basta para campana: NO —no hay una sola cifra, asi que no se puede decir si un candidato crece, que publica ni que rendimiento tiene—, y requiere SOCIAL-PROVIDER-EVAL-01 con alcance exacto: followers, publicaciones con permalink y fecha, views, likes, comments_count, shares, texto de comentarios, historico, limites de rate, estabilidad del contrato y licencia que permita citar el dato. No se contrato ni se integro nada. Cuatro aserciones antiguas cambiaron y ninguna se debilito: afirmaban que TikTok no tenia una sola medicion, y ahora tiene una y se declara cual es. 1165 pruebas, 0 fallos. Nueva §18-nonricies. |
 | 2026-08-31 | P-CAND-IG-ROUTE-01 | Gate corto: hacer utilizable por la ruta normal el motor de Instagram que el gate anterior dejo funcionando. `POST /observar` no pasaba `idParaBusinessDiscovery` ni `cuentasPropias` a `observarCandidato`, asi que por HTTP `observarInstagram` devolvia NO_EJECUTABLE mientras el mismo motor medía sin problema desde un script. La causa raiz es mas interesante que el sintoma: los dos parametros no estan en el expediente porque se derivan del token, y el gate que construyo el motor los resolvio a mano en su propio script. Las 1101 pruebas en verde no lo vieron porque todas las suites de servicio los pasaban a mano tambien: probaban el motor, y el cableado no tenia prueba —un fallo que solo existe en la costura entre dos piezas no lo ve ninguna prueba que construya las piezas por separado—. Nuevo `metaObservationContext.js` con estados propios (RESUELTO, NO_REQUERIDO, SIN_CREDENCIAL, SIN_VINCULO_INSTAGRAM, ERROR), resuelto en el BACKEND porque los dos datos se derivan del token y hacerlo en el cliente exigiria mandarle la credencial de Meta al navegador; una sola llamada y solo si la ejecucion incluye Instagram, con test que fija que pedir me/accounts para observar YouTube no ocurre. Un activo personal declarado ya no gasta llamada, con la guarda en `observarInstagram` y no en la ruta para que alcance a todos los llamantes, y colocada ANTES del control de idParaBusinessDiscovery porque que una cuenta sea personal no depende de nuestra configuracion. Nuevo campo `procedenciaDelEstado`: el mismo NO_SOPORTADO_PERSONAL puede venir de una declaracion del analista (DECLARADA) o de un error de Meta (MEDIDA), y no valen lo mismo. La respuesta HTTP ya distingue tercero de propio —antes las dos eran «OBSERVADA» y en pantalla medir a un candidato y medir nuestra propia cuenta se veian igual— con alcanceDeLaMedicion, notaAlcance, procedenciaDelEstado y assetType. Defecto encontrado de paso: el lote de publicaciones se guardaba con provider youtube_data fijo, asi que un lote de Instagram quedaba etiquetado como de YouTube; ahora se deriva de lo observado. Nueva suite `igRoute.test.mjs` con 30 comprobaciones que monta el router de verdad y le habla por HTTP en un puerto efimero, simulando solo graph.facebook.com: es la prueba que recorre la costura, y fija las tres distinciones sobre una carga identica para las dos cuentas para que el alcance no pueda salir de la respuesta, que multi-asset sigue en pie, que la cuenta personal recibe cero llamadas y que observar dos veces no duplica. Prueba real por HTTP con Pedro Palacios: 200, MEDIDO_TERCERO, 9.718 seguidores, 5 publicaciones, persistido, con idempotencia comprobada ENTRE gates —firstObservedAt sigue en 15:53:08.897Z del gate anterior, lastObservedAt avanza a 17:06:16.410Z, 5 publicaciones sin duplicar, 4 lotes acumulados—. Deuda declarada y NO corregida: el puerto de adaptadores pregunta por estaConfigurado(), que significa «hay token de Instagram Login», mientras business_discovery viaja con el de Facebook Login; se fijo asi a proposito en META-FB-LOGIN-SETUP-01 y cambiarlo es una decision sobre familias de credenciales, no parte de este cableado. Hoy no muerde porque el .env tiene las dos, y morderia el dia que alguien despliegue con solo el token que esta via necesita. Estado de interfaz: BACKEND ROUTE FUNCIONAL y UI REAL NO EXPUESTA —el frontend no llama a /observar, y el boton «Observar cuentas» de ProjectsModule.jsx llama a /inteligencia, que es otro motor—; no se toco porque es alcance de un gate de UX. 1131 pruebas, 0 fallos, 2 llamadas Meta. Nueva §18-octricies. |
 | 2026-08-31 | P-CAND-IG-MULTICANDIDATO-01 | Instagram pasa de motor a datos: primera medicion multicandidato de terceros, cuatro llamadas Meta en total. Antes del gate se determino que el PASO 5 ya estaba hecho y no constaba en ninguna parte —ni commit, ni log, ni este documento—: `debug_token` mostro un token emitido el 2026-08-31T05:06:31Z que caduca el 2026-10-30, unos 60 dias, con acceso a datos hasta el 2026-11-29 y los cinco permisos necesarios. No se regenero, y la caducidad queda escrita aqui porque vive en Meta y no en el repositorio, que es como se pierde. El contrato sigue siendo FACEBOOK_USER_ACCESS_TOKEN y no se creo variable nueva. De los doce activos de Instagram solo los tres elegibles gastaron llamada; los nueve declarados INSTAGRAM_PERSONAL no se consultaron porque `elegibilidadMeta` ya afirma que ninguna via oficial los abre y la llamada solo habria confirmado el contrato, asi que quedan NO_SOPORTADO_PERSONAL con procedencia DECLARADA y no MEDIDA, con la etiqueta puesta. Resultado: @pedropalaciosu y @yakuperezg MEDIDO_TERCERO con 9.718 y 83.233 seguidores, y @jotalloretv MEDIDO_PROPIO_AUTORIZADO con 10.822 porque aparece en me/accounts —la respuesta de Meta es identica a la de un tercero, mismo 200 y mismos campos, y sin esa comprobacion previa el gate habria contado tres terceros donde hay dos—. Quince publicaciones con permalink, timestamp y metricas; likes 12 DISPONIBLE y 3 NO_DISPONIBLE porque tres publicaciones de Lloret no traen like_count y quedan ausentes en lugar de en cero; comments_count medido en las quince, con dos ceros reales en Palacios; comments_text sigue NO_SOPORTADO por esta via hasta PPCA; reach, impressions, saved y shares no se pidieron por ser OWNER_INSIGHT. Dedup verificado sin gastar Meta reescribiendo el mismo lote: los lotes suben de 3 a 4 y las publicaciones se quedan en 5 con publicationId y evidenceId unicos. Instagram deja de ser NO_PROBADO en los siete candidatos y queda 1 MEDIDO, 1 PARCIAL, 1 MEDIDO_PROPIO y 4 NO_SOPORTADO, con las dos reglas del gate anterior cumplidas sobre datos reales: Yaku PARCIAL con uno de dos activos y Lloret MEDIDO_PROPIO sin contar como cobertura. X y YouTube se reconstruyeron de lo ya persistido en el Lake, sin volver a preguntar. habilitaBenchmark("instagram") sigue TRUE y este gate no lo cambio: lo respaldo, porque lo que antes sostenia un tercero genuino ahora lo sostienen dos. Riesgo estructural declarado: 9 de 12 activos son personales y ninguna revision de Meta los abre, asi que el techo de esta via son 3 de 12 y hoy se alcanzo entero. Detectado y no tocado: la ruta POST /observar no pasa idParaBusinessDiscovery ni cuentasPropias, asi que por HTTP Instagram devuelve NO_EJECUTABLE y falta cablear dos parametros. 1101 pruebas, 0 fallos. Nueva §18-septricies. |
 | 2026-08-30 | P-CAND-SOCIAL-COVERAGE-01 | El gate iba a pasar Instagram de prueba a operacion sobre los siete candidatos y no llego a ejecutarse: el token de Facebook caduco entre gates, por cincuenta y seis segundos, porque los del Graph API Explorer viven alrededor de una hora y las pruebas anteriores duraban minutos. Es un hallazgo de operacion y no de arquitectura, y produjo la distincion que faltaba: CREDENCIAL_EXPIRADA no es CREDENCIAL_RECHAZADA, porque una manda a revisar de donde salio el token y la otra a conseguir uno de larga duracion —regenerar otro corto caduca igual—. Nuevo tokenDeLargaDuracion() para el intercambio a ~60 dias, que exige META_APP_ID y META_APP_SECRET y no intenta la llamada si faltan. Lo que si quedo construido: observarInstagram bajo el mismo contrato que observarX y observarYouTube, con una sola llamada por activo porque Meta permite anidar la muestra en el propio fields; el campo alcanceDeLaMedicion que separa MEDIDO_TERCERO de MEDIDO_PROPIO_AUTORIZADO y que NO sale de la respuesta de Meta —sobre una cuenta propia y una ajena la respuesta es identica, y ahi estuvo el riesgo del gate anterior— sino de cruzar el handle con me/accounts; el estado NO_SOPORTADO_PERSONAL, porque business_discovery solo responde sobre cuentas Business o Creator y leer ese error como CUENTA_NO_RESUELTA diria «no encontramos la cuenta» cuando la verdad es que la cuenta esta ahi y la via no la abre; Instagram registrado en el puerto de adaptadores, donde una sola funcion cumple las cuatro capacidades; matrizSocialDelProyecto con siete estados de celda que se niegan a colapsar en «sin datos», con dos reglas fijadas por test —dos de tres activos medidos es PARCIAL y no MEDIDO, y MEDIDO_PROPIO no cuenta como cobertura—; y evidenceId derivado del permalink, estable entre ejecuciones, que es lo que impide duplicar una publicacion al reobservar. Sobre Facebook se determino la via exacta: de las tres alternativas que Meta nombraba en su error, pages_read_engagement no aplica a terceros y Page Public Metadata Access esta sustituida, asi que solo queda Page Public Content Access, que exige App Review y Business Verification verbatim y en modo desarrollo solo alcanza Paginas cuyo administrador tenga rol en la app —exactamente lo medido—. No hay ningun cambio de configuracion que abra terceros sin revision. Y un dato que cambia la prioridad: PPCA habilita /page-post/comments, o sea texto de comentarios publicos, que Instagram no entrega; PPCA no es «tambien Facebook», es la condicion para que Comments Intelligence tenga fuente. Preparado docs/META-FB-PUBLIC-ACCESS-REQUEST.md sin enviar nada. 1101 pruebas, 0 fallos, 1 llamada Meta. Nueva §18-sextricies. |

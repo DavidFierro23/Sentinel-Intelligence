@@ -483,10 +483,23 @@ const TIKTOK = {
   ],
 
   capacidades: {
+    /*
+      MEDIDO en P-CAND-TIKTOK-01, no documentado: `oembed` es un
+      endpoint publico y sin credencial que sobre la URL de un
+      PERFIL devuelve 200 con el nombre visible real de la cuenta
+      —@jotalloretv -> «Jota Lloret Valdivieso»—, la URL canonica
+      y el handle.
+
+      Se puede leer como existencia porque hay control: dos
+      handles inventados devolvieron 400.
+
+      Y NO habilita el benchmark: no trae una sola cifra. La
+      regla se endurecio en este gate para que no pudiera.
+    */
     identidad: c(
       DISP,
-      DOC,
-      "el handle se lee de la URL publica con SD-1A, sin API. Identifica la cuenta; no da ningun dato de ella"
+      MEDIDO,
+      "oembed publico devuelve nombre visible, URL canonica y handle, sin credencial y sin coste. Identifica la cuenta y confirma que existe —400 sobre handles inventados—; no da ninguna metrica ni corrobora de quien es"
     ),
     cuenta: c(PROV, DOC, "Display API exige el login del titular; Research API no es elegible"),
     followers: c(PROV, DOC, "sin via oficial para terceros en un uso comercial"),
@@ -505,9 +518,44 @@ const TIKTOK = {
     )
   },
 
+  /*
+    Medido de verdad y sobre terceros: las dos cuentas probadas
+    son de candidatos que no administramos. Aun asi el benchmark
+    sigue en false, porque lo medido es identidad y no cifras.
+  */
+  viaPublicaMedida: {
+    endpoint: "https://www.tiktok.com/oembed",
+    credencial: null,
+    costePorLlamada: 0,
+    gate: "P-CAND-TIKTOK-01",
+
+    entrega: ["displayName", "urlCanonica", "handle", "existencia"],
+
+    noEntrega: [
+      "followers",
+      "following",
+      "likes_totales",
+      "media_count",
+      "publicaciones",
+      "views",
+      "likes",
+      "comments_count",
+      "shares",
+      "comments_text",
+      "historico"
+    ],
+
+    control:
+      "dos handles inventados devolvieron HTTP 400, asi que un 200 es evidencia de existencia y no un 200 de cortesia",
+
+    htmlPublico:
+      "medido tambien: HTTP 200 con 1.462 bytes de armazon vacio, sin Open Graph y sin cifras. No es bloqueo ni captcha; TikTok no sirve datos a un cliente sin JavaScript. Sacar cifras de ahi seria raspado evasivo y no se hace."
+  },
+
   rutaConcreta: [
     "Solicitar acceso a la Research API declarando el uso. Requiere afiliacion y aprobacion, y su ambito es academico.",
-    "O bien contratar un proveedor con licencia: ver TIKTOK-PROVIDER-EVAL-01."
+    "O bien contratar un proveedor con licencia: ver TIKTOK-PROVIDER-EVAL-01.",
+    "Mientras tanto, oembed sostiene identidad y URL verificable sin coste: es poco, es real y es citable."
   ]
 };
 
@@ -1690,6 +1738,31 @@ Mientras esto sea una funcion y no una costumbre, nadie puede
 saltarselo sin verlo.
 ===========================================================
 */
+/*
+  LAS CAPACIDADES QUE SOSTIENEN UN BENCHMARK.
+
+  P-CAND-TIKTOK-01 encontro el agujero. La regla miraba si habia
+  ALGUNA celda MEDIDO, y en TikTok se midio de verdad una cosa:
+  que la cuenta existe y como se llama, por oembed. Con la regla
+  anterior eso habria puesto habilitaBenchmark("tiktok") en true
+  sin un solo seguidor, sin una publicacion y sin una metrica.
+
+  Comparar candidatos exige CIFRAS. Saber que una cuenta existe
+  es identidad, y la identidad no se compara.
+
+  X, YouTube e Instagram no se mueven: las tres tienen metricas
+  medidas sobre terceros.
+*/
+const CAPACIDADES_DE_BENCHMARK = Object.freeze([
+  "followers",
+  "publicaciones",
+  "views",
+  "likes",
+  "comments",
+  "shares"
+]);
+
+
 export function habilitaBenchmark(plataformaId) {
   const p = PLATAFORMAS.find((x) => x.plataformaId === plataformaId);
 
@@ -1701,7 +1774,17 @@ export function habilitaBenchmark(plataformaId) {
   }
 
   const terceros = Object.entries(p.capacidades).filter(
-    ([, c]) => celdaDe(c) === ESTADOS_CELDA.MEDIDO
+    ([id, c]) =>
+      celdaDe(c) === ESTADOS_CELDA.MEDIDO && CAPACIDADES_DE_BENCHMARK.includes(id)
+  );
+
+  /*
+    Se cuentan aparte para poder explicar el caso de TikTok sin
+    que parezca que no se midio nada.
+  */
+  const medidasNoComparables = Object.entries(p.capacidades).filter(
+    ([id, c]) =>
+      celdaDe(c) === ESTADOS_CELDA.MEDIDO && !CAPACIDADES_DE_BENCHMARK.includes(id)
   );
 
   const propias = Object.values(p.capacidades).filter(
@@ -1716,10 +1799,24 @@ export function habilitaBenchmark(plataformaId) {
     };
   }
 
+  if (medidasNoComparables.length) {
+    return {
+      habilita: false,
+      capacidades: [],
+      medidasSobreCuentaPropia: propias.length,
+      medidasNoComparables: medidasNoComparables.map(([k]) => k),
+
+      motivo: `Hay ${medidasNoComparables.length} capacidad(es) medidas sobre terceros —${medidasNoComparables
+        .map(([k]) => k)
+        .join(", ")}— y ninguna es una cifra. Comparar candidatos exige metricas: saber que una cuenta existe es identidad, y la identidad no se compara.`
+    };
+  }
+
   return {
     habilita: false,
     capacidades: [],
     medidasSobreCuentaPropia: propias.length,
+    medidasNoComparables: [],
     motivo: propias.length
       ? `Solo hay mediciones sobre nuestra propia cuenta (${propias.length}). Ningun candidato nos va a dar un token, asi que eso no sirve para observarlos.`
       : "No hay ninguna capacidad medida sobre terceros."

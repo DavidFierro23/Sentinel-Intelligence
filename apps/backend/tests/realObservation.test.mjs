@@ -631,6 +631,13 @@ await t("cada celda declara COMO se sabe lo que dice", () => {
   llaman medidas las plataformas contra las que se ejecuto de
   verdad. Meta y TikTok nunca se han tocado.
 */
+/*
+  ACTUALIZADO EN P-CAND-TIKTOK-01: TikTok se suma a las
+  plataformas con medicion, y por una llamada real —oembed
+  publico, con control de 400 sobre handles inventados—, no por
+  documentacion. El invariante no cambia: solo aparece aqui lo
+  que se ejecuto. Facebook sigue sin ejecutarse y sigue en cero.
+*/
 await t("solo las plataformas ejecutadas tienen capacidades medidas", () => {
   const m = scm.matrizDeCapacidades();
 
@@ -640,7 +647,28 @@ await t("solo las plataformas ejecutadas tienen capacidades medidas", () => {
     .sort()
     .join(",");
 
-  return conMedidas === "instagram,x,youtube";
+  return conMedidas === "instagram,tiktok,x,youtube";
+});
+
+/*
+  Y lo que impide que sumarse a esa lista signifique demasiado:
+  lo unico medido de TikTok es identidad, que no es una cifra.
+*/
+await t("de TikTok se midio identidad y nada mas", () => {
+  const tk = scm
+    .matrizDeCapacidades()
+    .plataformas.find((p) => p.plataformaId === "tiktok");
+
+  const medidas = Object.entries(tk.capacidades)
+    .filter(([, c]) => c.verificacion === "MEDIDO_EN_PRODUCCION")
+    .map(([k]) => k);
+
+  return (
+    medidas.length === 1 &&
+    medidas[0] === "identidad" &&
+    /* Ni una metrica, y por tanto sin benchmark. */
+    scm.habilitaBenchmark("tiktok").habilita === false
+  );
 });
 
 /*
@@ -667,7 +695,14 @@ await t("estan medidos sobre TERCEROS YouTube, X e Instagram", () => {
     .sort()
     .join(",");
 
-  return conTerceros === "instagram,x,youtube";
+  /*
+    P-CAND-TIKTOK-01: TikTok entra en esta lista porque las dos
+    cuentas probadas son de candidatos que no administramos. Que
+    la medicion sea de un tercero y que sirva para comparar son
+    dos cosas distintas, y la segunda la fija
+    `habilitaBenchmark`.
+  */
+  return conTerceros === "instagram,tiktok,x,youtube";
 });
 
 /*
@@ -702,11 +737,24 @@ await t("en Instagram lo propio y lo de terceros no se mezclan", () => {
   );
 });
 
-await t("Facebook y TikTok siguen sin una sola medicion", () => {
+/*
+  ACTUALIZADO EN P-CAND-TIKTOK-01. TikTok ya tiene UNA medicion y
+  Facebook sigue sin ninguna, que es la diferencia entre «se
+  probo y da poco» y «no se ha probado».
+*/
+await t("Facebook sigue sin una sola medicion", () => {
   const m = scm.matrizDeCapacidades();
 
-  return ["facebook", "tiktok"].every(
-    (id) => m.plataformas.find((p) => p.plataformaId === id).medidas === 0
+  return m.plataformas.find((p) => p.plataformaId === "facebook").medidas === 0;
+});
+
+await t("TikTok tiene exactamente una, y no habilita nada", () => {
+  const m = scm.matrizDeCapacidades();
+
+  return (
+    m.plataformas.find((p) => p.plataformaId === "tiktok").medidas === 1 &&
+    scm.habilitaBenchmark("tiktok").habilita === false &&
+    scm.habilitaBenchmark("facebook").habilita === false
   );
 });
 
@@ -813,11 +861,19 @@ await t("el resumen cuenta las medidas de las tres plataformas probadas", () => 
     `url_verificable` paso de documentada a medida cuando el
     `permalink` del tercero llego en la respuesta.
   */
+  /*
+    P-CAND-TIKTOK-01 suma 1 de TikTok: `identidad`, por oembed
+    publico. El total tiene que cuadrar con las CUATRO, porque un
+    resumen que se queda corto esconde justo la medicion mas
+    pequena.
+  */
   return (
     de("youtube") === 9 &&
     de("x") === 9 &&
     de("instagram") === 9 &&
-    m.resumen.medidasEnProduccion === de("youtube") + de("x") + de("instagram")
+    de("tiktok") === 1 &&
+    m.resumen.medidasEnProduccion ===
+      de("youtube") + de("x") + de("instagram") + de("tiktok")
   );
 });
 

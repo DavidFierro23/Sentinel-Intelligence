@@ -2734,7 +2734,34 @@ export async function guardarSnapshots(proyectoId, candidatoId, snapshots = []) 
   for (const snap of snapshots) {
     const cuando = snap.capturedAt || new Date().toISOString();
 
-    const entidad = `${PREFIJO_SNAPSHOT}${candidatoId}-${snap.platform}-${cuando}`;
+    /*
+      ---------------------------------------------------------
+      LA CLAVE TIENE QUE LLEVAR EL ACTIVO
+      ---------------------------------------------------------
+
+      Era candidato + plataforma + instante, y eso COLAPSA el
+      multi-activo: un candidato con dos cuentas en la misma
+      plataforma observadas en la misma ejecucion producia la
+      MISMA entidad, y el Lake devuelve la ultima version. El
+      primer activo seguia escrito y dejaba de leerse.
+
+      Y fallaba en silencio, porque la escritura devuelve
+      `escrito: true`. Es el mismo defecto que
+      META-THIRD-PARTY-REAL-02 encontro en
+      `guardarDeclaracionesDeTipo`, en otro sitio.
+
+      Lo encontro el test de multi-activo de P-CAND-TIKTOK-01.
+
+      La lectura es por prefijo `snapshot-<candidato>-`, asi que
+      los snapshots ya escritos con la clave antigua siguen
+      leyendose: no hace falta migrar nada.
+      ---------------------------------------------------------
+    */
+    const claveActivo = String(snap.accountId || "sin-activo")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_");
+
+    const entidad = `${PREFIJO_SNAPSHOT}${candidatoId}-${snap.platform}-${claveActivo}-${cuando}`;
 
     try {
       const r = await escribirEnLake(
