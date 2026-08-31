@@ -1,0 +1,26 @@
+{
+  "_meta": {
+    "TEST_FIXTURE": true,
+    "NO_REAL_DATA": true,
+    "proposito": "Forma esperada de un video de TikTok devuelto por un proveedor externo, con los nombres de campo distintos a los de Facebook a proposito: es lo que obliga a que el mapa de campos exista.",
+    "gate": "SOCIAL-PROVIDER-REAL-01-PREP"
+  },
+  "video_id": "7000000000000000000",
+  "share_url": "https://www.tiktok.com/@cuenta.sintetica/video/7000000000000000000",
+  "create_time": "2026-08-25T21:10:33+0000",
+  "desc": "Caption sintetico de video de prueba.",
+  "stats": {
+    "play_count": 12500,
+    "digg_count": 340,
+    "comment_count": 21,
+    "share_count": 9
+  },
+  "author": {
+    "unique_id": "cuenta.sintetica",
+    "nickname": "Cuenta Sintetica",
+    "follower_count": 83000,
+    "following_count": 120,
+    "heart_count": 990000,
+    "video_count": 2200
+  }
+}

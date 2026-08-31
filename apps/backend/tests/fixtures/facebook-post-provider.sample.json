@@ -1,0 +1,24 @@
+{
+  "_meta": {
+    "TEST_FIXTURE": true,
+    "NO_REAL_DATA": true,
+    "proposito": "Forma esperada de una publicacion de Page devuelta por un proveedor externo. Los valores son sinteticos: no corresponden a ningun candidato ni a ninguna Page real.",
+    "gate": "SOCIAL-PROVIDER-REAL-01-PREP",
+    "advertencia": "Si algun dia esto se parece a un dato real, esta mal: los fixtures no se rellenan con produccion."
+  },
+  "post_id": "111122223333_444455556666",
+  "permalink": "https://www.facebook.com/000000000000000/posts/000000000000000",
+  "published_at": "2026-08-20T15:00:00+0000",
+  "text": "Texto sintetico de publicacion de prueba.",
+  "content_type": "photo",
+  "reactions": 340,
+  "comments_count": 12,
+  "shares": 7,
+  "video_views": null,
+  "page": {
+    "page_id": "111122223333",
+    "name": "Pagina Sintetica de Prueba",
+    "username": "pagina.sintetica.prueba",
+    "followers": 55000
+  }
+}

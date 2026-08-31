@@ -1,0 +1,47 @@
+{
+  "_meta": {
+    "TEST_FIXTURE": true,
+    "NO_REAL_DATA": true,
+    "proposito": "Forma esperada de un lote de comentarios devuelto por un proveedor externo. Autores y textos sinteticos.",
+    "gate": "SOCIAL-PROVIDER-REAL-01-PREP",
+    "nota": "El segundo comentario NO trae texto a proposito: sirve para fijar que una ausencia no se convierte en cadena vacia ni en 0."
+  },
+  "post_id": "111122223333_444455556666",
+  "post_permalink": "https://www.facebook.com/000000000000000/posts/000000000000000",
+  "comments_count": 12,
+  "comments": [
+    {
+      "comment_id": "cmt-sintetico-0001",
+      "permalink": "https://www.facebook.com/cmt-sintetico-0001",
+      "published_at": "2026-08-20T16:00:00+0000",
+      "text": "Comentario sintetico numero uno.",
+      "author_id": "usuario-sintetico-a",
+      "author_name": "Usuario Sintetico A",
+      "likes": 4,
+      "reply_count": 1,
+      "parent_comment_id": null
+    },
+    {
+      "comment_id": "cmt-sintetico-0002",
+      "permalink": "https://www.facebook.com/cmt-sintetico-0002",
+      "published_at": "2026-08-20T16:05:00+0000",
+      "text": null,
+      "author_id": "usuario-sintetico-b",
+      "author_name": "Usuario Sintetico B",
+      "likes": null,
+      "reply_count": null,
+      "parent_comment_id": null
+    },
+    {
+      "comment_id": "cmt-sintetico-0003",
+      "permalink": "https://www.facebook.com/cmt-sintetico-0003",
+      "published_at": "2026-08-20T16:10:00+0000",
+      "text": "Respuesta sintetica al primero.",
+      "author_id": "usuario-sintetico-c",
+      "author_name": "Usuario Sintetico C",
+      "likes": 0,
+      "reply_count": 0,
+      "parent_comment_id": "cmt-sintetico-0001"
+    }
+  ]
+}
