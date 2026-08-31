@@ -989,6 +989,26 @@ export default function MediaPieceModule() {
           </Seccion>
 
           <Seccion icono={MapPin} titulo="Territorio">
+            {/*
+              El ambito no se pide al usuario: lo declara el
+              proyecto. Se muestra su NOMBRE, nunca el id tecnico.
+            */}
+            {r.ambito?.nombre ? (
+              <p
+                style={{
+                  margin: "0 0 10px",
+                  fontSize: "0.72rem",
+                  color: "var(--sentinel-texto-tenue)",
+                  lineHeight: 1.5
+                }}
+              >
+                Ámbito del proyecto: <strong style={{ color: "var(--sentinel-texto-suave)" }}>{r.ambito.nombre}</strong>
+                {r.ambito.procedencia === "declarado_en_el_proyecto"
+                  ? " — declarado en el proyecto, no inferido."
+                  : ""}
+              </p>
+            ) : null}
+
             <div style={{ marginBottom: "8px" }}>
               <Pastilla
                 texto={r.territorio?.rotulo || "SIN DATO"}

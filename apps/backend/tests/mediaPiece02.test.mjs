@@ -1085,3 +1085,62 @@ test("demo-01: X no dispara el fallback web buscando un titulo que no existe", a
   */
   assert.equal(titulo.estado, ESTADOS_CAMPO.NO_DISPONIBLE);
 });
+
+
+/* --------------------------------------------------------
+   13. AMBITO DERIVADO DEL PROYECTO (MEDIA-REAL-DEMO-01)
+-------------------------------------------------------- */
+
+test("ambito: se deriva del territorio que el proyecto declara", async () => {
+  const { resolverAmbito } = await import("../services/geo/territoryRegistry.js");
+
+  /*
+    El motor NO codifica ningun territorio: traduce lo que el
+    proyecto declara contra el registro. Con otro proyecto sale
+    otro ambito, y sin declaracion no sale ninguno.
+  */
+  const r = resolverAmbito({ pais: "Ecuador", provincia: "Azuay", canton: "Cuenca" });
+
+  assert.equal(r.reconocido, true);
+  assert.ok(r.unidad?.id, "debe devolver una unidad del registro");
+  assert.equal(r.resolucion, "canton");
+});
+
+
+test("ambito: un territorio no declarado no se inventa", async () => {
+  const { resolverAmbito } = await import("../services/geo/territoryRegistry.js");
+
+  const vacio = resolverAmbito({});
+
+  assert.equal(vacio.reconocido, false);
+  assert.equal(vacio.unidad, null);
+  assert.ok(vacio.motivo);
+
+  const inexistente = resolverAmbito({ canton: "Ciudad Que No Existe" });
+
+  assert.equal(inexistente.reconocido, false);
+  assert.equal(inexistente.unidad, null);
+});
+
+
+test("ambito: el motor de media no codifica ningun territorio", async () => {
+  const { readFile } = await import("node:fs/promises");
+
+  /*
+    El ambito debe llegar del proyecto o del analista. Si el
+    nombre de una ciudad aparece en el CODIGO del orquestador, el
+    modulo dejaria de servir para otro proyecto.
+  */
+  const src = await readFile(
+    new URL("../services/media/analyzePiece.js", import.meta.url),
+    "utf8"
+  );
+
+  const codigo = src
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/.*$/gm, "");
+
+  assert.ok(!/cuenca/i.test(codigo), "no debe codificar una ciudad");
+  assert.ok(!/azuay/i.test(codigo), "no debe codificar una provincia");
+  assert.ok(!/ec-azuay/i.test(codigo), "no debe codificar un id de unidad");
+});

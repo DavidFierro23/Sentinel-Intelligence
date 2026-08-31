@@ -33,7 +33,9 @@ import {
   DISPONIBILIDAD
 } from "./pieceContracts.js";
 
-import { obtenerCandidato } from "../projects/projectStore.js";
+import { obtenerCandidato, obtenerProyecto } from "../projects/projectStore.js";
+
+import { resolverAmbito } from "../geo/territoryRegistry.js";
 
 import { enriquecerPieza } from "./pieceEnrichment.js";
 
@@ -228,6 +230,88 @@ export async function analizarPieza(entrada = {}, opciones = {}) {
   }
 
   if (candidatoError) limitaciones.push(candidatoError);
+
+  /*
+    =========================================================
+    2b. AMBITO TERRITORIAL DEL PROYECTO
+    =========================================================
+
+    GEO-1 detecta el toponimo "Cuenca" en el texto y se NIEGA a
+    resolverlo sin contexto, porque es ambiguo: el registro
+    declara `requiereContexto: ["azuay","ecuador"]`. Esa negativa
+    es correcta y no se toca.
+
+    Lo que faltaba era darle el contexto que el proyecto YA
+    declara. `obtenerProyecto` devuelve pais, provincia y canton
+    —escritos por el analista al crearlo— y
+    `territoryRegistry.resolverAmbito` ya sabe traducirlos a una
+    unidad del registro.
+
+    Asi que el ambito no se pide al usuario ni se codifica aqui:
+    se DERIVA de lo que el proyecto ya sabe de si mismo. En otro
+    proyecto saldra otro ambito, y si el proyecto no declara
+    territorio no sale ninguno.
+
+    Un `ambitoId` explicito del llamador tiene prioridad: es una
+    declaracion del analista y manda sobre la derivacion.
+    =========================================================
+  */
+  let ambito = null;
+
+  if (entrada.ambitoId) {
+    ambito = {
+      unidadId: entrada.ambitoId,
+      nombre: null,
+      procedencia: "declarado_en_la_consulta",
+      razones: ["El ambito llego explicito en la peticion."]
+    };
+  } else if (entrada.projectId) {
+    try {
+      const proy = await obtenerProyecto(entrada.projectId);
+
+      if (proy?.canton || proy?.provincia || proy?.pais) {
+        const r = resolverAmbito({
+          pais: proy.pais,
+          provincia: proy.provincia,
+          canton: proy.canton
+        });
+
+        if (r?.reconocido && r.unidad?.id) {
+          ambito = {
+            unidadId: r.unidad.id,
+            nombre: r.unidad.nombre,
+            resolucion: r.resolucion,
+            procedencia: "declarado_en_el_proyecto",
+
+            razones: [
+              `El proyecto declara ${[proy.pais, proy.provincia, proy.canton]
+                .filter(Boolean)
+                .join(" / ")}.`,
+              `El registro territorial lo reconoce como "${r.unidad.nombre}" (${r.resolucion}).`
+            ]
+          };
+        } else {
+          ambito = {
+            unidadId: null,
+            procedencia: "no_resuelto",
+            motivo:
+              r?.motivo ||
+              "El territorio declarado por el proyecto no corresponde a ninguna unidad del registro."
+          };
+
+          limitaciones.push(
+            `Ambito territorial no resuelto desde el proyecto: ${ambito.motivo} La pieza se ubicara solo si su texto trae un toponimo inequivoco.`
+          );
+        }
+      }
+    } catch (error) {
+      limitaciones.push(
+        `No se pudo leer el ambito del proyecto: ${error?.message || "error desconocido"}.`
+      );
+    }
+  }
+
+  const ambitoId = ambito?.unidadId || null;
 
   /*
     §C: se declara explicitamente que el contexto es opcional y
@@ -598,7 +682,7 @@ export async function analizarPieza(entrada = {}, opciones = {}) {
       })),
       nombreCandidato: candidato?.nombre || null,
       nombreEmisor: emisor?.nombre || null,
-      ambito: entrada.ambitoId || null,
+      ambito: ambitoId,
       consultas: (planConsultas.consultas || []).map((c) => c.texto)
     });
 
@@ -620,7 +704,7 @@ export async function analizarPieza(entrada = {}, opciones = {}) {
     territorio = territorioDePieza({
       pieza,
       piezasAmplificacion: piezasAmp,
-      ambitoId: entrada.ambitoId || null
+      ambitoId
     });
 
     if (!territorio.tieneEvidenciaTerritorial) {
@@ -742,7 +826,8 @@ export async function analizarPieza(entrada = {}, opciones = {}) {
       url: entrada.url,
       candidateId: entrada.candidateId || null,
       projectId: entrada.projectId || null,
-      ambitoId: entrada.ambitoId || null,
+      ambitoId,
+      ambitoDeclaradoEnLaConsulta: entrada.ambitoId || null,
       dryRun,
       sinBusquedaWeb: sinBusqueda
     },
@@ -764,6 +849,7 @@ export async function analizarPieza(entrada = {}, opciones = {}) {
     estadoLecturaMetricas: metricasEstado,
 
     contextoAnalitico,
+    ambito,
     candidato: relacionCandidato,
 
     amplificacion,
