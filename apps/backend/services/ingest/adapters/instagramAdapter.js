@@ -59,9 +59,9 @@ export const PRIORIDAD = 6;
   de terceros. Cual de los dos responde depende de como se genero
   el token, y eso se comprueba, no se supone.
 */
-const BASE_IG = "https://graph.instagram.com";
+export const BASE_IG = "https://graph.instagram.com";
 
-const BASE_FB = "https://graph.facebook.com";
+export const BASE_FB = "https://graph.facebook.com";
 
 const VERSION = process.env.META_API_VERSION || "v23.0";
 
@@ -239,6 +239,95 @@ cuenta se presente el dia de manana como si fuera un dato
 publico de un candidato.
 -----------------------------------------------------------
 */
+/*
+===========================================================
+PAGINA DE FACEBOOK DE UN TERCERO
+===========================================================
+
+Lectura directa de una Page por su nombre de vanidad. Es la
+llamada mas simple que existe para la pregunta «podemos ver
+hoy la pagina de un candidato», y por eso es la que conviene
+hacer: si falla, falla por la razon estructural y no por la
+complejidad de la peticion.
+
+Vive en `graph.facebook.com`, que es el host de Page Public
+Content Access.
+===========================================================
+*/
+export async function paginaDeTercero(identificador, opciones = {}) {
+  if (!estaConfigurado()) {
+    return { estado: "SIN_CREDENCIAL", pagina: null, llamadas: 0 };
+  }
+
+  const limpio = String(identificador || "").trim().replace(/^@+/, "");
+
+  if (!limpio) {
+    return {
+      estado: "OK",
+      pagina: null,
+      llamadas: 0,
+      motivo: "hace falta el identificador o el nombre de vanidad de la pagina"
+    };
+  }
+
+  const campos =
+    opciones.campos ||
+    "id,name,username,link,followers_count,fan_count,is_published,verification_status";
+
+  const r = await pedir(
+    BASE_FB,
+    `/${limpio}`,
+    { fields: campos },
+    { ...opciones, etiqueta: "Facebook Page" }
+  );
+
+  if (!r.ok) {
+    return {
+      estado: r.estado,
+      pagina: null,
+      llamadas: 1,
+      httpStatus: r.httpStatus,
+      endpoint: r.endpoint,
+      motivo: r.motivo,
+      codigo: r.codigo,
+      subcodigo: r.subcodigo,
+      tipo: r.tipo,
+      objetivo: limpio,
+      observadoEn: new Date().toISOString()
+    };
+  }
+
+  return {
+    estado: "OK",
+    llamadas: 1,
+    httpStatus: r.httpStatus,
+    endpoint: r.endpoint,
+    objetivo: limpio,
+    observadoEn: new Date().toISOString(),
+
+    pagina: {
+      id: r.datos?.id ?? null,
+      name: r.datos?.name ?? null,
+      username: r.datos?.username ?? null,
+      link: r.datos?.link ?? null,
+
+      /*
+        `followers_count` y `fan_count` son cifras distintas y
+        Meta las devuelve por separado. No se funden ni se
+        rellena una con la otra.
+      */
+      followers_count: r.datos?.followers_count ?? null,
+      fan_count: r.datos?.fan_count ?? null,
+
+      is_published: r.datos?.is_published ?? null,
+      verification_status: r.datos?.verification_status ?? null
+    },
+
+    crudo: r.datos
+  };
+}
+
+
 export const ALCANCE = Object.freeze({
   PUBLIC_METRIC: "PUBLIC_METRIC",
   OWNER_INSIGHT: "OWNER_INSIGHT"
@@ -590,6 +679,20 @@ registra la respuesta.
 ===========================================================
 */
 export async function descubrirCuentaProfesional(igUserId, usuarioObjetivo, opciones = {}) {
+  /*
+    El host es un parametro porque hay dos candidatos y la
+    diferencia no es cosmetica:
+
+        graph.facebook.com    flujo de Facebook Login
+        graph.instagram.com   flujo de Instagram Login
+
+    META-IG-REAL-01 midio el primero y devolvio 190. El segundo
+    no se habia probado, y es el unico host que acepta el token
+    que tenemos. Que la documentacion situe `business_discovery`
+    en el primero es un argumento; la respuesta del segundo es
+    un dato.
+  */
+  const host = opciones.host || BASE_FB;
   if (!estaConfigurado()) {
     return { estado: "SIN_CREDENCIAL", cuenta: null, llamadas: 0 };
   }
@@ -611,7 +714,7 @@ export async function descubrirCuentaProfesional(igUserId, usuarioObjetivo, opci
     "media.limit(5){id,caption,media_type,permalink,timestamp,like_count,comments_count}}";
 
   const r = await pedir(
-    BASE_FB,
+    host,
     `/${igUserId}`,
     { fields: campos },
     { ...opciones, etiqueta: "Instagram business_discovery" }

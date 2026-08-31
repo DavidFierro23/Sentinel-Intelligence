@@ -42,6 +42,8 @@ const ig = await import("../services/ingest/adapters/instagramAdapter.js");
 
 const scm = await import("../services/intelligence/socialCapabilityMatrix.js");
 
+const ca = await import("../services/intelligence/candidateAssets.js");
+
 let pass = 0;
 
 let fail = 0;
@@ -604,6 +606,202 @@ await t("Page Public Content Access se declara vigente, no deprecado", () => {
     .viaOficialTerceros;
 
   return v.feature === "Page Public Content Access" && v.estado.includes("vigente");
+});
+
+
+/* =========================================================
+   META-THIRD-PARTY-REAL-01
+
+   Tercero != propio. Es la distincion que sostiene todo el
+   producto: nuestra cuenta funciona entera y eso no acerca ni un
+   paso a observar la de un candidato.
+========================================================= */
+
+bloque("Tercero no es propio");
+
+await t("business_discovery no existe en graph.instagram.com", async () => {
+  /*
+    Medido en META-THIRD-PARTY-REAL-01. El fixture reproduce la
+    respuesta REAL: HTTP 400, code 100, campo inexistente. No es
+    un permiso que falte.
+  */
+  const fetchFalso = async () => ({
+    ok: false,
+    status: 400,
+    text: async () =>
+      JSON.stringify({
+        error: {
+          message: "Tried accessing nonexisting field (business_discovery) on node type (IGUser)",
+          type: "OAuthException",
+          code: 100
+        }
+      })
+  });
+
+  const r = await ig.descubrirCuentaProfesional("1784", "objetivo_ficticio", {
+    host: ig.BASE_IG,
+    fetch: fetchFalso
+  });
+
+  return (
+    r.cuenta === null &&
+    r.estado === "NO_SOPORTADO_POR_ESTA_CONFIGURACION" &&
+    r.httpStatus === 400 &&
+    r.llamadas === 1
+  );
+});
+
+await t("una llamada bloqueada NO devuelve metricas en cero", async () => {
+  /*
+    El fallo mas caro que podria tener este modulo: rellenar con
+    ceros lo que no se pudo leer. Un cero es una medicion y la
+    ausencia no lo es.
+  */
+  const fetchFalso = async () => ({
+    ok: false,
+    status: 400,
+    text: async () =>
+      JSON.stringify({
+        error: {
+          message: "Invalid OAuth access token - Cannot parse access token",
+          type: "OAuthException",
+          code: 190
+        }
+      })
+  });
+
+  const r = await ig.paginaDeTercero("pagina_ficticia", { fetch: fetchFalso });
+
+  const texto = JSON.stringify(r);
+
+  return (
+    r.pagina === null &&
+    r.estado === "CREDENCIAL_RECHAZADA" &&
+    r.codigo === 190 &&
+    !/"followers_count":\s*0/.test(texto) &&
+    !/"fan_count":\s*0/.test(texto)
+  );
+});
+
+await t("una Page real devuelve followers y fan_count SIN fundirlos", async () => {
+  const fetchFalso = async () => ({
+    ok: true,
+    status: 200,
+    text: async () =>
+      JSON.stringify({
+        id: "111",
+        name: "Pagina Ficticia",
+        username: "ficticia",
+        followers_count: 4321,
+        fan_count: 4100
+      })
+  });
+
+  const r = await ig.paginaDeTercero("ficticia", { fetch: fetchFalso });
+
+  /* Son cifras distintas y Meta las da por separado. */
+  return (
+    r.estado === "OK" &&
+    r.pagina.followers_count === 4321 &&
+    r.pagina.fan_count === 4100 &&
+    r.pagina.verification_status === null
+  );
+});
+
+await t("un campo que Meta no devuelve queda null, no cero", async () => {
+  const fetchFalso = async () => ({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify({ id: "111", name: "Sin cifras" })
+  });
+
+  const r = await ig.paginaDeTercero("ficticia", { fetch: fetchFalso });
+
+  return (
+    r.pagina.followers_count === null &&
+    r.pagina.fan_count === null &&
+    r.pagina.followers_count !== 0
+  );
+});
+
+bloque("Lo que este gate NO movio");
+
+await t("declaracion del analista != verificacion por API", () => {
+  /*
+    Los activos probados estaban declarados FACEBOOK_PAGE e
+    INSTAGRAM_PROFESSIONAL. Las llamadas fallaron. La declaracion
+    sigue siendo declaracion: ni ascendio ni se degradó.
+  */
+  const e = ca.elegibilidadMeta(
+    ca.TIPOS_ACTIVO.FACEBOOK_PAGE,
+    ca.FUENTE_TIPO.ANALYST_DECLARATION
+  );
+
+  return (
+    e.estado === ca.ELEGIBILIDAD_META.POTENCIALMENTE_ELEGIBLE_DECLARADA &&
+    e.verificadaTecnicamente === false &&
+    e.habilitaBenchmark === false
+  );
+});
+
+await t("el benchmark de Meta sigue en false tras el gate", () => {
+  /*
+    Se registraron bloqueos, no mediciones. Habilitar el
+    benchmark habria sido tomar la documentacion por evidencia.
+  */
+  return (
+    scm.habilitaBenchmark("instagram").habilita === false &&
+    scm.habilitaBenchmark("facebook").habilita === false &&
+    scm.habilitaBenchmark("x").habilita === true &&
+    scm.habilitaBenchmark("youtube").habilita === true
+  );
+});
+
+await t("comentarios de Meta quedan NO_PROBADO, no NO_DISPONIBLE", () => {
+  const m = scm.matrizDeCapacidades();
+
+  const ig = m.plataformas.find((p) => p.plataformaId === "instagram");
+  const fb = m.plataformas.find((p) => p.plataformaId === "facebook");
+
+  /*
+    La diferencia importa: NO_DISPONIBLE seria una medicion —«se
+    pidio y no lo dan»— y aqui no se pidio.
+  */
+  return (
+    ig.comentarios.estado === scm.ESTADOS_COMENTARIOS.NO_PROBADO &&
+    fb.comentarios.estado === scm.ESTADOS_COMENTARIOS.NO_PROBADO &&
+    ig.comentarios.bloqueoAguasArriba.includes("NO_SOPORTADO") &&
+    fb.comentarios.bloqueoAguasArriba.includes("CREDENCIAL")
+  );
+});
+
+await t("la medicion registrada distingue causa demostrada de hipotesis", () => {
+  const m = scm.matrizDeCapacidades();
+
+  const fb = m.plataformas.find((p) => p.plataformaId === "facebook");
+
+  /*
+    Un 190 no llega a evaluar permisos. Concluir «hace falta App
+    Review» a partir de ahi es la sobreinterpretacion que el
+    gate prohibe, asi que consta como NO demostrado.
+  */
+  return (
+    fb.medicionReal.causaDemostrada.includes("Facebook Login") &&
+    fb.medicionReal.noDemostrado.some((x) => x.includes("App Review")) &&
+    fb.medicionReal.noDemostrado.some((x) => x.includes("Business Verification"))
+  );
+});
+
+await t("ningun registro de la matriz contiene un token", () => {
+  const texto = JSON.stringify(scm.matrizDeCapacidades());
+
+  /* Formas de token de Meta y de los otros proveedores. */
+  return (
+    !/EAA[A-Za-z0-9]{20,}/.test(texto) &&
+    !/IGQ[A-Za-z0-9]{20,}/.test(texto) &&
+    !/access_token=/.test(texto) &&
+    !/AIza[A-Za-z0-9_-]{20,}/.test(texto)
+  );
 });
 
 

@@ -514,6 +514,48 @@ const TIKTOK = {
 
 /*
 ===========================================================
+CORPUS DE COMENTARIOS — PREPARACION, NO IMPLEMENTACION
+===========================================================
+
+Sentinel querra algun dia responder «analiza los comentarios
+que recibio este candidato en las ultimas 24 horas». Antes de
+escribir una linea de analisis hay que saber si el corpus se
+puede obtener, porque el resto depende de eso.
+
+Y hay una obligacion de lenguaje que nace aqui, no cuando se
+implemente el analisis:
+
+    COMENTARIOS OBSERVADOS  !=  TODOS LOS COMENTARIOS
+
+Ninguna fuente garantiza cobertura total. Un corpus paginado,
+con limites de rate y sin archivo historico, es una muestra —y
+una muestra sobre la que se dice «los comentarios dicen X» es
+una afirmacion falsa sobre el universo.
+===========================================================
+*/
+export const ESTADOS_COMENTARIOS = Object.freeze({
+  /* Se obtuvo texto real de comentarios de un tercero. */
+  DISPONIBLE: "COMMENTS_AVAILABLE",
+
+  /* Se obtuvo algo, pero no el contrato minimo. */
+  PARCIAL: "COMMENTS_PARTIAL",
+
+  /* Se pidio y la fuente no lo entrega. */
+  NO_DISPONIBLE: "COMMENTS_NOT_AVAILABLE",
+
+  /* Se pidio y un bloqueo lo impidio. */
+  BLOQUEADO: "COMMENTS_BLOCKED",
+
+  /*
+    No se pidio. Distinto de NO_DISPONIBLE, y la diferencia
+    importa: uno es una medicion y el otro una casilla vacia.
+  */
+  NO_PROBADO: "COMMENTS_NOT_TESTED"
+});
+
+
+/*
+===========================================================
 FACEBOOK
 ===========================================================
 */
@@ -591,6 +633,104 @@ const FACEBOOK = {
 
     documentado: "2026-08-28",
     fuente: "docs/META-PUBLIC-ACCESS.md"
+  },
+
+  /*
+    -----------------------------------------------------------
+    MEDICION REAL — META-THIRD-PARTY-REAL-01 (2026-08-30)
+    -----------------------------------------------------------
+
+    Hasta este gate, todo lo de arriba era documental. Ahora hay
+    una llamada.
+
+    Se eligio la peticion mas simple que responde a la pregunta
+    —leer una Page por su nombre de vanidad— sobre un activo real
+    de tercero que el analista habia declarado FACEBOOK_PAGE. Si
+    algo falla en la llamada mas simple, falla por la razon
+    estructural y no por la complejidad de la peticion.
+
+        GET graph.facebook.com/v23.0/{page}
+            ?fields=id,name,username,followers_count,fan_count
+
+        HTTP 400 · code 190 · OAuthException
+        «Invalid OAuth access token - Cannot parse access token»
+
+    LO QUE ESTA DEMOSTRADO: no tenemos credencial para este host.
+    El unico token configurado es de Instagram Login, y
+    `graph.facebook.com` no lo entiende.
+
+    LO QUE NO ESTA DEMOSTRADO, y es lo que se sobreinterpreta:
+    que haga falta App Review o Business Verification. Este error
+    no llega a evaluar permisos —se detiene antes, al parsear la
+    credencial—, asi que sobre permisos no dice nada.
+
+    El control que lo hace legible: en la misma sesion, la
+    llamada anterior a `graph.instagram.com/me` devolvio 200 con
+    ese mismo token. La credencial esta viva; el host es otro.
+
+    Sin este matiz, «Invalid OAuth access token» manda a
+    regenerar el token, que es exactamente lo que no hay que
+    hacer.
+    -----------------------------------------------------------
+  */
+  medicionReal: {
+    gate: "META-THIRD-PARTY-REAL-01",
+    fecha: "2026-08-30",
+    requests: 1,
+    reintentos: 0,
+
+    activoProbado:
+      "Page de tercero declarada FACEBOOK_PAGE por el analista",
+
+    endpoints: [
+      {
+        endpoint: "GET graph.facebook.com/{page}?fields=id,name,username,followers_count,fan_count",
+        httpStatus: 400,
+        codigoMeta: 190,
+        tipo: "OAuthException"
+      }
+    ],
+
+    conclusion: "BLOQUEADO_CREDENCIAL",
+
+    causaDemostrada:
+      "no hay token de Facebook Login configurado. graph.facebook.com no acepta el token de Instagram Login, que es el unico que existe.",
+
+    noDemostrado: [
+      "que haga falta App Review: el error se detiene antes de evaluar permisos",
+      "que haga falta Business Verification, por lo mismo",
+      "que la Page no sea publica o no exista"
+    ],
+
+    controlDeLaMismaSesion:
+      "GET graph.instagram.com/me devolvio 200 con el mismo token en la llamada anterior. No es una credencial invalida: es un host distinto.",
+
+    siguientePasoQueSI: [
+      "configurar Facebook Login for Business y obtener un token de ese flujo",
+      "reintentar esta misma llamada",
+      "solo entonces el error que aparezca hablara de permisos"
+    ]
+  },
+
+  /*
+    Comentarios: NO SE PIDIERON. La lectura de la Page se
+    detuvo en la credencial, asi que no habia publicacion sobre
+    la que preguntar. Documentar «no disponible» seria inventar
+    una medicion que no se hizo.
+  */
+  comentarios: {
+    estado: "COMMENTS_NOT_TESTED",
+    gate: "META-THIRD-PARTY-REAL-01",
+
+    motivo:
+      "no se llego a pedir: la lectura de la Page fallo antes, en la credencial, y no hubo publicacion sobre la que preguntar.",
+
+    bloqueoAguasArriba: "BLOQUEADO_CREDENCIAL en la lectura de la Page",
+
+    loQueDiceLaDocumentacion:
+      "Page Public Content Access lista los comentarios publicos entre lo que devuelve de terceros. Es documentacion, no medicion.",
+
+    seProbaraCuando: "exista un token de Facebook Login for Business"
   },
 
   programasDeAcceso: [
@@ -736,7 +876,64 @@ const INSTAGRAM = {
       ]
     },
 
-    conclusion: "MEDIDO_PROPIO, terceros NO_PROBADO",
+    conclusion: "MEDIDO_PROPIO, terceros BLOQUEADO",
+
+    /*
+      -----------------------------------------------------------
+      META-THIRD-PARTY-REAL-01 (2026-08-30)
+      -----------------------------------------------------------
+
+      META-IG-REAL-01 dejo abierta una duda razonable: el error
+      190 contra `graph.facebook.com` podia estar tapando otra
+      cosa, y no se habia probado si el host que SI acepta
+      nuestro token expone `business_discovery`.
+
+      Ya esta probado, sobre un activo real de tercero declarado
+      INSTAGRAM_PROFESSIONAL por el analista:
+
+          GET graph.instagram.com/v23.0/{nuestro_id}
+              ?fields=business_discovery.username(...)
+
+          HTTP 400 · code 100
+          «Tried accessing nonexisting field (business_discovery)»
+
+      Eso no es un permiso que falte ni un nivel de acceso: el
+      campo NO EXISTE en ese host. La via de Instagram Login no
+      tiene descubrimiento de terceros, y ninguna combinacion de
+      permisos sobre este token lo va a producir.
+
+      Es una respuesta mejor que un 403: cierra la pregunta.
+      -----------------------------------------------------------
+    */
+    etapaC: {
+      gate: "META-THIRD-PARTY-REAL-01",
+      fecha: "2026-08-30",
+      resultado: "NO_SOPORTADO_POR_FLUJO_ACTUAL",
+      endpoint: "GET graph.instagram.com/{id}?fields=business_discovery.username()",
+      httpStatus: 400,
+      codigoMeta: 100,
+      mensaje: "Tried accessing nonexisting field (business_discovery)",
+
+      activoProbado:
+        "Instagram de tercero declarado INSTAGRAM_PROFESSIONAL por el analista",
+
+      causaDemostrada:
+        "el campo business_discovery no existe en graph.instagram.com. La via de Instagram Login no descubre terceros.",
+
+      /*
+        Lo que el error NO demuestra. Se escribe porque es
+        exactamente lo que se sobreinterpreta: un 400 no dice
+        que haga falta App Review.
+      */
+      noDemostrado: [
+        "que App Review resolveria esto",
+        "que Business Verification resolveria esto",
+        "que la cuenta del tercero no sea profesional"
+      ],
+
+      controlDeLaMismaSesion:
+        "GET graph.instagram.com/me devolvio 200 en la llamada anterior, asi que el token estaba vivo. El fallo es del campo, no de la credencial."
+    },
 
     advertencia:
       "Medir la cuenta propia no habilita el benchmark multicandidato. Los insights son OWNER_INSIGHT y no existirian para el Instagram de un candidato.",
@@ -744,6 +941,32 @@ const INSTAGRAM = {
     noSeProbo: [
       "REELS: las cinco publicaciones de la muestra eran IMAGE, asi que las metricas propias de reel siguen sin comprobarse"
     ]
+  },
+
+  /*
+    Comentarios de TERCEROS: no se pidieron, y no por falta de
+    presupuesto. `business_discovery` es la unica via que traeria
+    publicaciones de un tercero, y el campo no existe en el host
+    que acepta nuestro token. Sin publicacion no hay a que
+    pedirle comentarios.
+
+    De la cuenta PROPIA si se podrian leer. No sirve para esto:
+    los comentarios que recibe `vocero593_` no son los que recibe
+    un candidato.
+  */
+  comentarios: {
+    estado: "COMMENTS_NOT_TESTED",
+    gate: "META-THIRD-PARTY-REAL-01",
+
+    motivo:
+      "no se llego a pedir: business_discovery no existe en graph.instagram.com, asi que no hubo ninguna publicacion de tercero sobre la que preguntar.",
+
+    bloqueoAguasArriba: "NO_SOPORTADO_POR_FLUJO_ACTUAL en el descubrimiento",
+
+    sobreLaCuentaPropia:
+      "los comentarios de nuestra cuenta si son accesibles, y no sirven: MEDIDO_PROPIO no es MEDIDO_TERCERO.",
+
+    seProbaraCuando: "exista un token de Facebook Login for Business"
   },
 
   /*
@@ -1173,6 +1396,15 @@ export function matrizDeCapacidades() {
       programasDeAcceso: p.programasDeAcceso || [],
       medicionReal: p.medicionReal || null,
       viaOficialTerceros: p.viaOficialTerceros || null,
+
+      /*
+        Sin declarar estado, NO_PROBADO. Es la respuesta honesta
+        para una plataforma a la que no se le ha preguntado.
+      */
+      comentarios: p.comentarios || {
+        estado: ESTADOS_COMENTARIOS.NO_PROBADO,
+        motivo: "no se ha probado la obtencion de comentarios en esta plataforma"
+      },
 
       /* La regla, resuelta, para que la interfaz no la reinvente. */
       benchmark: habilitaBenchmark(p.plataformaId),
