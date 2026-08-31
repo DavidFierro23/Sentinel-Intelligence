@@ -649,7 +649,12 @@ await t("solo las plataformas ejecutadas tienen capacidades medidas", () => {
   plataforma entra al benchmark no es «se midio» sino «se midio
   sobre alguien que no controlamos».
 */
-await t("solo YouTube y X estan medidos sobre TERCEROS", () => {
+/*
+  ACTUALIZADO EN META-THIRD-PARTY-REAL-02: Instagram se sumo por
+  medicion sobre una cuenta que no administramos, no por
+  documentacion. Facebook y TikTok siguen fuera.
+*/
+await t("estan medidos sobre TERCEROS YouTube, X e Instagram", () => {
   const m = scm.matrizDeCapacidades();
 
   const conTerceros = m.plataformas
@@ -662,10 +667,19 @@ await t("solo YouTube y X estan medidos sobre TERCEROS", () => {
     .sort()
     .join(",");
 
-  return conTerceros === "x,youtube";
+  return conTerceros === "instagram,x,youtube";
 });
 
-await t("lo medido de Instagram es todo sobre la cuenta propia", () => {
+/*
+  Antes esta prueba afirmaba que TODO lo medido de Instagram era
+  sobre la cuenta propia. Dejo de ser cierto, y el invariante que
+  importa es mas fino: las dos clases conviven y no se mezclan.
+
+  `views` y `shares` son OWNER_INSIGHT y no vinieron en la
+  respuesta del tercero. Que asciendan seria presentar una cifra
+  nuestra como si fuera de un candidato.
+*/
+await t("en Instagram lo propio y lo de terceros no se mezclan", () => {
   const i = scm.matrizDeCapacidades().plataformas.find(
     (p) => p.plataformaId === "instagram"
   );
@@ -674,9 +688,17 @@ await t("lo medido de Instagram es todo sobre la cuenta propia", () => {
     (c) => c.verificacion === "MEDIDO_EN_PRODUCCION"
   );
 
+  const propias = medidas.filter((c) => scm.celdaDe(c) === "MEDIDO_PROPIO");
+
+  const terceras = medidas.filter((c) => scm.celdaDe(c) === "MEDIDO_TERCERO");
+
   return (
-    medidas.length > 0 &&
-    medidas.every((c) => scm.celdaDe(c) === "MEDIDO_PROPIO")
+    terceras.length === 7 &&
+    propias.length === 2 &&
+    propias.length + terceras.length === medidas.length &&
+    /* Los dos que se quedan en propio son exactamente los insights. */
+    scm.celdaDe(i.capacidades.views) === "MEDIDO_PROPIO" &&
+    scm.celdaDe(i.capacidades.shares) === "MEDIDO_PROPIO"
   );
 });
 
@@ -785,11 +807,16 @@ await t("el resumen cuenta las medidas de las tres plataformas probadas", () => 
 
   const de = (id) => m.plataformas.find((p) => p.plataformaId === id).medidas;
 
-  /* 9 de YouTube + 9 de X sobre terceros, 8 de Instagram sobre la propia. */
+  /*
+    9 de YouTube y 9 de X, todas sobre terceros. 9 de Instagram:
+    7 sobre terceros y 2 owner insights sobre la propia.
+    `url_verificable` paso de documentada a medida cuando el
+    `permalink` del tercero llego en la respuesta.
+  */
   return (
     de("youtube") === 9 &&
     de("x") === 9 &&
-    de("instagram") === 8 &&
+    de("instagram") === 9 &&
     m.resumen.medidasEnProduccion === de("youtube") + de("x") + de("instagram")
   );
 });

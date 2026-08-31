@@ -598,17 +598,30 @@ await t("y el UNKNOWN explica que se comprobo con un control", () => {
 */
 bloque("elegibilidad no es medicion");
 
+/*
+  ACTUALIZADO EN META-THIRD-PARTY-REAL-02.
+
+  Instagram tenia solo MEDIDO_PROPIO y ahora tiene ademas siete
+  capacidades sobre terceros, asi que habilita. Lo que sigue
+  intacto —y es lo que esta prueba defiende— es que MEDIDO_PROPIO
+  no habilita NADA por si solo: Facebook lo demuestra, con un
+  HTTP 200 sobre la Pagina que administramos y el benchmark en
+  false.
+*/
 await t("MEDIDO_PROPIO sigue sin habilitar el benchmark", () => {
+  const f = scm.PLATAFORMAS.find((p) => p.plataformaId === "facebook");
+
   return (
-    scm.habilitaBenchmark("instagram").habilita === false &&
-    scm.habilitaBenchmark("facebook").habilita === false
+    scm.habilitaBenchmark("facebook").habilita === false &&
+    f.medicionReal.etapaB.sobrePaginaPropia.httpStatus === 200
   );
 });
 
-await t("y solo YouTube y X lo habilitan", () => {
+await t("y lo habilitan YouTube, X e Instagram", () => {
   return (
     scm.habilitaBenchmark("youtube").habilita === true &&
-    scm.habilitaBenchmark("x").habilita === true
+    scm.habilitaBenchmark("x").habilita === true &&
+    scm.habilitaBenchmark("instagram").habilita === true
   );
 });
 
@@ -624,8 +637,13 @@ await t("el motor de activos lo dice por escrito", () => {
   eso habilita el benchmark.
 */
 await t("auditar cobertura no cambia habilitaBenchmark", () => {
+  /*
+    Se comprueba sobre Facebook, que es la que sigue bloqueada.
+    Instagram cambio en META-THIRD-PARTY-REAL-02 por una llamada
+    real, no por una auditoria: la distincion que esta prueba
+    defiende es esa.
+  */
   return (
-    scm.habilitaBenchmark("instagram").habilita === false &&
     scm.habilitaBenchmark("facebook").habilita === false &&
     scm.habilitaBenchmark("youtube").habilita === true &&
     scm.habilitaBenchmark("x").habilita === true
@@ -834,9 +852,13 @@ await t("8 · declarar Page o Professional NO habilita el benchmark", () => {
     ]
   });
 
+  /*
+    Se mide sobre Facebook. Instagram habilita desde
+    META-THIRD-PARTY-REAL-02 y no por ninguna declaracion: si se
+    comprobara aqui, la prueba pasaria por el motivo equivocado.
+  */
   return (
     scm.habilitaBenchmark("facebook").habilita === false &&
-    scm.habilitaBenchmark("instagram").habilita === false &&
     scm.habilitaBenchmark("youtube").habilita === true &&
     scm.habilitaBenchmark("x").habilita === true
   );

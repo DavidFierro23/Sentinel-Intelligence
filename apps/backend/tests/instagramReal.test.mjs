@@ -483,13 +483,36 @@ await t("una respuesta sin business_discovery no se lee como cuenta inexistente"
 */
 bloque("medir la cuenta propia no habilita el benchmark");
 
-await t("Instagram queda MEDIDO_PROPIO, nunca MEDIDO_TERCERO", () => {
+/*
+  ACTUALIZADO EN META-THIRD-PARTY-REAL-02.
+
+  Esta prueba afirmaba que Instagram no tenia NINGUN
+  MEDIDO_TERCERO. Era verdad y dejo de serlo: `business_discovery`
+  respondio sobre una cuenta que no administramos.
+
+  No se relaja: se afina hacia el invariante que de verdad
+  importa y que sigue vivo. Las dos clases COEXISTEN en la misma
+  plataforma, y no mezclarlas es el punto.
+
+      followers, likes, comments   TERCERO
+      views, shares                PROPIO   <- OWNER_INSIGHT
+
+  Mover `views` o `shares` a TERCERO seria presentar una cifra de
+  nuestra cuenta como si fuera de un candidato. Eso es lo que
+  esta prueba defiende ahora.
+*/
+await t("en Instagram coexisten MEDIDO_TERCERO y MEDIDO_PROPIO sin mezclarse", () => {
   const i = scm.PLATAFORMAS.find((p) => p.plataformaId === "instagram");
 
-  const celdas = Object.values(i.capacidades).map((c) => scm.celdaDe(c));
+  const celda = (id) => scm.celdaDe(i.capacidades[id]);
 
   return (
-    celdas.includes("MEDIDO_PROPIO") && !celdas.includes("MEDIDO_TERCERO")
+    celda("followers") === "MEDIDO_TERCERO" &&
+    celda("likes") === "MEDIDO_TERCERO" &&
+    celda("comments") === "MEDIDO_TERCERO" &&
+    /* Los owner insights NO ascienden: no vinieron del tercero. */
+    celda("views") === "MEDIDO_PROPIO" &&
+    celda("shares") === "MEDIDO_PROPIO"
   );
 });
 
@@ -555,22 +578,37 @@ await t("la regla es una funcion, no una convencion", () => {
   return typeof scm.habilitaBenchmark === "function";
 });
 
-await t("YouTube y X habilitan; Instagram, Facebook y TikTok no", () => {
+await t("habilitan YouTube, X e Instagram; no Facebook ni TikTok", () => {
+  /*
+    Instagram entro en META-THIRD-PARTY-REAL-02 por el mismo
+    baremo que los otros dos: capacidades medidas sobre una
+    cuenta que no controlamos.
+  */
   return (
     scm.habilitaBenchmark("youtube").habilita === true &&
     scm.habilitaBenchmark("x").habilita === true &&
-    scm.habilitaBenchmark("instagram").habilita === false &&
+    scm.habilitaBenchmark("instagram").habilita === true &&
     scm.habilitaBenchmark("facebook").habilita === false &&
     scm.habilitaBenchmark("tiktok").habilita === false
   );
 });
 
 await t("y explica que medir la cuenta propia no cuenta", () => {
-  const b = scm.habilitaBenchmark("instagram");
+  /*
+    El caso se traslada a Facebook, que es donde ahora ocurre: su
+    unico HTTP 200 fue sobre la Pagina que administramos, y eso
+    no habilita nada.
+  */
+  const b = scm.habilitaBenchmark("facebook");
+
+  const f = scm.PLATAFORMAS.find((p) => p.plataformaId === "facebook");
 
   return (
-    b.medidasSobreCuentaPropia === 8 &&
-    b.motivo.includes("Ningun candidato nos va a dar un token")
+    b.habilita === false &&
+    f.medicionReal.etapaB.sobrePaginaPropia.httpStatus === 200 &&
+    f.medicionReal.etapaB.sobrePaginaPropia.advertencia.includes(
+      "NO es acceso a terceros"
+    )
   );
 });
 
@@ -578,12 +616,18 @@ await t("y explica que medir la cuenta propia no cuenta", () => {
   El riesgo concreto de este gate: documentar la via oficial de
   Meta y que eso, por si solo, ascienda la plataforma.
 */
-await t("documentar la via de terceros NO asciende Instagram", () => {
-  const i = scm.PLATAFORMAS.find((p) => p.plataformaId === "instagram");
+await t("documentar la via de terceros NO asciende Facebook", () => {
+  /*
+    El riesgo sigue siendo el mismo y ahora se comprueba donde
+    aplica: Facebook tiene via oficial documentada, y documentada
+    se queda. Lo que ascendio a Instagram fue una llamada, no un
+    documento.
+  */
+  const f = scm.PLATAFORMAS.find((p) => p.plataformaId === "facebook");
 
   return (
-    i.viaOficialTerceros.existe === true &&
-    scm.habilitaBenchmark("instagram").habilita === false
+    f.viaOficialTerceros.existe === true &&
+    scm.habilitaBenchmark("facebook").habilita === false
   );
 });
 
@@ -761,34 +805,39 @@ await t("declaracion del analista != verificacion por API", () => {
   );
 });
 
-await t("el benchmark de Meta sigue en false tras el gate", () => {
+await t("Facebook sigue en false; Instagram ascendio por medicion", () => {
   /*
-    Se registraron bloqueos, no mediciones. Habilitar el
-    benchmark habria sido tomar la documentacion por evidencia.
+    En META-THIRD-PARTY-REAL-01 las dos estaban en false y esta
+    prueba lo fijaba. Instagram cambio en REAL-02, y no por la
+    documentacion: por una llamada sobre un tercero genuino.
+
+    Facebook no cambio, que es lo que esta prueba sigue
+    defendiendo.
   */
   return (
-    scm.habilitaBenchmark("instagram").habilita === false &&
     scm.habilitaBenchmark("facebook").habilita === false &&
+    scm.habilitaBenchmark("instagram").habilita === true &&
     scm.habilitaBenchmark("x").habilita === true &&
     scm.habilitaBenchmark("youtube").habilita === true
   );
 });
 
-await t("comentarios de Meta quedan NO_PROBADO, no NO_DISPONIBLE", () => {
+await t("Facebook: comentarios NO_PROBADO. Instagram: ya medido", () => {
   const m = scm.matrizDeCapacidades();
 
   const ig = m.plataformas.find((p) => p.plataformaId === "instagram");
   const fb = m.plataformas.find((p) => p.plataformaId === "facebook");
 
   /*
-    La diferencia importa: NO_DISPONIBLE seria una medicion —«se
-    pidio y no lo dan»— y aqui no se pidio.
+    Facebook conserva la distincion original —no se pidio, asi
+    que NO_PROBADO y no NO_DISPONIBLE—. Instagram ya se pidio: el
+    recuento llega y el TEXTO no, y eso ultimo si es una medicion.
   */
   return (
-    ig.comentarios.estado === scm.ESTADOS_COMENTARIOS.NO_PROBADO &&
     fb.comentarios.estado === scm.ESTADOS_COMENTARIOS.NO_PROBADO &&
-    ig.comentarios.bloqueoAguasArriba.includes("NO_SOPORTADO") &&
-    fb.comentarios.bloqueoAguasArriba.includes("CREDENCIAL")
+    fb.comentarios.bloqueoAguasArriba.includes("PERMISOS") &&
+    ig.comentarios.estado === scm.ESTADOS_COMENTARIOS.PARCIAL &&
+    ig.comentarios.textoPorEstaVia === scm.ESTADOS_COMENTARIOS.NO_DISPONIBLE
   );
 });
 
@@ -979,15 +1028,16 @@ await t("con token de Facebook, `alcanza` sigue vacio", () => {
   );
 });
 
-await t("tener la credencial NO habilita el benchmark", () => {
+await t("tener la credencial NO es lo que habilita el benchmark", () => {
   process.env.FACEBOOK_USER_ACCESS_TOKEN = "token-de-facebook-ficticio";
 
-  return (
-    scm.habilitaBenchmark("instagram").habilita === false &&
-    scm.habilitaBenchmark("facebook").habilita === false &&
-    scm.habilitaBenchmark("x").habilita === true &&
-    scm.habilitaBenchmark("youtube").habilita === true
-  );
+  /*
+    Facebook tiene la misma credencial que Instagram y sigue en
+    false. Es la demostracion mas limpia de que lo que habilita
+    es la MEDICION y no el token: si fuera el token, las dos
+    estarian igual.
+  */
+  return scm.habilitaBenchmark("facebook").habilita === false;
 });
 
 bloque("Validacion de la credencial de Facebook");
@@ -1081,9 +1131,289 @@ await t("la validacion no revela quien es el titular", async () => {
 await t("credencial parseable NO habilita el benchmark", () => {
   process.env.FACEBOOK_USER_ACCESS_TOKEN = "token-de-facebook-ficticio";
 
+  /*
+    Se comprueba sobre Facebook, que comparte credencial con
+    Instagram y sigue bloqueado por permisos. La credencial no
+    fue nunca el criterio.
+  */
+  return scm.habilitaBenchmark("facebook").habilita === false;
+});
+
+
+bloque("META-THIRD-PARTY-REAL-02 — tercero medido, y su trampa");
+
+await t("business_discovery usa el token de Facebook, no el de Instagram", async () => {
+  process.env.INSTAGRAM_ACCESS_TOKEN = "token-de-instagram-ficticio";
+  process.env.FACEBOOK_USER_ACCESS_TOKEN = "token-de-facebook-ficticio";
+
+  let urlVista = null;
+
+  const r = await ig.descubrirCuentaProfesional("1784", "objetivo_ficticio", {
+    host: ig.BASE_FB,
+    fetch: async (url) => {
+      urlVista = String(url);
+
+      return {
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            business_discovery: {
+              username: "objetivo_ficticio",
+              name: "Objetivo",
+              followers_count: 1000,
+              media_count: 50
+            }
+          })
+      };
+    }
+  });
+
   return (
-    scm.habilitaBenchmark("facebook").habilita === false &&
-    scm.habilitaBenchmark("instagram").habilita === false
+    r.estado === "OK" &&
+    urlVista.includes("token-de-facebook-ficticio") &&
+    !urlVista.includes("token-de-instagram-ficticio")
+  );
+});
+
+await t("un tercero medido NO trae owner insights", async () => {
+  process.env.FACEBOOK_USER_ACCESS_TOKEN = "token-de-facebook-ficticio";
+
+  /*
+    La respuesta real del tercero no incluyo reach, saved ni
+    shares, y no debe aparecer ninguno inventado en null ni en
+    cero: son OWNER_INSIGHT y no existen para un tercero.
+  */
+  const r = await ig.descubrirCuentaProfesional("1784", "objetivo_ficticio", {
+    host: ig.BASE_FB,
+    fetch: async () => ({
+      ok: true,
+      status: 200,
+      text: async () =>
+        JSON.stringify({
+          business_discovery: {
+            username: "objetivo_ficticio",
+            followers_count: 1000,
+            media_count: 50,
+            media: {
+              data: [
+                {
+                  id: "1",
+                  permalink: "https://www.instagram.com/p/X/",
+                  timestamp: "2026-08-01T00:00:00+0000",
+                  media_type: "IMAGE",
+                  like_count: 19,
+                  comments_count: 1
+                }
+              ]
+            }
+          }
+        })
+    })
+  });
+
+  const texto = JSON.stringify(r.cuenta);
+
+  return (
+    r.estado === "OK" &&
+    !texto.includes("reach") &&
+    !texto.includes("saved") &&
+    !texto.includes("impressions")
+  );
+});
+
+await t("comments_count es el recuento y NO el texto", () => {
+  const m = scm.matrizDeCapacidades();
+
+  const i = m.plataformas.find((p) => p.plataformaId === "instagram");
+
+  /*
+    La distincion que decide si Comments Intelligence es posible.
+    Con el recuento no se puede analizar ni un comentario.
+  */
+  return (
+    i.comentarios.estado === "COMMENTS_PARTIAL" &&
+    i.comentarios.recuentoDisponible === true &&
+    i.comentarios.textoDisponible === false &&
+    i.comentarios.textoPorEstaVia === "COMMENTS_NOT_AVAILABLE" &&
+    i.comentarios.medido.codigoMeta === 100
+  );
+});
+
+bloque("Verificacion por API — solo el activo que respondio");
+
+await t("una verificacion exige endpoint y evidencia", () => {
+  const sin = ca.crearVerificacionDeTipo({
+    assetId: "instagram:x",
+    platform: "instagram",
+    verifiedType: "INSTAGRAM_PROFESSIONAL"
+  });
+
+  return sin.valido === false && sin.motivo.includes("evidencia");
+});
+
+await t("una verificacion no puede resultar UNKNOWN", () => {
+  const u = ca.crearVerificacionDeTipo({
+    assetId: "instagram:x",
+    platform: "instagram",
+    verifiedType: "UNKNOWN",
+    endpoint: "e",
+    evidencia: "v"
+  });
+
+  /*
+    Si no hay evidencia del tipo, no hay verificacion. «Verifique
+    que no lo se» no es un estado.
+  */
+  return u.valido === false && u.motivo.includes("no hay verificacion");
+});
+
+await t("META_API si asciende a VERIFICADA; el analista no", () => {
+  const cuentas = [
+    { id: "instagram:a", plataformaId: "instagram", url: "u", handle: "a" },
+    { id: "instagram:b", plataformaId: "instagram", url: "u", handle: "b" }
+  ];
+
+  const api = ca.crearVerificacionDeTipo({
+    assetId: "instagram:a",
+    platform: "instagram",
+    verifiedType: "INSTAGRAM_PROFESSIONAL",
+    endpoint: "graph.facebook.com/{id}?business_discovery",
+    evidencia: "respondio HTTP 200"
+  }).declaracion;
+
+  const analista = ca.crearDeclaracionDeTipo({
+    assetId: "instagram:b",
+    platform: "instagram",
+    declaredType: "INSTAGRAM_PROFESSIONAL"
+  }).declaracion;
+
+  const r = ca.activosDeCandidato({
+    candidateId: "c",
+    cuentas,
+    declaraciones: [api, analista]
+  });
+
+  const a = r.activos.find((x) => x.accountId === "instagram:a");
+  const b = r.activos.find((x) => x.accountId === "instagram:b");
+
+  return (
+    a.assetTypeSource === "META_API" &&
+    a.assetTypeVerification === "VERIFICADA" &&
+    a.elegibilidadMeta.estado === ca.ELEGIBILIDAD_META.POTENCIALMENTE_ELEGIBLE &&
+    b.assetTypeSource === "ANALYST_DECLARATION" &&
+    b.assetTypeVerification === "NO_VERIFICADA" &&
+    b.elegibilidadMeta.estado ===
+      ca.ELEGIBILIDAD_META.POTENCIALMENTE_ELEGIBLE_DECLARADA
+  );
+});
+
+await t("verificar un activo NO verifica a su hermano", () => {
+  const cuentas = [
+    { id: "instagram:a", plataformaId: "instagram", url: "u", handle: "a" },
+    { id: "instagram:b", plataformaId: "instagram", url: "u", handle: "b" }
+  ];
+
+  const api = ca.crearVerificacionDeTipo({
+    assetId: "instagram:a",
+    platform: "instagram",
+    verifiedType: "INSTAGRAM_PROFESSIONAL",
+    endpoint: "e",
+    evidencia: "v"
+  }).declaracion;
+
+  const r = ca.activosDeCandidato({ candidateId: "c", cuentas, declaraciones: [api] });
+
+  const b = r.activos.find((x) => x.accountId === "instagram:b");
+
+  return b.assetType === "UNKNOWN" && b.assetTypeVerification === "NO_VERIFICADA";
+});
+
+bloque("Benchmark: Instagram si, Facebook no");
+
+await t("Instagram queda habilitado por medicion sobre tercero", () => {
+  const b = scm.habilitaBenchmark("instagram");
+
+  /*
+    Siete capacidades medidas sobre una cuenta que no
+    administramos. El mismo baremo con el que se habilitaron X y
+    YouTube: ser mas estricto solo con Instagram seria arbitrario.
+  */
+  return (
+    b.habilita === true &&
+    b.capacidades.includes("followers") &&
+    b.capacidades.includes("likes") &&
+    b.capacidades.includes("comments") &&
+    /* views y shares NO: son OWNER_INSIGHT y no vinieron del tercero. */
+    !b.capacidades.includes("views") &&
+    !b.capacidades.includes("shares")
+  );
+});
+
+await t("Facebook sigue en false: su unico 200 fue sobre Pagina propia", () => {
+  const b = scm.habilitaBenchmark("facebook");
+
+  const m = scm.matrizDeCapacidades();
+
+  const f = m.plataformas.find((p) => p.plataformaId === "facebook");
+
+  return (
+    b.habilita === false &&
+    f.medicionReal.etapaB.sobrePaginaPropia.resultado === "MEDIDO_PROPIO" &&
+    f.medicionReal.etapaB.sobrePaginaDeTercero.resultado === "BLOQUEADO_PERMISOS"
+  );
+});
+
+await t("el bloqueo de Facebook nombra las tres alternativas de Meta", () => {
+  const m = scm.matrizDeCapacidades();
+
+  const f = m.plataformas.find((p) => p.plataformaId === "facebook");
+
+  const alt = f.medicionReal.etapaB.sobrePaginaDeTercero.alternativasQueMetaNombra;
+
+  /*
+    Meta nombra tres y no son igual de caras. Reducirlas a «hace
+    falta App Review» seria perder la unica pista util del error.
+  */
+  return (
+    alt.length === 3 &&
+    alt.some((x) => x.includes("pages_read_engagement")) &&
+    alt.some((x) => x.includes("Page Public Content Access")) &&
+    alt.some((x) => x.includes("Page Public Metadata Access"))
+  );
+});
+
+await t("la discrepancia con la documentacion queda registrada", () => {
+  const m = scm.matrizDeCapacidades();
+
+  const i = m.plataformas.find((p) => p.plataformaId === "instagram");
+
+  /*
+    La documentacion decia que terceros exigen Advanced Access y
+    Business Verification. La llamada funciono sin que consten.
+    Se registra la discrepancia en lugar de reescribir una de las
+    dos: POR QUE funciona no esta demostrado.
+  */
+  return (
+    typeof i.medicionReal.etapaD.discrepanciaConLaDocumentacion === "string" &&
+    i.medicionReal.etapaD.discrepanciaConLaDocumentacion.includes("no esta demostrado")
+  );
+});
+
+await t("consta que el primer intento salio contaminado", () => {
+  const m = scm.matrizDeCapacidades();
+
+  const i = m.plataformas.find((p) => p.plataformaId === "instagram");
+
+  /*
+    El hallazgo mas importante del gate: el token administraba la
+    Pagina del candidato patron, asi que la primera consulta
+    pregunto por nuestro propio activo y parecia un exito.
+  */
+  return (
+    i.medicionReal.etapaD.terceroGenuino === true &&
+    i.medicionReal.etapaD.comoSeComprobo.includes("me/accounts") &&
+    i.medicionReal.etapaD.contaminacionDelPrimerIntento.includes("administra")
   );
 });
 

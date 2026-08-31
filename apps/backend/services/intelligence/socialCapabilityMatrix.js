@@ -691,7 +691,7 @@ const FACEBOOK = {
       }
     ],
 
-    conclusion: "BLOQUEADO_CREDENCIAL",
+    conclusion: "BLOQUEADO_PERMISOS",
 
     causaDemostrada:
       "no hay token de Facebook Login configurado. graph.facebook.com no acepta el token de Instagram Login, que es el unico que existe.",
@@ -705,10 +705,73 @@ const FACEBOOK = {
     controlDeLaMismaSesion:
       "GET graph.instagram.com/me devolvio 200 con el mismo token en la llamada anterior. No es una credencial invalida: es un host distinto.",
 
+    /*
+      -----------------------------------------------------------
+      META-THIRD-PARTY-REAL-02 (2026-08-30)
+      -----------------------------------------------------------
+
+      Con la credencial correcta, el bloqueo cambio de sitio y
+      por fin dice algo util. Dos llamadas, dos sujetos
+      distintos, y ahi esta todo:
+
+          Page que ADMINISTRAMOS       HTTP 200
+          Page de un TERCERO           HTTP 400 · code 100
+
+      La primera devolvio id, name, username, link, fan_count y
+      followers_count. Parece un exito y no lo es: funciono
+      porque el token administra esa Pagina. Es el comportamiento
+      documentado de Standard Access, ahora medido.
+
+      La segunda trae el diagnostico entero en el mensaje de
+      Meta, con las tres alternativas nombradas. Ya no hay que
+      deducirlo.
+      -----------------------------------------------------------
+    */
+    etapaB: {
+      gate: "META-THIRD-PARTY-REAL-02",
+      fecha: "2026-08-30",
+
+      sobrePaginaPropia: {
+        resultado: "MEDIDO_PROPIO",
+        httpStatus: 200,
+        campos: ["id", "name", "username", "link", "fan_count", "followers_count", "is_published", "verification_status"],
+        advertencia:
+          "funciono porque el token administra esta Pagina. NO es acceso a terceros y no debe leerse como tal."
+      },
+
+      sobrePaginaDeTercero: {
+        resultado: "BLOQUEADO_PERMISOS",
+        httpStatus: 400,
+        codigoMeta: 100,
+        tipo: "OAuthException",
+
+        mensaje:
+          "Object does not exist, cannot be loaded due to missing permission or reviewable feature, or does not support this operation. This endpoint requires the 'pages_read_engagement' permission or the 'Page Public Content Access' feature or the 'Page Public Metadata Access' feature.",
+
+        /*
+          Meta nombra TRES alternativas, no una. Cualquiera de
+          las tres abriria la lectura, y no son igual de caras.
+        */
+        alternativasQueMetaNombra: [
+          "permiso pages_read_engagement",
+          "feature Page Public Content Access",
+          "feature Page Public Metadata Access"
+        ],
+
+        causaDemostrada:
+          "faltan permisos o features sobre Paginas que no administramos. Esto SI lo dice Meta: el error llega a evaluar permisos y los enumera.",
+
+        noDemostrado: [
+          "cual de las tres alternativas es la mas barata de conseguir",
+          "que Business Verification sea obligatoria: el error no la menciona"
+        ]
+      }
+    },
+
     siguientePasoQueSI: [
-      "configurar Facebook Login for Business y obtener un token de ese flujo",
-      "reintentar esta misma llamada",
-      "solo entonces el error que aparezca hablara de permisos"
+      "elegir UNA de las tres alternativas que Meta nombra",
+      "Page Public Metadata Access es la mas pequena de las tres segun su propio nombre, y no consta su coste",
+      "reintentar esta misma llamada sobre la Page de un tercero"
     ]
   },
 
@@ -720,12 +783,12 @@ const FACEBOOK = {
   */
   comentarios: {
     estado: "COMMENTS_NOT_TESTED",
-    gate: "META-THIRD-PARTY-REAL-01",
+    gate: "META-THIRD-PARTY-REAL-02",
 
     motivo:
-      "no se llego a pedir: la lectura de la Page fallo antes, en la credencial, y no hubo publicacion sobre la que preguntar.",
+      "no se llego a pedir sobre un tercero: la lectura de su Page fallo antes, por permisos. Sobre la Page que administramos, /posts devolvio 400 code 190 subcode 2069032, que apunta a que ese borde exige un Page access token y no un User token.",
 
-    bloqueoAguasArriba: "BLOQUEADO_CREDENCIAL en la lectura de la Page",
+    bloqueoAguasArriba: "BLOQUEADO_PERMISOS en la lectura de la Page de tercero",
 
     loQueDiceLaDocumentacion:
       "Page Public Content Access lista los comentarios publicos entre lo que devuelve de terceros. Es documentacion, no medicion.",
@@ -876,7 +939,83 @@ const INSTAGRAM = {
       ]
     },
 
-    conclusion: "MEDIDO_PROPIO, terceros BLOQUEADO",
+    conclusion: "MEDIDO_TERCERO",
+
+    /*
+      -----------------------------------------------------------
+      META-THIRD-PARTY-REAL-02 (2026-08-30)
+      -----------------------------------------------------------
+
+      Con un token de Facebook Login for Business,
+      `business_discovery` FUNCIONA sobre una cuenta profesional
+      de tercero. Medido, no leido.
+
+          GET graph.facebook.com/v23.0/{nuestro_ig_id}
+              ?fields=business_discovery.username(OBJETIVO){...}
+
+          HTTP 200
+
+      Volvieron: username, name, followers_count, media_count y
+      cinco publicaciones con id, permalink, timestamp,
+      media_type, like_count y comments_count.
+
+      EL PRIMER INTENTO SALIO CONTAMINADO, Y CONVIENE QUE CONSTE.
+
+      El objetivo elegido era el activo del candidato patron, y
+      la llamada de prerequisito —`me/accounts`— revelo que el
+      token ADMINISTRA esa Pagina y su Instagram vinculado. Es
+      decir: la primera consulta le pregunto a nuestra propia
+      cuenta por si misma. Devolvio datos reales y no demostraba
+      nada sobre terceros.
+
+      Se repitio contra una cuenta profesional de OTRO candidato,
+      que no aparece en `me/accounts`. Esa es la que sostiene
+      esta conclusion.
+
+      La leccion no es sobre Meta: es que un resultado positivo
+      con el sujeto equivocado se lee igual que un exito. Sin la
+      llamada de prerequisito, este gate habria declarado
+      MEDIDO_TERCERO con evidencia de MEDIDO_PROPIO.
+      -----------------------------------------------------------
+    */
+    etapaD: {
+      gate: "META-THIRD-PARTY-REAL-02",
+      fecha: "2026-08-30",
+      resultado: "MEDIDO_TERCERO",
+      endpoint: "GET graph.facebook.com/{ig}?fields=business_discovery.username()",
+      httpStatus: 200,
+
+      terceroGenuino: true,
+      comoSeComprobo:
+        "el objetivo NO aparece en me/accounts, asi que no es un activo que administremos",
+
+      camposObtenidos: [
+        "username",
+        "name",
+        "followers_count",
+        "media_count",
+        "media: id, permalink, timestamp, media_type",
+        "like_count por publicacion",
+        "comments_count por publicacion"
+      ],
+
+      camposQueNoVolvieron: [
+        "follows_count",
+        "view_count: no vino en la muestra",
+        "reach, impressions, saved, shares: son OWNER_INSIGHT y no se pidieron"
+      ],
+
+      contaminacionDelPrimerIntento:
+        "el primer objetivo era el activo del candidato patron y el token administra su Pagina: la consulta fue sobre nuestro propio activo. Se descarto y se repitio contra otro candidato.",
+
+      /*
+        Lo que la documentacion decia y la medicion no confirma.
+        No se corrige la documentacion: se registra la
+        discrepancia, que es un dato.
+      */
+      discrepanciaConLaDocumentacion:
+        "META-PUBLIC-ACCESS-01 documento que terceros exigen Advanced Access y Business Verification. La llamada funciono sin que consten concedidos. Lo medido es que funciona; POR QUE funciona no esta demostrado, y no conviene deducirlo."
+    },
 
     /*
       -----------------------------------------------------------
@@ -954,19 +1093,42 @@ const INSTAGRAM = {
     los comentarios que recibe `vocero593_` no son los que recibe
     un candidato.
   */
+  /*
+    RECUENTO SI, TEXTO NO. Y la diferencia no es un matiz:
+    `comments_count` dice cuantos, y con eso no se puede analizar
+    ninguno.
+  */
   comentarios: {
-    estado: "COMMENTS_NOT_TESTED",
-    gate: "META-THIRD-PARTY-REAL-01",
+    estado: "COMMENTS_PARTIAL",
+    gate: "META-THIRD-PARTY-REAL-02",
+
+    recuentoDisponible: true,
+    textoDisponible: false,
 
     motivo:
-      "no se llego a pedir: business_discovery no existe en graph.instagram.com, asi que no hubo ninguna publicacion de tercero sobre la que preguntar.",
+      "comments_count llega por publicacion del tercero. El TEXTO no: se pidio `comments{id,text,timestamp,username}` dentro de business_discovery.media y Meta respondio HTTP 400 code 100, «Please read documentation for supported fields».",
 
-    bloqueoAguasArriba: "NO_SOPORTADO_POR_FLUJO_ACTUAL en el descubrimiento",
+    medido: {
+      endpoint: "GET graph.facebook.com/{ig}?fields=business_discovery.username(){media{comments{text}}}",
+      httpStatus: 400,
+      codigoMeta: 100,
+      mensaje: "Please read documentation for supported fields"
+    },
 
-    sobreLaCuentaPropia:
-      "los comentarios de nuestra cuenta si son accesibles, y no sirven: MEDIDO_PROPIO no es MEDIDO_TERCERO.",
+    /*
+      Esto es una medicion, no una suposicion: se pidio y la ruta
+      probada no lo entrega. Por eso NO_AVAILABLE aplica al
+      TEXTO por esta via, y no a los comentarios en general.
+    */
+    textoPorEstaVia: "COMMENTS_NOT_AVAILABLE",
 
-    seProbaraCuando: "exista un token de Facebook Login for Business"
+    noSeProbo: [
+      "la arista /{ig-media-id}/comments directa sobre un media de tercero",
+      "si algun permiso adicional la abre"
+    ],
+
+    obligacionDeLenguaje:
+      "COMENTARIOS OBSERVADOS != TODOS LOS COMENTARIOS. Con solo el recuento no se puede afirmar nada sobre su contenido."
   },
 
   /*
@@ -997,55 +1159,74 @@ const INSTAGRAM = {
     "Solo cubre objetivos con cuenta PROFESIONAL."
   ],
 
+  /*
+    -----------------------------------------------------------
+    ACTUALIZADO POR META-THIRD-PARTY-REAL-02 (2026-08-30)
+    -----------------------------------------------------------
+
+    Siete capacidades pasan de PROPIA a TERCERO. No por la
+    documentacion: por una llamada a `business_discovery` sobre
+    una cuenta profesional que NO administramos.
+
+    Lo que volvio: username, name, followers_count, media_count y
+    cinco publicaciones con id, permalink, timestamp, media_type,
+    like_count y comments_count.
+
+    `views` y `shares` se quedan en PROPIA, y no por prudencia:
+    son OWNER_INSIGHT y no vinieron en la respuesta del tercero.
+    Moverlas seria exactamente el error que la separacion
+    PROPIO/TERCERO existe para evitar.
+    -----------------------------------------------------------
+  */
   capacidades: {
     identidad: c(
       DISP,
       MEDIDO,
-      "MEDIDO sobre cuenta propia: /me devolvio id, username, name y account_type. Para un tercero, el handle solo se lee de la URL con SD-1A",
+      "MEDIDO SOBRE TERCERO: business_discovery devolvio username y name de una cuenta profesional que no administramos",
       REQUISITOS.CREDENCIAL,
-      ALCANCE_MEDICION.PROPIA
+      ALCANCE_MEDICION.TERCERO
     ),
     cuenta: c(
       DISP,
       MEDIDO,
-      "MEDIDO sobre cuenta propia. Para un tercero haria falta business_discovery, que esta bloqueado",
+      "MEDIDO SOBRE TERCERO. Responder ES la evidencia del tipo: business_discovery solo responde sobre cuentas profesionales",
       REQUISITOS.CREDENCIAL,
-      ALCANCE_MEDICION.PROPIA
+      ALCANCE_MEDICION.TERCERO
     ),
     followers: c(
       DISP,
       MEDIDO,
-      "followers_count y follows_count. MEDIDO sobre cuenta propia; para un tercero, business_discovery",
+      "followers_count de un tercero, medido. `follows_count` NO vino en la respuesta del tercero",
       REQUISITOS.CREDENCIAL,
-      ALCANCE_MEDICION.PROPIA
+      ALCANCE_MEDICION.TERCERO
     ),
     publicaciones: c(
       DISP,
       MEDIDO,
-      "/me/media con permalink, timestamp y media_type. MEDIDO sobre cuenta propia",
+      "media_count y una muestra de 5 publicaciones del tercero, con permalink, timestamp y media_type",
       REQUISITOS.CREDENCIAL,
-      ALCANCE_MEDICION.PROPIA
+      ALCANCE_MEDICION.TERCERO
     ),
     views: c(
       DISP,
       MEDIDO,
-      "`views` llego por /insights. Es OWNER_INSIGHT: existe porque administramos la cuenta y NO existiria para un candidato",
+      "`views` llego por /insights y es OWNER_INSIGHT: NO vino en la respuesta del tercero y no existiria para un candidato",
       REQUISITOS.CREDENCIAL,
       ALCANCE_MEDICION.PROPIA
     ),
     likes: c(
       DISP,
       MEDIDO,
-      "like_count como campo de la publicacion. PUBLIC_METRIC, medido sobre cuenta propia",
+      "like_count por publicacion del tercero: 19, 28, 15, 36 y 30 en la muestra. PUBLIC_METRIC",
       REQUISITOS.CREDENCIAL,
-      ALCANCE_MEDICION.PROPIA
+      ALCANCE_MEDICION.TERCERO
     ),
     comments: c(
       DISP,
       MEDIDO,
-      "comments_count como campo de la publicacion. PUBLIC_METRIC, medido sobre cuenta propia",
+      "comments_count por publicacion del tercero. Es el RECUENTO: el TEXTO no cabe en este contrato y esta medido que no",
       REQUISITOS.CREDENCIAL,
-      ALCANCE_MEDICION.PROPIA
+      ALCANCE_MEDICION.TERCERO
     ),
     shares: c(
       DISP,
@@ -1061,7 +1242,13 @@ const INSTAGRAM = {
     ),
     busqueda: c(NOPE, DOC, "sin busqueda publica por API"),
     historico: c(NOPE, DOC, "ninguna via entrega serie temporal"),
-    url_verificable: c(DISP, DOC, "instagram.com/p/ID es canonica")
+    url_verificable: c(
+      DISP,
+      MEDIDO,
+      "el `permalink` de cada publicacion del tercero llego en la respuesta. Es la URL canonica y sirve de evidencia reencontrable",
+      REQUISITOS.CREDENCIAL,
+      ALCANCE_MEDICION.TERCERO
+    )
   },
 
   /*

@@ -3088,7 +3088,44 @@ export async function guardarDeclaracionesDeTipo(
 ) {
   const cuando = contexto.declaradoEn || new Date().toISOString();
 
-  const entidad = `${PREFIJO_TIPO_ACTIVO}${candidatoId}-${cuando}`;
+  /*
+    ---------------------------------------------------------
+    LA CLAVE NO PUEDE SER SOLO CANDIDATO + FECHA
+    ---------------------------------------------------------
+
+    Lo era, y META-THIRD-PARTY-REAL-02 lo descubrio de la peor
+    forma: dos lotes del mismo candidato guardados con el mismo
+    `declaradoEn` producian la MISMA entidad, y el Lake devuelve
+    la ultima version de una entidad. El primer lote seguia
+    escrito y dejaba de leerse.
+
+    No se pierde el dato —el Lake conserva versiones— pero
+    desaparece de la serie, que para quien la lee es lo mismo.
+    Y falla en silencio: la escritura devuelve `escrito: true`.
+
+    Con un `new Date()` por lote la colision es improbable; con
+    una fecha pasada a mano, como en una verificacion que se
+    fecha con el momento de la observacion, es lo normal.
+
+    Asi que la clave lleva ademas un discriminante de contenido:
+    dos lotes distintos son dos entidades, y el mismo lote
+    reescrito sigue siendo el mismo.
+    ---------------------------------------------------------
+  */
+  const huella = (declaraciones || [])
+    .map((d) => `${d?.assetId || ""}:${d?.declaredType || ""}:${d?.source || ""}`)
+    .sort()
+    .join("|");
+
+  let acumulado = 0;
+
+  for (let i = 0; i < huella.length; i += 1) {
+    acumulado = (acumulado * 31 + huella.charCodeAt(i)) % 0xffffffff;
+  }
+
+  const discriminante = acumulado.toString(36);
+
+  const entidad = `${PREFIJO_TIPO_ACTIVO}${candidatoId}-${cuando}-${discriminante}`;
 
   try {
     const r = await escribirEnLake(

@@ -332,6 +332,97 @@ export function crearDeclaracionDeTipo(entrada = {}) {
 
 
 /*
+===========================================================
+VERIFICACION TECNICA DEL TIPO — META_API
+===========================================================
+
+P-CAND-ASSET-TYPE-DECLARE-01 dejo `FUENTES_VERIFICADAS` con una
+sola entrada, `META_API`, y ninguna forma de producirla. Era
+correcto: no habia manera de obtenerla.
+
+META-THIRD-PARTY-REAL-02 la obtuvo, y por una propiedad del
+propio endpoint mas que por un campo que Meta declare:
+
+    business_discovery SOLO responde sobre cuentas
+    profesionales. Si responde con datos, la cuenta es
+    profesional.
+
+    los campos `username`, `is_published` y `fan_count` de una
+    Page no existen para un perfil personal en ese borde. Si
+    vuelven, es una Page.
+
+Eso es evidencia tecnica y no una declaracion. Se registra en
+la misma serie que las declaraciones del analista —es el mismo
+hecho, «el tipo de este activo»— con su procedencia distinta.
+
+REGLA QUE NO CAMBIA: verificar UN activo no verifica a los
+demas. La evidencia es del activo que respondio, y de ninguno
+mas.
+===========================================================
+*/
+export function crearVerificacionDeTipo(entrada = {}) {
+  const {
+    candidateId = null,
+    assetId = null,
+    platform = null,
+    url = null,
+    verifiedType = null,
+    endpoint = null,
+    evidencia = null,
+    observedAt = null
+  } = entrada;
+
+  if (!assetId) {
+    return { valido: false, motivo: "falta el identificador del activo" };
+  }
+
+  const n = normalizarTipoDeclarado(platform, verifiedType);
+
+  if (!n.valido) return { valido: false, motivo: n.motivo };
+
+  if (n.tipo === TIPOS_ACTIVO.UNKNOWN) {
+    return {
+      valido: false,
+      motivo: "una verificacion tecnica no puede resultar UNKNOWN: si no hay evidencia, no hay verificacion"
+    };
+  }
+
+  if (!endpoint || !evidencia) {
+    return {
+      valido: false,
+      motivo:
+        "una verificacion exige endpoint y evidencia. Sin poder decir que respondio y donde, es una afirmacion sin respaldo."
+    };
+  }
+
+  return {
+    valido: true,
+
+    declaracion: {
+      candidateId,
+      assetId,
+      platform: String(platform || "").toLowerCase() || null,
+      url: url || null,
+
+      declaredType: n.tipo,
+      declaredBy: "meta_api",
+      declaredAt: observedAt || new Date().toISOString(),
+
+      /* ---- PROCEDENCIA: esta SI es verificacion ---- */
+      source: FUENTE_TIPO.META_API,
+      verificationStatus: VERIFICACION_ACTIVO.VERIFICADA,
+
+      endpoint,
+      evidencia,
+
+      nota:
+        "Tipo verificado contra la API de Meta. La evidencia es de ESTE activo y no se extiende a ningun otro del mismo candidato."
+    }
+  };
+}
+
+
+/*
   Resuelve el tipo efectivo de un activo cruzando lo que dice
   la URL con lo que declaro el analista.
 
@@ -366,6 +457,14 @@ export function tipoEfectivo(clasificacionTecnica = {}, declaracion = null) {
     declarado !== TIPOS_ACTIVO.UNKNOWN &&
     declarado !== tecnico;
 
+  /*
+    La fuente sale del registro, no se asume. Antes se daba por
+    hecho que toda declaracion venia del analista, porque era la
+    unica que existia; ahora una puede venir de META_API y eso
+    cambia la verificacion.
+  */
+  const fuente = declaracion.source || FUENTE_TIPO.ANALYST_DECLARATION;
+
   return {
     assetType: declarado === TIPOS_ACTIVO.UNKNOWN ? tecnico : declarado,
 
@@ -374,7 +473,7 @@ export function tipoEfectivo(clasificacionTecnica = {}, declaracion = null) {
         ? tecnicoDecide
           ? FUENTE_TIPO.PUBLIC_METADATA
           : FUENTE_TIPO.NINGUNA
-        : FUENTE_TIPO.ANALYST_DECLARATION,
+        : fuente,
 
     assetTypeDeclared: declarado,
     assetTypeTecnico: tecnico,
@@ -385,9 +484,13 @@ export function tipoEfectivo(clasificacionTecnica = {}, declaracion = null) {
       una fuente de FUENTES_VERIFICADAS, y la declaracion del
       analista no es una.
     */
-    verificationStatus: FUENTES_VERIFICADAS.includes(FUENTE_TIPO.ANALYST_DECLARATION)
-      ? VERIFICACION_ACTIVO.VERIFICADA
-      : VERIFICACION_ACTIVO.NO_VERIFICADA,
+    verificationStatus:
+      declarado !== TIPOS_ACTIVO.UNKNOWN && FUENTES_VERIFICADAS.includes(fuente)
+        ? VERIFICACION_ACTIVO.VERIFICADA
+        : VERIFICACION_ACTIVO.NO_VERIFICADA,
+
+    endpointDeVerificacion: declaracion.endpoint || null,
+    evidenciaDeVerificacion: declaracion.evidencia || null,
 
     declaredBy: declaracion.declaredBy || null,
     declaredAt: declaracion.declaredAt || null,
@@ -1180,6 +1283,7 @@ export default {
   FUENTE_TIPO,
   normalizarTipoDeclarado,
   crearDeclaracionDeTipo,
+  crearVerificacionDeTipo,
   tipoEfectivo,
   clasificarActivoInstagram,
   coberturaMetaDeclarada,

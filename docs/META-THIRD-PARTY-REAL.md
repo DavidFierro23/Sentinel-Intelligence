@@ -255,6 +255,140 @@ La distinción no es un tecnicismo: es la diferencia entre «lo leí» y «lo me
 
 ---
 
+## META-THIRD-PARTY-REAL-02 (2026-08-30)
+
+Reintento con `FACEBOOK_USER_ACCESS_TOKEN`. **7 llamadas Meta.**
+
+### Lo primero: el primer intento salió contaminado
+
+La llamada de prerequisito —`GET graph.facebook.com/me/accounts`— devolvió esto:
+
+```
+pageId  725422874136257
+nombre  Jota Lloret
+username  jotalloretv
+instagram_business_account  jotalloretv
+```
+
+**El token administra la Página del candidato patrón y su Instagram vinculado.**
+
+Así que las dos primeras sondas preguntaron por *nuestro propio activo*:
+
+| Sonda | Resultado | Lo que realmente era |
+|---|---|---|
+| `business_discovery(jotalloretv)` | HTTP 200, 10 821 seguidores | nuestra cuenta preguntando por sí misma |
+| Page `jotalloretv` | HTTP 200, 55 859 seguidores | Página que administramos |
+
+Datos reales, cifras reales, y **cero evidencia sobre terceros**. Un resultado
+positivo con el sujeto equivocado se lee exactamente igual que un éxito.
+
+Sin la llamada de prerequisito, este gate habría declarado `MEDIDO_TERCERO` con
+evidencia de `MEDIDO_PROPIO`.
+
+Se repitió contra un candidato que **no** aparece en `me/accounts`.
+
+### Instagram · tercero genuino: MEDIDO_TERCERO
+
+```
+GET graph.facebook.com/v23.0/{nuestro_ig_id}
+    ?fields=business_discovery.username(OBJETIVO){...}     → HTTP 200
+```
+
+| | |
+|---|---|
+| username / name | ✓ |
+| followers_count | **9 719** |
+| media_count | **1 635** |
+| muestra | 5 publicaciones |
+| por publicación | `id`, `permalink`, `timestamp`, `media_type`, `like_count`, `comments_count` |
+| likes de la muestra | 19 · 28 · 15 · 36 · 30 |
+
+**No volvieron:** `follows_count`, `view_count`. **No se pidieron:** `reach`,
+`impressions`, `saved`, `shares` — son `OWNER_INSIGHT`.
+
+### Facebook · tercero genuino: BLOQUEADO_PERMISOS
+
+```
+GET graph.facebook.com/v23.0/{page}?fields=id,name,username,fan_count
+→ HTTP 400 · code 100 · OAuthException
+```
+
+Meta nombra **tres** alternativas, y no son igual de caras:
+
+- permiso `pages_read_engagement`
+- feature **Page Public Content Access**
+- feature **Page Public Metadata Access**
+
+Esto sí es una causa demostrada: el error llega a evaluar permisos y los
+enumera. Reducirlo a «hace falta App Review» perdería la única pista útil.
+
+**Business Verification no aparece mencionada.**
+
+### Comentarios · Instagram: PARTIAL
+
+`comments_count` llega por publicación del tercero. El **texto** no:
+
+```
+...business_discovery.username(){media{comments{text,timestamp,username}}}
+→ HTTP 400 · code 100 · «Please read documentation for supported fields»
+```
+
+Recuento sí, texto no — y esto último es una **medición**, no una suposición. Con
+solo el recuento no se puede analizar ni un comentario.
+
+No se probó la arista `/{ig-media-id}/comments` directa.
+
+### Verificación técnica de tipo
+
+`business_discovery` solo responde sobre cuentas profesionales, así que
+**responder es la evidencia del tipo**. Tres activos pasan a `META_API` /
+`VERIFICADA`; los otros 20 siguen intactos en `ANALYST_DECLARATION`.
+
+| Activo | Tipo | Nota |
+|---|---|---|
+| `instagram:pedropalaciosu` | `INSTAGRAM_PROFESSIONAL` | tercero genuino |
+| `instagram:jotalloretv` | `INSTAGRAM_PROFESSIONAL` | activo propio; el tipo se sostiene, el acceso no |
+| `facebook:jotalloretv` | `FACEBOOK_PAGE` | activo propio |
+
+### Discrepancia con la documentación
+
+`META-PUBLIC-ACCESS-01` documentó que terceros exigen **Advanced Access** y
+**Business Verification**. La llamada funcionó sin que consten concedidos.
+
+Lo medido es que **funciona**. *Por qué* funciona no está demostrado, y no
+conviene deducirlo. Queda registrada la discrepancia en lugar de reescribir una
+de las dos.
+
+### `habilitaBenchmark()`
+
+| | antes | después |
+|---|---|---|
+| instagram | `false` | **`true`** |
+| facebook | `false` | `false` |
+
+Instagram entra con 7 capacidades sobre un tercero genuino: identidad, cuenta,
+followers, publicaciones, likes, comments, url_verificable. El mismo baremo con
+el que entraron X y YouTube — ser más estricto solo con Instagram sería
+arbitrario.
+
+`views` y `shares` **no** ascienden: son `OWNER_INSIGHT` y no vinieron del
+tercero. Moverlas sería presentar una cifra nuestra como si fuera de un
+candidato.
+
+**Aviso de cobertura:** `business_discovery` solo alcanza cuentas
+profesionales. De los 12 Instagram del proyecto, solo los declarados
+profesionales son observables.
+
+### Defecto encontrado de paso
+
+`guardarDeclaracionesDeTipo` usaba `candidato + fecha` como clave de entidad.
+Dos lotes del mismo candidato con el mismo `declaradoEn` producían la **misma**
+entidad, y el Lake devuelve la última versión: el primer lote seguía escrito y
+dejaba de leerse, con `escrito: true`. La clave lleva ahora un discriminante de
+contenido.
+
+---
+
 ## Siguiente decisión
 
 Con Meta oficial cerrado por credencial, hay dos caminos y son excluyentes en

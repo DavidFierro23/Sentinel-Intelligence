@@ -492,6 +492,93 @@ export async function validarCredencialDeFacebook(opciones = {}) {
 
 /*
 ===========================================================
+NUESTRAS PAGINAS Y SU INSTAGRAM VINCULADO
+===========================================================
+
+`business_discovery` se pide DESDE nuestra cuenta profesional
+—«yo, que soy esta cuenta, pregunto por esa otra»— y exige que
+esa cuenta este vinculada a una Pagina que administramos.
+
+El id que devuelve `graph.instagram.com/me` es de otro flujo. El
+que sirve aqui es el que `graph.facebook.com` reconoce como
+`instagram_business_account` de una de nuestras Paginas, y solo
+el propio host puede decir cual es.
+
+Asi que no se reutiliza el otro id ni se supone que coincidan:
+se pregunta. Es una llamada sobre activos PROPIOS y no toca a
+ningun tercero.
+===========================================================
+*/
+export async function paginasQueAdministramos(opciones = {}) {
+  const estado = estadoDeCredenciales();
+
+  if (!estado.facebookLogin.configurada) {
+    return {
+      estado: "SIN_CREDENCIAL",
+      paginas: [],
+      llamadas: 0,
+      familiaRequerida: FAMILIA.FACEBOOK_LOGIN,
+      motivo: estado.facebookLogin.nota
+    };
+  }
+
+  const r = await pedir(
+    BASE_FB,
+    "/me/accounts",
+    { fields: "id,name,username,instagram_business_account{id,username}" },
+    { ...opciones, etiqueta: "Facebook paginas propias" }
+  );
+
+  if (!r.ok) {
+    return {
+      estado: r.estado,
+      paginas: [],
+      llamadas: 1,
+      httpStatus: r.httpStatus,
+      endpoint: r.endpoint,
+      motivo: r.motivo,
+      codigo: r.codigo,
+      subcodigo: r.subcodigo,
+      tipo: r.tipo,
+      observadoEn: new Date().toISOString()
+    };
+  }
+
+  const paginas = (r.datos?.data || []).map((x) => ({
+    pageId: x.id || null,
+    nombre: x.name || null,
+    username: x.username || null,
+    instagramBusinessAccountId: x.instagram_business_account?.id || null,
+    instagramUsername: x.instagram_business_account?.username || null
+  }));
+
+  const conIg = paginas.filter((x) => x.instagramBusinessAccountId);
+
+  return {
+    estado: "OK",
+    llamadas: 1,
+    httpStatus: r.httpStatus,
+    endpoint: r.endpoint,
+    observadoEn: new Date().toISOString(),
+
+    paginas,
+
+    /*
+      El id que `business_discovery` necesita. `null` si ninguna
+      de nuestras Paginas tiene Instagram vinculado, que es un
+      requisito y no un detalle: sin el, la via no existe.
+    */
+    idParaBusinessDiscovery: conIg[0]?.instagramBusinessAccountId || null,
+
+    requisitoDelVinculo: conIg.length
+      ? `${conIg.length} de ${paginas.length} pagina(s) con Instagram profesional vinculado`
+      : "ninguna Pagina administrada tiene Instagram profesional vinculado. business_discovery no se puede pedir sin ese vinculo."
+  };
+}
+
+
+/*
+===========================================================
 PAGINA DE FACEBOOK DE UN TERCERO
 ===========================================================
 
@@ -984,7 +1071,15 @@ export async function descubrirCuentaProfesional(igUserId, usuarioObjetivo, opci
   const campos =
     `business_discovery.username(${limpio})` +
     "{username,name,followers_count,media_count," +
-    "media.limit(5){id,caption,media_type,permalink,timestamp,like_count,comments_count}}";
+    `media.limit(${opciones.limiteDeMedia || 5}){${
+      /*
+        Los campos de la muestra son parametrizables para poder
+        sondear el limite del contrato —por ejemplo, si el texto
+        de los comentarios cabe aqui— sin duplicar la funcion.
+      */
+      opciones.camposDeMedia ||
+      "id,caption,media_type,permalink,timestamp,like_count,comments_count"
+    }}}`;
 
   const r = await pedir(
     host,
