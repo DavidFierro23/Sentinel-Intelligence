@@ -816,6 +816,94 @@ const FACEBOOK = {
       }
     },
 
+    /*
+      -----------------------------------------------------------
+      P-CAND-FACEBOOK-01 (2026-08-31) — CIERRE
+      -----------------------------------------------------------
+
+      Tres llamadas. La novedad no esta en el tercero, que volvio
+      a fallar como se esperaba, sino en la Pagina propia.
+
+          me/accounts                        200
+          /{page-propia}/posts               400 · (#10)
+          /{page-tercero}                    400 · (#100)
+
+      Hasta aqui se creia que lo propio funcionaba entero. Lo que
+      funcionaba era la METADATA. El contenido —las
+      publicaciones— exige `pages_read_user_content`, que el
+      token no lleva, y eso no se habia medido nunca porque
+      ningun gate anterior pidio /posts.
+
+      La diferencia entre los dos 400 es la que importa:
+
+          (#10)  sobre lo propio    falta un PERMISO del token.
+                 Se arregla regenerandolo: somos administradores.
+
+          (#100) sobre un tercero   falta una FEATURE de la app.
+                 No se arregla con ningun token: App Review.
+      -----------------------------------------------------------
+    */
+    etapaC: {
+      gate: "P-CAND-FACEBOOK-01",
+      fecha: "2026-08-31",
+      requests: 3,
+
+      sobrePaginaPropia: {
+        metadata: {
+          resultado: "MEDIDO_PROPIO_AUTORIZADO",
+          httpStatus: 200,
+          campos: ["id", "name", "username", "fan_count", "followers_count"],
+          fanCountMedido: 55855
+        },
+
+        publicaciones: {
+          resultado: "BLOQUEADO_PERMISO_TOKEN",
+          httpStatus: 400,
+          codigoMeta: 10,
+          permisoQueFalta: "pages_read_user_content",
+
+          alcanceDelTokenActual: [
+            "pages_show_list",
+            "instagram_basic",
+            "instagram_manage_insights",
+            "pages_read_engagement",
+            "public_profile"
+          ],
+
+          accion:
+            "regenerar el token anadiendo pages_read_user_content. Para una Pagina que administramos no hace falta App Review; para terceros no basta.",
+
+          noEs:
+            "NO es PPCA ni Business Verification: es un permiso ausente en el token, y el mensaje de Meta lo nombra."
+        },
+
+        comentarios: {
+          resultado: "NO_MEDIDO",
+          motivo:
+            "la sonda de texto de comentarios viajaba anidada en /posts, asi que cayo con la misma llamada. No se sabe todavia si Facebook entrega texto de comentarios de una Pagina propia."
+        }
+      },
+
+      sobrePaginaDeTercero: {
+        resultado: "BLOQUEADO_META",
+        httpStatus: 400,
+        codigoMeta: 100,
+        tipo: "OAuthException",
+
+        confirmacion:
+          "identico a META-THIRD-PARTY-REAL-02 con un token de larga duracion valido y vivo. El bloqueo NO era la credencial: es la feature.",
+
+        alternativasQueMetaNombra: [
+          "permiso pages_read_engagement",
+          "feature Page Public Content Access",
+          "feature Page Public Metadata Access"
+        ],
+
+        matiz:
+          "el token YA tiene pages_read_engagement y aun asi falla: ese permiso solo aplica a Paginas donde tenemos rol. Para terceros la unica de las tres que sirve es una FEATURE, no el permiso."
+      }
+    },
+
     siguientePasoQueSI: [
       "elegir UNA de las tres alternativas que Meta nombra",
       "Page Public Metadata Access es la mas pequena de las tres segun su propio nombre, y no consta su coste",
@@ -852,22 +940,55 @@ const FACEBOOK = {
   ],
 
   capacidades: {
-    identidad: c(DISP, DOC, "la URL publica identifica la pagina o el perfil, sin API"),
+    /*
+      P-CAND-FACEBOOK-01: medido sobre la Pagina que
+      administramos. MEDIDO_PROPIO y no MEDIDO, porque un
+      candidato no nos va a dar rol en la suya.
+    */
+    identidad: c(
+      DISP,
+      MEDIDO,
+      "id, name y username de una Pagina administrada, HTTP 200. Sobre una Pagina ajena la misma llamada da 400",
+      REQUISITOS.CREDENCIAL,
+      ALCANCE_MEDICION.PROPIA
+    ),
     cuenta: c(
       DISP,
-      DOC,
-      "metadata publica de la pagina —titulo, og:image— legible sin API. Ninguna metrica"
+      MEDIDO,
+      "metadata de la Pagina administrada por me/accounts: id, name, username, link, is_published, verification_status",
+      REQUISITOS.CREDENCIAL,
+      ALCANCE_MEDICION.PROPIA
     ),
     followers: c(
-      AUTZ,
-      DOC,
-      "fan_count. Con PPCA para paginas de terceros; su disponibilidad varia",
-      REQUISITOS.APP_REVIEW
+      DISP,
+      MEDIDO,
+      "fan_count y followers_count llegan sobre la Pagina administrada —55.855 medido— y son cifras distintas que no se funden. Sobre terceros sigue exigiendo PPCA",
+      REQUISITOS.CREDENCIAL,
+      ALCANCE_MEDICION.PROPIA
     ),
+    /*
+      EL HALLAZGO DE P-CAND-FACEBOOK-01.
+
+      No es solo que los terceros esten cerrados: /posts esta
+      cerrado TAMBIEN sobre nuestra propia Pagina, porque el
+      token no lleva `pages_read_user_content`.
+
+          GET /{page-id}/posts   HTTP 400 · (#10)
+          "requires the 'pages_read_user_content' permission
+           or the 'Page Public Content Access' feature"
+
+      Los gates anteriores midieron la Pagina, no sus
+      publicaciones, y de ahi salio la idea de que lo propio ya
+      funcionaba entero. Funcionaba la metadata.
+
+      Para la Pagina propia esto se arregla regenerando el token
+      con ese permiso —somos administradores—. Para terceros no:
+      ahi hace falta la feature.
+    */
     publicaciones: c(
       AUTZ,
       DOC,
-      "/posts con Page Public Content Access. Es la unica via oficial a publicaciones de una pagina ajena",
+      "/posts sobre la Pagina PROPIA da 400 (#10): falta pages_read_user_content en el token. Sobre terceros hace falta Page Public Content Access. Medido en P-CAND-FACEBOOK-01",
       REQUISITOS.APP_REVIEW
     ),
     views: c(

@@ -328,7 +328,17 @@ function clasificar(status, cuerpo) {
 
 
 async function pedir(base, ruta, params, opciones = {}) {
-  const clave = credencialDeHost(base);
+  /*
+    `opciones.token` existe por una razon concreta: las
+    publicaciones de una Pagina se leen con el token DE LA
+    PAGINA, no con el del usuario que la administra. Sin esto,
+    /{page}/posts devuelve un 190 que habla de permisos cuando
+    lo que pasa es que se envio la credencial equivocada.
+
+    Sigue siendo obligatorio que exista credencial del host: un
+    token de Page es de la familia de Facebook Login.
+  */
+  const clave = opciones.token || credencialDeHost(base);
 
   /*
     Sin la credencial de ESTE host no se llama. Antes se enviaba
@@ -805,6 +815,261 @@ export async function paginaDeTercero(identificador, opciones = {}) {
   };
 }
 
+
+
+/*
+===========================================================
+PUBLICACIONES DE UNA PAGINA QUE ADMINISTRAMOS
+P-CAND-FACEBOOK-01
+===========================================================
+
+La unica via de Facebook que hoy da contenido, y solo sobre
+Paginas donde tenemos rol. Sirve para cerrar la pregunta «que
+campos entrega Facebook cuando SI hay acceso», que es distinta
+de «podemos observar a un candidato».
+
+    MEDIDO_PROPIO_AUTORIZADO  !=  MEDIDO_TERCERO
+
+Medir aqui NO habilita nada sobre terceros. Un candidato nunca
+nos va a dar rol en su Pagina.
+
+EL DETALLE QUE ROMPE ESTO SI SE IGNORA
+-----------------------------------------------------------
+
+Las publicaciones de una Pagina se leen con el token DE LA
+PAGINA, no con el del usuario. El token de Page se pide en
+`me/accounts` y NO sale de esta funcion: ni se devuelve, ni se
+registra, ni aparece en la traza.
+
+DOS CIFRAS QUE NO SON LA MISMA
+-----------------------------------------------------------
+
+`reactions.summary` cuenta TODAS las reacciones —me gusta, me
+encanta, me enfada— y `likes` solo una. Se pide la primera y se
+la llama reacciones, porque llamarla «likes» seria inflar los
+likes con enfados.
+===========================================================
+*/
+export async function publicacionesDePaginaPropia(pageId, opciones = {}) {
+  const estado = estadoDeCredenciales();
+
+  if (!estado.facebookLogin.configurada) {
+    return {
+      estado: "SIN_CREDENCIAL",
+      llamadas: 0,
+      familiaRequerida: FAMILIA.FACEBOOK_LOGIN,
+      motivo: estado.facebookLogin.nota
+    };
+  }
+
+  if (!pageId) {
+    return { estado: "OK", llamadas: 0, motivo: "hace falta el id de la pagina" };
+  }
+
+  let llamadas = 0;
+
+  /*
+    1 · El token de la Pagina. Se pide aqui y muere aqui.
+  */
+  const cuentas = await pedir(
+    BASE_FB,
+    "/me/accounts",
+    { fields: "id,name,username,access_token,fan_count,followers_count" },
+    { ...opciones, etiqueta: "Facebook paginas propias con token" }
+  );
+
+  llamadas += 1;
+
+  if (!cuentas.ok) {
+    return {
+      estado: cuentas.estado,
+      llamadas,
+      httpStatus: cuentas.httpStatus,
+      motivo: cuentas.motivo,
+      codigo: cuentas.codigo
+    };
+  }
+
+  const pagina = (cuentas.datos?.data || []).find(
+    (x) => String(x.id) === String(pageId) || x.username === pageId
+  );
+
+  if (!pagina) {
+    return {
+      estado: "NO_ADMINISTRADA",
+      llamadas,
+
+      motivo:
+        "esta Pagina no aparece en me/accounts, asi que no la administramos. Para una Pagina ajena la via es Page Public Content Access, no esta funcion."
+    };
+  }
+
+  const tokenDePagina = pagina.access_token || null;
+
+  if (!tokenDePagina) {
+    return {
+      estado: "SIN_TOKEN_DE_PAGINA",
+      llamadas,
+
+      motivo:
+        "me/accounts no devolvio access_token para esta Pagina. Sin el, /posts responde por el usuario y no por la Pagina."
+    };
+  }
+
+  /*
+    2 · Las publicaciones. Una llamada, con las metricas anidadas
+    en el propio `fields`: pedirlas por separado gastaria mas sin
+    obtener nada distinto.
+
+    `comments.limit(N){message}` es la sonda que cierra la
+    pregunta de Comments Intelligence sobre Facebook.
+  */
+  const limite = Math.min(Number(opciones.maximo) || 5, 25);
+
+  const campos = [
+    "id",
+    "permalink_url",
+    "created_time",
+    "message",
+    "status_type",
+    "attachments{media_type,type}",
+    "reactions.summary(true).limit(0)",
+    "comments.summary(true).limit(3){id,created_time,message,permalink_url}",
+    "shares"
+  ].join(",");
+
+  const posts = await pedir(
+    BASE_FB,
+    `/${pagina.id}/posts`,
+    { fields: campos, limit: limite },
+    {
+      ...opciones,
+      token: tokenDePagina,
+      etiqueta: "Facebook publicaciones de pagina propia"
+    }
+  );
+
+  llamadas += 1;
+
+  if (!posts.ok) {
+    return {
+      estado: posts.estado,
+      llamadas,
+      httpStatus: posts.httpStatus,
+      endpoint: posts.endpoint,
+      motivo: posts.motivo,
+      codigo: posts.codigo,
+
+      pagina: {
+        id: pagina.id,
+        name: pagina.name || null,
+        username: pagina.username || null,
+        fan_count: pagina.fan_count ?? null,
+        followers_count: pagina.followers_count ?? null
+      }
+    };
+  }
+
+  const publicaciones = (posts.datos?.data || []).map((x) => {
+    const comentarios = x.comments?.data || [];
+
+    return {
+      postId: x.id || null,
+      permalink: x.permalink_url || null,
+      publishedAt: x.created_time || null,
+      texto: x.message || null,
+      statusType: x.status_type || null,
+
+      tipoDeMedio: x.attachments?.data?.[0]?.media_type || null,
+
+      metricas: {
+        /* TODAS las reacciones, no solo «me gusta». */
+        reactions: metrica(
+          { reactions: x.reactions?.summary?.total_count },
+          "reactions",
+          ALCANCE.PUBLIC_METRIC
+        ),
+
+        comments_count: metrica(
+          { comments_count: x.comments?.summary?.total_count },
+          "comments_count",
+          ALCANCE.PUBLIC_METRIC
+        ),
+
+        shares: metrica(
+          { shares: x.shares?.count },
+          "shares",
+          ALCANCE.PUBLIC_METRIC
+        ),
+
+        /*
+          Las vistas de video son OWNER_INSIGHT y viven en
+          /insights, no aqui. Se declara ausente en lugar de
+          rellenarla con 0.
+        */
+        video_views: {
+          value: null,
+          alcance: ALCANCE.OWNER_INSIGHT,
+          availability: "NO_DISPONIBLE",
+          motivo:
+            "las vistas de video son un insight del propietario y no vienen en /posts. No existirian para la Pagina de un candidato ajeno."
+        }
+      },
+
+      /*
+        EL DATO QUE DECIDE SI COMMENTS INTELLIGENCE TIENE FUENTE.
+        Instagram no entrega texto de comentarios; aqui se mide
+        si Facebook lo hace cuando hay autorizacion.
+      */
+      comentarios: comentarios.map((c) => ({
+        id: c.id || null,
+        publishedAt: c.created_time || null,
+        texto: c.message || null,
+        permalink: c.permalink_url || null
+      })),
+
+      comentariosObservados: comentarios.length
+    };
+  });
+
+  return {
+    estado: "OK",
+    llamadas,
+    httpStatus: posts.httpStatus,
+    endpoint: posts.endpoint,
+    observadoEn: new Date().toISOString(),
+
+    /*
+      El alcance NO sale de la respuesta: sale de que la Pagina
+      estaba en me/accounts. Se fija aqui para que nadie lo lea
+      como acceso a terceros.
+    */
+    alcanceDeLaMedicion: "MEDIDO_PROPIO_AUTORIZADO",
+
+    pagina: {
+      id: pagina.id,
+      name: pagina.name || null,
+      username: pagina.username || null,
+      fan_count: pagina.fan_count ?? null,
+      followers_count: pagina.followers_count ?? null
+    },
+
+    publicaciones,
+
+    textoDeComentarios: publicaciones.some((p) => p.comentarios.some((c) => c.texto))
+      ? "DISPONIBLE"
+      : "NO_OBSERVADO",
+
+    noSignifica: [
+      "MEDIDO_TERCERO",
+      "PAGE_PUBLIC_CONTENT_ACCESS_CONCEDIDO",
+      "BENCHMARK_HABILITADO"
+    ],
+
+    nota:
+      "Medido sobre una Pagina que administramos. NO demuestra acceso a Paginas de terceros: para eso hace falta Page Public Content Access con App Review y Business Verification."
+  };
+}
 
 export const ALCANCE = Object.freeze({
   PUBLIC_METRIC: "PUBLIC_METRIC",

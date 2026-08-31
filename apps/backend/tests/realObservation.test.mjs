@@ -647,7 +647,31 @@ await t("solo las plataformas ejecutadas tienen capacidades medidas", () => {
     .sort()
     .join(",");
 
-  return conMedidas === "instagram,tiktok,x,youtube";
+  /*
+    P-CAND-FACEBOOK-01 suma Facebook, y con un matiz que la
+    siguiente prueba fija: todo lo suyo es sobre la Pagina que
+    administramos. Estar en esta lista significa «se ejecuto»,
+    no «sirve para observar candidatos».
+  */
+  return conMedidas === "facebook,instagram,tiktok,x,youtube";
+});
+
+await t("de Facebook todo lo medido es sobre nuestra propia Pagina", () => {
+  const fb = scm
+    .matrizDeCapacidades()
+    .plataformas.find((p) => p.plataformaId === "facebook");
+
+  const medidas = Object.values(fb.capacidades).filter(
+    (c) => c.verificacion === "MEDIDO_EN_PRODUCCION"
+  );
+
+  return (
+    medidas.length === 3 &&
+    medidas.every((c) => scm.celdaDe(c) === "MEDIDO_PROPIO") &&
+    /* Ni una sola sobre un tercero, y por tanto sin benchmark. */
+    medidas.every((c) => scm.celdaDe(c) !== "MEDIDO_TERCERO") &&
+    scm.habilitaBenchmark("facebook").habilita === false
+  );
 });
 
 /*
@@ -738,14 +762,35 @@ await t("en Instagram lo propio y lo de terceros no se mezclan", () => {
 });
 
 /*
-  ACTUALIZADO EN P-CAND-TIKTOK-01. TikTok ya tiene UNA medicion y
-  Facebook sigue sin ninguna, que es la diferencia entre «se
-  probo y da poco» y «no se ha probado».
+  ACTUALIZADO EN P-CAND-FACEBOOK-01. Facebook ya tiene tres
+  mediciones y las tres son sobre la Pagina que administramos,
+  asi que la frase que hay que defender ya no es «no se ha
+  medido» sino «lo medido no es de un tercero».
 */
-await t("Facebook sigue sin una sola medicion", () => {
+await t("Facebook tiene tres medidas y ninguna sobre un tercero", () => {
   const m = scm.matrizDeCapacidades();
 
-  return m.plataformas.find((p) => p.plataformaId === "facebook").medidas === 0;
+  const fb = m.plataformas.find((p) => p.plataformaId === "facebook");
+
+  const terceros = Object.values(fb.capacidades).filter(
+    (c) => scm.celdaDe(c) === "MEDIDO_TERCERO"
+  );
+
+  return fb.medidas === 3 && terceros.length === 0;
+});
+
+await t("y las publicaciones de Facebook NO estan medidas ni sobre lo propio", () => {
+  /*
+    El hallazgo del gate: /posts fallo tambien sobre nuestra
+    Pagina, por falta de pages_read_user_content. Si esto se
+    pusiera en MEDIDO, el proyecto creeria que ya tiene contenido
+    de Facebook.
+  */
+  const fb = scm
+    .matrizDeCapacidades()
+    .plataformas.find((p) => p.plataformaId === "facebook");
+
+  return fb.capacidades.publicaciones.verificacion !== "MEDIDO_EN_PRODUCCION";
 });
 
 await t("TikTok tiene exactamente una, y no habilita nada", () => {
@@ -872,8 +917,10 @@ await t("el resumen cuenta las medidas de las tres plataformas probadas", () => 
     de("x") === 9 &&
     de("instagram") === 9 &&
     de("tiktok") === 1 &&
+    /* P-CAND-FACEBOOK-01: identidad, cuenta y followers, todas PROPIA. */
+    de("facebook") === 3 &&
     m.resumen.medidasEnProduccion ===
-      de("youtube") + de("x") + de("instagram") + de("tiktok")
+      de("youtube") + de("x") + de("instagram") + de("tiktok") + de("facebook")
   );
 });
 

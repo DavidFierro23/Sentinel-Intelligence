@@ -6720,6 +6720,183 @@ No se contrato ni se integro nada.
 
 ---
 
+## 18-quadragies. P-CAND-FACEBOOK-01 (2026-08-31)
+
+**1200 comprobaciones, 29 suites, 0 fallos.** **3 llamadas Meta.** **Coste 0 USD.**
+Cero llamadas a X, YouTube, TikTok y buscadores.
+
+Gate de cierre. Facebook deja de ser una investigacion abierta.
+
+### Inventario
+
+Once activos Facebook: **10 Pages y 1 Profile**, con un candidato SIN_CUENTA
+(Juan Carlos Vega) y **cinco candidatos con dos activos**, asi que el
+multi-activo es la norma y no la excepcion.
+
+Solo uno esta **VERIFICADA por META_API**: `@jotalloretv`, que es
+precisamente la Pagina que el token administra. Los otros diez son
+`ANALYST_DECLARATION` / `NO_VERIFICADA`, y declarar no es verificar.
+
+### La prueba: tres llamadas, dos sujetos
+
+    me/accounts                        200
+    /{page-propia}/posts               400 · (#10)
+    /{page-tercero}                    400 · (#100)
+
+**Lo que si llega de la Pagina propia:** id, name, username, `fan_count` y
+`followers_count` — **55.855** medido. Identidad y seguidores, reales.
+
+**El hallazgo.** Hasta hoy se creia que sobre la Pagina propia funcionaba todo,
+porque META-THIRD-PARTY-REAL-02 la habia leido con 200. Lo que funcionaba era la
+**metadata**. Las publicaciones no:
+
+    GET /{page-id}/posts   HTTP 400 · (#10)
+    "requires the 'pages_read_user_content' permission
+     or the 'Page Public Content Access' feature"
+
+Ningun gate anterior habia pedido `/posts`. El token tiene
+`pages_read_engagement` y **no** `pages_read_user_content`.
+
+### Los dos 400 no se arreglan igual
+
+Es la distincion que cierra el gate:
+
+| | sobre lo PROPIO | sobre un TERCERO |
+|---|---|---|
+| codigo | `(#10)` | `(#100)` |
+| falta | un **permiso del token** | una **feature de la app** |
+| se arregla | regenerando el token | App Review + Business Verification |
+| coste | minutos | semanas, y puede que nunca |
+
+Confundirlos manda a pedir App Review cuando basta un token, o al reves.
+
+Y un matiz que el mensaje de Meta esconde: el error del tercero nombra
+`pages_read_engagement` como alternativa, **y el token ya lo tiene**. Ese
+permiso solo aplica a Paginas donde tenemos rol. Para terceros, de las tres
+alternativas que Meta lista, solo sirve una **feature**.
+
+Esta vez el bloqueo se midio con un token de larga duracion validado y vivo,
+asi que queda descartado que la causa fuera la credencial.
+
+### Capacidades: cierre campo por campo
+
+    IDENTIDAD        MEDIDO_PROPIO_AUTORIZADO   id, name, username
+    FOLLOWERS        MEDIDO_PROPIO_AUTORIZADO   fan_count y followers_count
+    PUBLICACIONES    BLOQUEADO_PERMISO_TOKEN    (#10) sobre lo propio
+                     REQUIERE_PPCA              sobre terceros
+    REACTIONS        NO_MEDIDO                  cae con /posts
+    COMMENTS_COUNT   NO_MEDIDO                  idem
+    COMMENT_TEXT     NO_MEDIDO                  idem
+    SHARES           NO_MEDIDO                  idem
+    VIDEO_VIEWS      NO_DISPONIBLE              OWNER_INSIGHT; no existe para un tercero
+    HISTORICO        NO_DISPONIBLE              ninguna via entrega serie temporal
+
+`fan_count` y `followers_count` son **cifras distintas** y Meta las devuelve por
+separado. No se funden ni se rellena una con la otra.
+
+Nada de esto es un cero. Un cero seria una medicion.
+
+### Comentarios: la fuente sigue sin cerrarse
+
+La sonda de texto de comentarios viajaba anidada en `/posts`, asi que **cayo con
+la misma llamada**. Sigue sin saberse si Facebook entrega texto de comentarios de
+una Pagina propia.
+
+Lo que si esta fijado por test es el contrato: cuando el permiso exista, la
+funcion devuelve `id`, `created_time`, `message` y `permalink_url` por
+comentario, y `textoDeComentarios: DISPONIBLE`.
+
+Para **terceros**, el texto de comentarios sigue dependiendo de PPCA, que es lo
+que ya establecio P-CAND-SOCIAL-COVERAGE-01: PPCA no es «tambien Facebook», es
+la condicion para que Comments Intelligence tenga fuente.
+
+### Nueva `publicacionesDePaginaPropia`
+
+En el adaptador que ya alberga la familia de `graph.facebook.com`, sin motor
+paralelo. Pide el token **de la Pagina** —las publicaciones no se leen con el
+del usuario— y ese token no se devuelve, no se registra y no aparece en la
+traza. Hay test que lo comprueba.
+
+`pedir()` acepta ahora un token explicito por esa razon: sin el,
+`/{page}/posts` devuelve un 190 que habla de permisos cuando lo que pasa es que
+se envio la credencial equivocada.
+
+Y una decision de nombres: `reactions.summary` cuenta **todas** las reacciones
+—me gusta, me encanta, me enfada—. Se llama `reactions` y no `likes`, porque
+llamarlo likes inflaria los likes con enfados. Fijado por test.
+
+### Decision PPCA
+
+**¿Vale la pena? SI, PERO EN PARALELO.**
+
+A favor: es la unica via oficial a Paginas de terceros, Meta lista
+explicitamente nuestro caso de uso —analizar publicaciones e interaccion en
+Paginas— y es la que abre el texto de comentarios publicos, que es la fuente
+de Comments Intelligence.
+
+En contra: exige **App Review y Business Verification**, las dos verbatim en la
+documentacion, y su concesion es historicamente restrictiva. El plazo no lo
+controlamos.
+
+**Recomendacion: solicitar PPCA en paralelo y NO bloquear la prueba de campana
+esperandola.** El expediente `docs/META-FB-PUBLIC-ACCESS-REQUEST.md` ya esta
+preparado y no se ha enviado nada.
+
+Y antes que eso, algo que cuesta minutos: **regenerar el token con
+`pages_read_user_content`** para desbloquear la Pagina propia. No abre
+terceros, pero cierra la pregunta de los comentarios y da un caso completo con
+el que validar el contrato entero.
+
+### ¿SUFICIENTE PARA CAMPANA SIN PROVEEDOR? **NO**
+
+Diez de once activos son de candidatos que no administramos, y sobre ellos hoy
+no se obtiene ni el nombre de la Pagina.
+
+### Huecos para SOCIAL-PROVIDER-EVAL-01
+
+    FACEBOOK terceros   identidad de Page, fan_count/followers, posts,
+                        permalink, fecha, texto, reactions, comments_count,
+                        shares, texto de comentarios, video views, historico
+
+    FACEBOOK perfiles   NO los cubre ninguna via oficial, y probablemente
+                        tampoco un proveedor con licencia. Declararlo antes
+                        de comprar.
+
+    TIKTOK              followers, following, likes, media_count, posts,
+                        views, likes, comments_count, shares, texto de
+                        comentarios, historico
+                        (identidad y URL SI las cubre oembed, gratis)
+
+    INSTAGRAM           cuentas personales —9 de 12 activos— y texto de
+                        comentarios. Lo demas ya esta cubierto por
+                        business_discovery y NO hace falta comprarlo.
+
+La lista sale de resultados medidos, no de suposiciones: lo que ya funciona no
+se compra.
+
+### Ruta normal de Candidate
+
+**NO cubre Facebook.** `observarCandidato` tiene rama para `x`, `instagram` y
+`youtube`, y ninguna para `facebook`.
+
+No se cableo a proposito: hoy `/posts` esta bloqueado, asi que anadir la rama
+solo produciria un camino nuevo que unicamente sabe devolver un bloqueo. Se
+cablea cuando el permiso exista.
+
+### Riesgos
+
+- **Diez de once activos Facebook son de terceros y estan cerrados.** No es un
+  problema de ingenieria: es una licencia o una revision.
+- El unico activo con acceso es de un candidato del proyecto, y lo administramos
+  nosotros. Eso sigue siendo una decision pendiente y ahora tambien afecta a que
+  se declara a Meta en el envio de PPCA.
+- El texto de comentarios de Facebook sigue **sin medir**, asi que Comments
+  Intelligence sigue sin fuente confirmada en ninguna plataforma.
+- Un activo con correspondencia 0 —`@paulernestocarrascoc`— sigue declarado
+  FACEBOOK_PAGE sin nada que lo sostenga.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -7227,6 +7404,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-31 | P-CAND-FACEBOOK-01 | Cierre de Facebook: deja de ser una investigacion abierta. Tres llamadas Meta, 0 USD. Inventario de once activos —10 Pages y 1 Profile, un candidato SIN_CUENTA y cinco con dos activos, asi que el multi-activo es la norma—, con uno solo VERIFICADA por META_API: @jotalloretv, que es justo la Pagina que el token administra. El hallazgo cambia lo que se creia: hasta hoy se daba por hecho que sobre la Pagina propia funcionaba todo, porque META-THIRD-PARTY-REAL-02 la habia leido con 200, y lo que funcionaba era la METADATA. Las publicaciones no: GET /{page-id}/posts devolvio 400 (#10) «requires the pages_read_user_content permission or the Page Public Content Access feature», y ningun gate anterior habia pedido /posts. El token tiene pages_read_engagement y no pages_read_user_content. De ahi la distincion que cierra el gate: los dos 400 no se arreglan igual —sobre lo propio (#10) falta un PERMISO del token y se resuelve regenerandolo en minutos; sobre un tercero (#100) falta una FEATURE de la app y exige App Review y Business Verification—, y confundirlos manda a pedir revision cuando basta un token o al reves. Un matiz que el mensaje de Meta esconde: el error del tercero nombra pages_read_engagement como alternativa y el token YA lo tiene, porque ese permiso solo aplica a Paginas donde tenemos rol; para terceros solo sirve una feature. Esta vez el bloqueo se midio con un token de larga duracion validado y vivo, asi que queda descartado que la causa fuera la credencial. Lo que si llega de la Pagina propia: id, name, username, fan_count y followers_count —55.855 medido, y son dos cifras distintas que no se funden—, persistido con el contrato social existente y marcado MEDIDO_PROPIO_AUTORIZADO para que no cuente como cobertura. Cierre campo por campo: identidad y followers MEDIDO_PROPIO_AUTORIZADO; publicaciones BLOQUEADO_PERMISO_TOKEN sobre lo propio y REQUIERE_PPCA sobre terceros; reactions, comments_count, comment_text y shares NO_MEDIDO porque caen con la misma llamada; video_views NO_DISPONIBLE por ser OWNER_INSIGHT; historico NO_DISPONIBLE. La sonda de texto de comentarios viajaba anidada en /posts y cayo con ella, asi que Comments Intelligence sigue sin fuente confirmada en ninguna plataforma, aunque el contrato queda fijado por test para cuando el permiso exista. Nueva publicacionesDePaginaPropia en el adaptador que ya alberga la familia de graph.facebook.com, sin motor paralelo: pide el token DE LA PAGINA —las publicaciones no se leen con el del usuario— y ese token no se devuelve, no se registra y no aparece en la traza, con test que lo comprueba; pedir() acepta ahora un token explicito por esa razon. Decision de nombres fijada por test: reactions.summary cuenta todas las reacciones y se llama reactions y no likes, porque llamarlo likes inflaria los likes con enfados. Decision PPCA: SI pero EN PARALELO —es la unica via oficial a terceros y la que abre el texto de comentarios publicos, pero exige App Review y Business Verification y el plazo no lo controlamos, asi que no se bloquea la prueba de campana esperandola—; y antes que eso, regenerar el token con pages_read_user_content, que cuesta minutos y cierra la pregunta de los comentarios sobre la Pagina propia. ¿Suficiente para campana sin proveedor? NO: diez de once activos son de candidatos que no administramos y sobre ellos hoy no se obtiene ni el nombre de la Pagina. Huecos para SOCIAL-PROVIDER-EVAL-01 listados desde resultados medidos y no desde suposiciones, incluida la advertencia de que los perfiles personales probablemente no los cubra ni un proveedor y de que lo de Instagram que ya funciona no se compra. La ruta normal de Candidate NO cubre Facebook —observarCandidato no tiene rama— y no se cableo a proposito, porque hoy solo produciria un camino que sabe devolver un bloqueo. Tres aserciones antiguas cambiaron y ninguna se debilito: afirmaban que Facebook no tenia una sola medicion, y ahora tiene tres y se fija que las tres son PROPIA y que ninguna es de tercero. 1200 pruebas, 0 fallos. Nueva §18-quadragies. |
 | 2026-08-31 | P-CAND-TIKTOK-01 | Factibilidad real de TikTok, 8 peticiones HTTP y 0 USD. Inventario: siete activos persistidos, uno por candidato, ninguno SIN_CUENTA y cero publicaciones previas; dos con correspondencia 0 —@lafondadecarrasco y @leomoralesordo— que quedan senalados como atribuciones sin sostener. Las tres APIs oficiales seguian sin aplicar y no se repitio la investigacion: Display API opera sobre la cuenta que inicia sesion, Research API es academica sin animo de lucro y Commercial Content API solo cubre publicidad; es la unica plataforma del grupo donde el problema no es un permiso que pedir ni un plan que pagar, porque el caso de uso no encaja en ningun programa. Lo nuevo es que la via publica SI entrega algo y quedo MEDIDA: oembed, endpoint publico documentado sin credencial y sin coste, devuelve sobre la URL de un perfil el nombre visible real, la URL canonica y el handle. Con control, que es lo que lo hace utilizable: dos handles inventados devolvieron HTTP 400, asi que un 200 es evidencia de existencia y no un 200 de cortesia —la leccion de META-COVERAGE-AUDIT-01, donde un clasificador dio «perfil» para Meta, BBC y NASA—. Y el nombre visible no es un eco del handle: @jotalloretv devuelve «Jota Lloret Valdivieso», lo que lo convierte en senal de identidad. El HTML publico tambien se midio: 200 con 1.462 bytes de armazon vacio, sin Open Graph y sin una cifra; no es bloqueo ni captcha, TikTok no sirve datos sin JavaScript, y sacar cifras de ahi exigiria ejecutar su JS o firmar sus peticiones, que es raspado evasivo y produce datos que no se pueden auditar ni citar. Prueba real sobre los dos activos de mejor identidad resuelta segun el expediente y de candidatos distintos, verificado contra el inventario en lugar de reutilizar @jotalloretv por costumbre: @yaku.perez y @jotalloretv, los dos CUENTA_CONFIRMADA con 200, persistidos con el contrato social existente y followers en null y no en 0. Nuevo tiktokAdapter.js deliberadamente pequeno, del tamano de la unica via que existe, con la lista de lo que no entrega viajando en cada resultado. Dos defectos encontrados por el camino: habilitaBenchmark miraba si habia ALGUNA celda MEDIDO, asi que marcar identidad habria metido TikTok al benchmark multicandidato sin un seguidor ni una metrica —ahora exige que lo medido sea una cifra, y X, YouTube e Instagram no se mueven porque las tres tienen metricas sobre terceros—; y la clave de los snapshots era candidato + plataforma + instante sin el activo, asi que un candidato con dos cuentas en la misma plataforma observadas en la misma ejecucion producia la MISMA entidad y el Lake devolvia solo la ultima, fallando en silencio con escrito true, el mismo defecto que META-THIRD-PARTY-REAL-02 encontro en guardarDeclaracionesDeTipo y que no afecta solo a TikTok: cualquier candidato con dos cuentas de X estaba perdiendo una de la serie; la lectura es por prefijo asi que no hay que migrar nada. Techo real: identidad sin metricas. Respuesta explicita a si basta para campana: NO —no hay una sola cifra, asi que no se puede decir si un candidato crece, que publica ni que rendimiento tiene—, y requiere SOCIAL-PROVIDER-EVAL-01 con alcance exacto: followers, publicaciones con permalink y fecha, views, likes, comments_count, shares, texto de comentarios, historico, limites de rate, estabilidad del contrato y licencia que permita citar el dato. No se contrato ni se integro nada. Cuatro aserciones antiguas cambiaron y ninguna se debilito: afirmaban que TikTok no tenia una sola medicion, y ahora tiene una y se declara cual es. 1165 pruebas, 0 fallos. Nueva §18-nonricies. |
 | 2026-08-31 | P-CAND-IG-ROUTE-01 | Gate corto: hacer utilizable por la ruta normal el motor de Instagram que el gate anterior dejo funcionando. `POST /observar` no pasaba `idParaBusinessDiscovery` ni `cuentasPropias` a `observarCandidato`, asi que por HTTP `observarInstagram` devolvia NO_EJECUTABLE mientras el mismo motor medía sin problema desde un script. La causa raiz es mas interesante que el sintoma: los dos parametros no estan en el expediente porque se derivan del token, y el gate que construyo el motor los resolvio a mano en su propio script. Las 1101 pruebas en verde no lo vieron porque todas las suites de servicio los pasaban a mano tambien: probaban el motor, y el cableado no tenia prueba —un fallo que solo existe en la costura entre dos piezas no lo ve ninguna prueba que construya las piezas por separado—. Nuevo `metaObservationContext.js` con estados propios (RESUELTO, NO_REQUERIDO, SIN_CREDENCIAL, SIN_VINCULO_INSTAGRAM, ERROR), resuelto en el BACKEND porque los dos datos se derivan del token y hacerlo en el cliente exigiria mandarle la credencial de Meta al navegador; una sola llamada y solo si la ejecucion incluye Instagram, con test que fija que pedir me/accounts para observar YouTube no ocurre. Un activo personal declarado ya no gasta llamada, con la guarda en `observarInstagram` y no en la ruta para que alcance a todos los llamantes, y colocada ANTES del control de idParaBusinessDiscovery porque que una cuenta sea personal no depende de nuestra configuracion. Nuevo campo `procedenciaDelEstado`: el mismo NO_SOPORTADO_PERSONAL puede venir de una declaracion del analista (DECLARADA) o de un error de Meta (MEDIDA), y no valen lo mismo. La respuesta HTTP ya distingue tercero de propio —antes las dos eran «OBSERVADA» y en pantalla medir a un candidato y medir nuestra propia cuenta se veian igual— con alcanceDeLaMedicion, notaAlcance, procedenciaDelEstado y assetType. Defecto encontrado de paso: el lote de publicaciones se guardaba con provider youtube_data fijo, asi que un lote de Instagram quedaba etiquetado como de YouTube; ahora se deriva de lo observado. Nueva suite `igRoute.test.mjs` con 30 comprobaciones que monta el router de verdad y le habla por HTTP en un puerto efimero, simulando solo graph.facebook.com: es la prueba que recorre la costura, y fija las tres distinciones sobre una carga identica para las dos cuentas para que el alcance no pueda salir de la respuesta, que multi-asset sigue en pie, que la cuenta personal recibe cero llamadas y que observar dos veces no duplica. Prueba real por HTTP con Pedro Palacios: 200, MEDIDO_TERCERO, 9.718 seguidores, 5 publicaciones, persistido, con idempotencia comprobada ENTRE gates —firstObservedAt sigue en 15:53:08.897Z del gate anterior, lastObservedAt avanza a 17:06:16.410Z, 5 publicaciones sin duplicar, 4 lotes acumulados—. Deuda declarada y NO corregida: el puerto de adaptadores pregunta por estaConfigurado(), que significa «hay token de Instagram Login», mientras business_discovery viaja con el de Facebook Login; se fijo asi a proposito en META-FB-LOGIN-SETUP-01 y cambiarlo es una decision sobre familias de credenciales, no parte de este cableado. Hoy no muerde porque el .env tiene las dos, y morderia el dia que alguien despliegue con solo el token que esta via necesita. Estado de interfaz: BACKEND ROUTE FUNCIONAL y UI REAL NO EXPUESTA —el frontend no llama a /observar, y el boton «Observar cuentas» de ProjectsModule.jsx llama a /inteligencia, que es otro motor—; no se toco porque es alcance de un gate de UX. 1131 pruebas, 0 fallos, 2 llamadas Meta. Nueva §18-octricies. |
 | 2026-08-31 | P-CAND-IG-MULTICANDIDATO-01 | Instagram pasa de motor a datos: primera medicion multicandidato de terceros, cuatro llamadas Meta en total. Antes del gate se determino que el PASO 5 ya estaba hecho y no constaba en ninguna parte —ni commit, ni log, ni este documento—: `debug_token` mostro un token emitido el 2026-08-31T05:06:31Z que caduca el 2026-10-30, unos 60 dias, con acceso a datos hasta el 2026-11-29 y los cinco permisos necesarios. No se regenero, y la caducidad queda escrita aqui porque vive en Meta y no en el repositorio, que es como se pierde. El contrato sigue siendo FACEBOOK_USER_ACCESS_TOKEN y no se creo variable nueva. De los doce activos de Instagram solo los tres elegibles gastaron llamada; los nueve declarados INSTAGRAM_PERSONAL no se consultaron porque `elegibilidadMeta` ya afirma que ninguna via oficial los abre y la llamada solo habria confirmado el contrato, asi que quedan NO_SOPORTADO_PERSONAL con procedencia DECLARADA y no MEDIDA, con la etiqueta puesta. Resultado: @pedropalaciosu y @yakuperezg MEDIDO_TERCERO con 9.718 y 83.233 seguidores, y @jotalloretv MEDIDO_PROPIO_AUTORIZADO con 10.822 porque aparece en me/accounts —la respuesta de Meta es identica a la de un tercero, mismo 200 y mismos campos, y sin esa comprobacion previa el gate habria contado tres terceros donde hay dos—. Quince publicaciones con permalink, timestamp y metricas; likes 12 DISPONIBLE y 3 NO_DISPONIBLE porque tres publicaciones de Lloret no traen like_count y quedan ausentes en lugar de en cero; comments_count medido en las quince, con dos ceros reales en Palacios; comments_text sigue NO_SOPORTADO por esta via hasta PPCA; reach, impressions, saved y shares no se pidieron por ser OWNER_INSIGHT. Dedup verificado sin gastar Meta reescribiendo el mismo lote: los lotes suben de 3 a 4 y las publicaciones se quedan en 5 con publicationId y evidenceId unicos. Instagram deja de ser NO_PROBADO en los siete candidatos y queda 1 MEDIDO, 1 PARCIAL, 1 MEDIDO_PROPIO y 4 NO_SOPORTADO, con las dos reglas del gate anterior cumplidas sobre datos reales: Yaku PARCIAL con uno de dos activos y Lloret MEDIDO_PROPIO sin contar como cobertura. X y YouTube se reconstruyeron de lo ya persistido en el Lake, sin volver a preguntar. habilitaBenchmark("instagram") sigue TRUE y este gate no lo cambio: lo respaldo, porque lo que antes sostenia un tercero genuino ahora lo sostienen dos. Riesgo estructural declarado: 9 de 12 activos son personales y ninguna revision de Meta los abre, asi que el techo de esta via son 3 de 12 y hoy se alcanzo entero. Detectado y no tocado: la ruta POST /observar no pasa idParaBusinessDiscovery ni cuentasPropias, asi que por HTTP Instagram devuelve NO_EJECUTABLE y falta cablear dos parametros. 1101 pruebas, 0 fallos. Nueva §18-septricies. |
