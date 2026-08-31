@@ -398,6 +398,100 @@ publico de un candidato.
 */
 /*
 ===========================================================
+VALIDAR LA CREDENCIAL DE FACEBOOK — UNA LLAMADA, INOCUA
+===========================================================
+
+Pregunta por el titular del token, no por un tercero. Es la
+llamada mas barata que distingue tres cosas que se confunden:
+
+    no se parsea       familia equivocada
+    se parsea          familia correcta
+    se parsea y falla  familia correcta, permisos por ver
+
+Lo que ESTA llamada responde es la primera. Nada mas.
+
+    CREDENCIAL_PARSEABLE != acceso a terceros
+
+El alcance lo decide el nivel de acceso de la app, y eso solo
+se sabe pidiendo un tercero. Esta funcion no lo hace y no debe
+hacerlo.
+===========================================================
+*/
+export async function validarCredencialDeFacebook(opciones = {}) {
+  const estado = estadoDeCredenciales();
+
+  if (!estado.facebookLogin.configurada) {
+    return {
+      estado: "SIN_CREDENCIAL",
+      llamadas: 0,
+      familiaRequerida: FAMILIA.FACEBOOK_LOGIN,
+      motivo: estado.facebookLogin.nota
+    };
+  }
+
+  const r = await pedir(
+    BASE_FB,
+    "/me",
+    { fields: opciones.campos || "id,name" },
+    { ...opciones, etiqueta: "Facebook validacion de credencial" }
+  );
+
+  if (!r.ok) {
+    /*
+      Un 190 aqui SI significa lo que dice: el token no vale
+      para este host. Es el mismo codigo que en el gate anterior
+      y ahora tiene otra lectura, porque la variable de la que
+      sale es la correcta.
+    */
+    const noParsea =
+      r.codigo === 190 && /cannot parse|malformed/i.test(String(r.motivo || ""));
+
+    return {
+      estado: noParsea ? "CREDENCIAL_DE_OTRA_FAMILIA" : r.estado,
+      llamadas: 1,
+      httpStatus: r.httpStatus,
+      endpoint: r.endpoint,
+      motivo: r.motivo,
+      codigo: r.codigo,
+      subcodigo: r.subcodigo,
+      tipo: r.tipo,
+      observadoEn: new Date().toISOString(),
+
+      diagnostico: noParsea
+        ? "El token guardado en FACEBOOK_USER_ACCESS_TOKEN no es de Facebook Login. Revisar que se genero con «User Token» en el Graph API Explorer y no desde el flujo de Instagram."
+        : null
+    };
+  }
+
+  return {
+    estado: "CREDENCIAL_PARSEABLE",
+    llamadas: 1,
+    httpStatus: r.httpStatus,
+    endpoint: r.endpoint,
+    observadoEn: new Date().toISOString(),
+
+    /*
+      Se devuelve si el titular vino identificado, no QUIEN es:
+      el nombre de una persona no hace falta para validar un
+      token y no tiene por que quedar en un log.
+    */
+    titularIdentificado: Boolean(r.datos?.id),
+
+    noSignifica: [
+      "BUSINESS_DISCOVERY_FUNCIONA",
+      "FACEBOOK_PAGE_TERCERO_FUNCIONA",
+      "MEDIDO_TERCERO",
+      "BENCHMARK_HABILITADO"
+    ],
+
+    nota:
+      "El token se parsea en graph.facebook.com. Eso es todo lo que dice: a quien alcanza lo decide el nivel de acceso de la app y se mide pidiendo un tercero."
+  };
+}
+
+
+/*
+===========================================================
 PAGINA DE FACEBOOK DE UN TERCERO
 ===========================================================
 

@@ -5877,6 +5877,21 @@ Facebook Login for Business— y no comparten permiso:
 
     Page publica         Page Public Content Access
 
+### Credencial validada — una llamada
+
+    GET graph.facebook.com/v23.0/me?fields=id,name    HTTP 200
+
+`CREDENCIAL_PARSEABLE`. El token que genero el usuario es de la familia
+correcta: 297 caracteres y cadena distinta de la de Instagram.
+
+La llamada pregunta por el titular del token, no por un tercero. Separa tres
+cosas que se confunden —no se parsea, se parsea, se parsea y falla por
+permisos— y responde solo la primera.
+
+`validarCredencialDeFacebook()` devuelve `titularIdentificado: boolean` y NO el
+nombre ni el id. Para validar un token no hace falta el nombre de nadie, y lo
+que no se devuelve no acaba en un log.
+
 ### Lo que un token NO resuelve
 
 Standard Access alcanza **solo a usuarios y Paginas con un rol en la app**. Un
@@ -5904,8 +5919,8 @@ y este proyecto lleva cuatro gates sosteniendola.
 
 ### Riesgos
 
-- **El gate no entrega la credencial.** Generarla exige entrar a la consola de
-  Meta; queda esperando accion del usuario.
+- **La credencial ya esta y validada**, pero eso solo cierra la pregunta del
+  flujo. El acceso a terceros sigue sin medir.
 - Incluso con el token, el reintento sobre un candidato fallara mientras la app
   este en Standard Access. Lo que se gana es saber por que.
 - El coste de no hacer nada sigue siendo cero: X y YouTube sostienen el
@@ -6063,7 +6078,7 @@ resueltos y verificados.
 | **Instagram de terceros** | 🔴 **CERRADO POR FLUJO** (§18-tertricies): `business_discovery` no existe en `graph.instagram.com`. Medido, no supuesto |
 | **Facebook de terceros** | 🔴 **BLOQUEADO POR CREDENCIAL** (§18-tertricies): no hay token de Facebook Login. El error NO demuestra que haga falta App Review |
 | Eleccion de token por host | 🟢 **CORREGIDO** (§18-quatertricies): cada host recibe su familia y no hay respaldo cruzado. Sin el que toca, la llamada no se hace |
-| `FACEBOOK_USER_ACCESS_TOKEN` | 🔴 **falta**: es la unica pieza que separa a Sentinel de reintentar terceros. La genera el usuario en la consola de Meta |
+| `FACEBOOK_USER_ACCESS_TOKEN` | 🟢 **CONFIGURADO Y VALIDADO** (§18-quatertricies): `CREDENCIAL_PARSEABLE`, HTTP 200 en `graph.facebook.com/me`. Parseable no es acceso a terceros |
 | App Review / Business Verification | 🟡 **TODAVIA NO DEMOSTRADOS**: la documentacion los exige para Advanced Access, pero ninguna llamada ha llegado a evaluar permisos |
 | Comments Intelligence | 🟡 `COMMENTS_NOT_TESTED` en IG y FB: el bloqueo esta aguas arriba. Regla ya fijada: comentarios observados != todos los comentarios |
 | Declaracion de tipo por el analista | 🟢 **FUNCIONAL Y VISIBLE** (§18-untricies, corregida en §18-duotricies): selector dentro de «Editar identidad digital», serie propia en el Lake, procedencia y verificacion separadas |

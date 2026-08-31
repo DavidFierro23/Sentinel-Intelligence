@@ -990,6 +990,104 @@ await t("tener la credencial NO habilita el benchmark", () => {
   );
 });
 
+bloque("Validacion de la credencial de Facebook");
+
+await t("sin credencial no se gasta llamada", async () => {
+  delete process.env.FACEBOOK_USER_ACCESS_TOKEN;
+
+  const r = await ig.validarCredencialDeFacebook({
+    fetch: async () => {
+      throw new Error("no deberia haber llamada");
+    }
+  });
+
+  return r.estado === "SIN_CREDENCIAL" && r.llamadas === 0;
+});
+
+await t("un 190 aqui SI significa familia equivocada", async () => {
+  process.env.FACEBOOK_USER_ACCESS_TOKEN = "token-de-facebook-ficticio";
+
+  /*
+    El mismo codigo que en META-THIRD-PARTY-REAL-01 y otra
+    lectura: alli salia de la variable de Instagram, asi que
+    hablaba del flujo. Aqui sale de la variable correcta, asi
+    que habla del token.
+  */
+  const r = await ig.validarCredencialDeFacebook({
+    fetch: async () => ({
+      ok: false,
+      status: 400,
+      text: async () =>
+        JSON.stringify({
+          error: {
+            message: "Invalid OAuth access token - Cannot parse access token",
+            type: "OAuthException",
+            code: 190
+          }
+        })
+    })
+  });
+
+  return (
+    r.estado === "CREDENCIAL_DE_OTRA_FAMILIA" &&
+    r.diagnostico.includes("User Token")
+  );
+});
+
+await t("un 200 declara PARSEABLE y nada mas", async () => {
+  process.env.FACEBOOK_USER_ACCESS_TOKEN = "token-de-facebook-ficticio";
+
+  const r = await ig.validarCredencialDeFacebook({
+    fetch: async () => ({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ id: "999", name: "Titular" })
+    })
+  });
+
+  return (
+    r.estado === "CREDENCIAL_PARSEABLE" &&
+    r.titularIdentificado === true &&
+    r.noSignifica.includes("MEDIDO_TERCERO") &&
+    r.noSignifica.includes("BUSINESS_DISCOVERY_FUNCIONA")
+  );
+});
+
+await t("la validacion no revela quien es el titular", async () => {
+  process.env.FACEBOOK_USER_ACCESS_TOKEN = "token-de-facebook-ficticio";
+
+  const r = await ig.validarCredencialDeFacebook({
+    fetch: async () => ({
+      ok: true,
+      status: 200,
+      text: async () =>
+        JSON.stringify({ id: "999", name: "Nombre De Una Persona Real" })
+    })
+  });
+
+  /*
+    Para validar un token no hace falta el nombre de nadie, y lo
+    que no se devuelve no acaba en un log.
+  */
+  const texto = JSON.stringify(r);
+
+  return (
+    r.estado === "CREDENCIAL_PARSEABLE" &&
+    !texto.includes("Nombre De Una Persona Real") &&
+    !texto.includes("999")
+  );
+});
+
+await t("credencial parseable NO habilita el benchmark", () => {
+  process.env.FACEBOOK_USER_ACCESS_TOKEN = "token-de-facebook-ficticio";
+
+  return (
+    scm.habilitaBenchmark("facebook").habilita === false &&
+    scm.habilitaBenchmark("instagram").habilita === false
+  );
+});
+
+
 /* Entorno restaurado: una prueba no debe dejar rastro. */
 if (envPrevio.ig === undefined) delete process.env.INSTAGRAM_ACCESS_TOKEN;
 else process.env.INSTAGRAM_ACCESS_TOKEN = envPrevio.ig;

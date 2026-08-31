@@ -221,6 +221,29 @@ hacerlo: convierte una hipótesis documental en una causa demostrada.
 
     CREDENCIAL_PARSEABLE  !=  MEDIDO_TERCERO
 
+### Credencial validada — 1 llamada
+
+```
+GET graph.facebook.com/v23.0/me?fields=id,name    → HTTP 200
+```
+
+`CREDENCIAL_PARSEABLE`. `FACEBOOK_USER_ACCESS_TOKEN` presente, 297 caracteres,
+cadena distinta de la de Instagram.
+
+La llamada pregunta por el **titular del token**, no por un tercero, y es la más
+barata que separa tres cosas que se confunden:
+
+| | significa |
+|---|---|
+| no se parsea | familia equivocada |
+| **se parsea** | **familia correcta** ← estamos aquí |
+| se parsea y falla | familia correcta, permisos por ver |
+
+Esta llamada responde la primera. Nada más. `validarCredencialDeFacebook()`
+devuelve `titularIdentificado: boolean` y **no** el nombre ni el id: para
+validar un token no hace falta el nombre de nadie, y lo que no se devuelve no
+acaba en un log.
+
 ### App Review y Business Verification
 
 **Todavía no demostrados.** La documentación dice que Advanced Access exige
