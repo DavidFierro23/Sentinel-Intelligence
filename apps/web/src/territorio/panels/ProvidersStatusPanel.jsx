@@ -112,6 +112,11 @@ export default function ProvidersStatusPanel({ datos }) {
 
   const lotes = ampliada?.lotes || [];
 
+  /* TERRITORIAL-RSS-ROTATION-01 */
+  const rot = ampliada?.rotacionRss;
+
+  const rotacionActiva = Boolean(rot && rot.activa !== false && rot.feedsVerificados > 0);
+
   if (traza.length === 0 && lotes.length === 0) return null;
 
   /* --- recolector base --- */
@@ -221,6 +226,68 @@ export default function ProvidersStatusPanel({ datos }) {
           <Fila key={`${p.nombre}-${i}`} {...p} />
         ))}
       </div>
+
+      {/*
+        ROTACION RSS — TERRITORIAL-RSS-ROTATION-01
+
+        El presupuesto por pasada es menor que el universo de
+        feeds comprobados, asi que cada pasada lee un subconjunto.
+        Sin esta linea, un panel que dijera «RSS: 8 recibidas»
+        haria leer la cobertura de una pasada como la del
+        territorio.
+
+        Lo que importa no es cuantos feeds hay, sino cuantos
+        FALTAN por escuchar en este ciclo.
+      */}
+      {rotacionActiva && (
+        <div
+          style={{
+            marginTop: "12px",
+            paddingTop: "11px",
+            borderTop: "1px solid var(--sentinel-borde)",
+            color: "var(--sentinel-texto-suave)",
+            fontSize: "10.5px",
+            lineHeight: 1.7
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", gap: "10px" }}>
+            <span style={{ color: "var(--sentinel-texto)", fontWeight: 600 }}>
+              Rotación RSS · ciclo {rot.ciclo}
+            </span>
+
+            <span>
+              <strong style={{ color: "var(--sentinel-texto)" }}>{rot.cobertura}</strong> cubiertos
+            </span>
+          </div>
+
+          <div>
+            {rot.feedsVerificados} feed(s) comprobado(s) · {rot.presupuestoPorPasada} por pasada
+            {rot.pendientesEnCiclo > 0
+              ? ` · ${rot.pendientesEnCiclo} pendiente(s) de escuchar en este ciclo`
+              : " · ciclo completo"}
+            {rot.diferidasEnCiclo > 0 ? ` · ${rot.diferidasEnCiclo} diferida(s) por fallo` : ""}
+          </div>
+
+          {/*
+            La proxima cohorte SI se puede decir —el algoritmo es
+            determinista—. CUANDO ocurrira, no: no hay scheduler,
+            y una fecha inventada seria peor que ninguna.
+          */}
+          {rot.proximaCohorte?.length > 0 && (
+            <div style={{ color: "var(--sentinel-texto-tenue)", marginTop: "3px" }}>
+              Próxima cohorte: {rot.proximaCohorte.slice(0, 4).join(", ")}
+              {rot.proximaCohorte.length > 4 ? ` y ${rot.proximaCohorte.length - 4} más` : ""}
+              {" · sin fecha: no hay ingesta programada"}
+            </div>
+          )}
+
+          {rot.nuncaAtendidas?.length > 0 && (
+            <div style={{ color: "#eda100", marginTop: "3px" }}>
+              {rot.nuncaAtendidas.length} fuente(s) nunca escuchada(s) todavía.
+            </div>
+          )}
+        </div>
+      )}
 
       {aportaron < todos.length && (
         <div

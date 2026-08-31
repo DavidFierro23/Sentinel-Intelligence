@@ -186,6 +186,16 @@ export async function recolectarAmpliado({
 
         lotes.push({
           providerId: "rss_directo",
+
+          /*
+            Que feed produjo este lote. Sin esto, ocho lotes de
+            RSS son indistinguibles entre si y no se puede saber
+            cual fallo: la rotacion de TERRITORIAL-RSS-ROTATION-01
+            necesita atribuir el resultado a su fuente.
+          */
+          feedUrl: feed.url,
+          sourceId: feed.sourceId || null,
+
           estado: r.estado,
           recibidas: r.recibidas ?? r.evidencias.length,
           latenciaMs: r.latenciaMs,
@@ -294,6 +304,11 @@ export async function recolectarAmpliado({
 
     lotes: lotes.map((l) => ({
       providerId: l.providerId,
+
+      /* Identidad del feed: null en los proveedores que no son RSS. */
+      feedUrl: l.feedUrl || null,
+      sourceId: l.sourceId || null,
+
       estado: l.estado,
       recibidas: l.recibidas,
       motivo: l.motivo,

@@ -9,10 +9,10 @@
 
 | Campo | Valor comprobado |
 |---|---|
-| Fecha de actualización | **2026-08-31** (última sección añadida: §13-undecies) |
+| Fecha de actualización | **2026-08-31** (última sección añadida: §13-duodecies) |
 | Rama | `dev` |
 | Último commit **base** de esta actualización | `a369ed2` — *feat(candidate): close Facebook coverage assessment* (Terminal 1 comiteó 4 veces mientras se cerraba este gate) |
-| Último commit **territorial** | `36eb751` — *feat(territorial): add live today-window collection* → le sigue el de §13-undecies |
+| Último commit **territorial** | `3a34c5c` — *feat(territorial): add verified Cuenca source universe* → le sigue el de §13-duodecies |
 | Versión monorepo | `sentinel-intelligence-platform` 0.1.0 |
 | Versión backend | `sentinel-backend` 1.0.0 |
 | Versión frontend | `web` 0.0.0 (sin versionar) |
@@ -1590,6 +1590,182 @@ prueba **falla** si algún caso se escapa a internet. Marca **cero**.
 
 ---
 
+## 13-duodecies. TERRITORIAL-RSS-ROTATION-01 — rotación del universo RSS (2026-08-31)
+
+✅ Ninguna fuente comprobada se queda fuera indefinidamente.
+
+### Corrección de una cifra del gate anterior
+
+§13-undecies dejó el pendiente #30 diciendo que **«12 feeds sin leer»**. Esa cifra
+estaba mal y se corrige aquí:
+
+| | |
+|---|---|
+| feeds **registrados** en las fichas | 20 |
+| de los cuales, feeds de **comentarios** | 8 — declarados por el sitio, no recolectables |
+| feeds **recolectables** (uno por fuente) | **12** |
+| presupuesto por pasada | 8 |
+| **fuentes que no se leían nunca** | **4**, no 12 |
+
+Las cuatro eran `expreso.ec`, `extra.ec`, `teleamazonas.com` y —según el estado del
+día— `gk.city` o `planv.com.ec`: todas nacionales, todas al final del orden
+territorial. El problema era real; su tamaño estaba exagerado por contar como feed
+utilizable lo que era un feed de comentarios.
+
+### El algoritmo
+
+Cinco reglas, y ninguna aleatoria:
+
+1. **El ciclo manda.** Un ciclo termina cuando cada feed elegible ha sido atendido
+   —o diferido con motivo— una vez. Mientras queden pendientes, ninguna fuente ya
+   atendida repite.
+2. **Dentro de los pendientes**: territorio declarado primero, después prioridad,
+   después el que se intentó hace más tiempo, y la URL como desempate final.
+3. **Nunca intentado va antes que cualquier fecha.**
+4. **Un feed que falla queda atendido igualmente.** Si no, se llevaría una plaza en
+   cada pasada y el ciclo no cerraría nunca.
+5. **La pasada de cierre puede usar menos plazas que el presupuesto.** No se rellena
+   con fuentes del ciclo siguiente: gastar plazas por gastarlas no trae información y
+   haría ilegible el recuento de cobertura.
+
+Es lo que convierte la prioridad en **orden de servicio** en lugar de en privilegio
+permanente. Una nacional válida entra más tarde que una local, pero entra.
+
+> El presupuesto **no se elevó**. `PRESUPUESTO_POR_PASADA.rss_directo` sigue siendo 8
+> y es del recolector. Lo único que cambia es **cuáles** ocho.
+
+Con 11 feeds y 8 plazas el ciclo cierra en 2 pasadas. Con 20 cerraría en 3. Nada de
+eso está escrito en el código: sale de las dos cifras, y las pruebas lo comprueban con
+10, 30 y 100 feeds.
+
+### Backoff acotado
+
+Un feed que falla se salta las siguientes `min(fallos, 4)` pasadas. Acotado a
+propósito: sin tope, tres fallos seguidos apartarían una fuente durante semanas, y un
+503 de una tarde no es un medio muerto.
+
+Se cuenta en **pasadas, no en horas**. No hay demonio que garantice cada cuánto ocurre
+una pasada, así que medir el backoff en tiempo sería inventar precisión.
+
+### Seis estados, y uno que NO es fallo
+
+| estado | ¿penaliza? | por qué |
+|---|---|---|
+| `OK` | no | trajo entradas |
+| `SIN_RESULTADOS` | **no** | el feed **respondió** y no traía nada. Eso sí autoriza a decir «no ha publicado» |
+| `ERROR_FUENTE` | sí | respondió algo que no es un feed |
+| `INACCESIBLE` | sí | no se pudo leer: no autoriza a decir nada |
+| `NO_PUBLICA_RSS` | sí | el feed dejó de existir |
+| `NO_RESUELTO` | no | seleccionado y sin resultado anotado. No se inventa un OK |
+
+Penalizar a un medio por no haber publicado hoy lo apartaría de la rotación justo
+cuando vuelva a publicar. **Ausencia no es cero**, y aquí eso es una regla de código.
+
+### Tres instantes que no se confunden
+
+```
+lastAttemptAt    la última vez que Sentinel LO INTENTÓ
+lastSuccessAt    la última vez que el feed RESPONDIÓ
+publishedAt      lo que el MEDIO declara haber publicado
+```
+
+Un feed que no se intentó no es un feed sin novedades.
+
+### Ámbito: por proyecto, no por territorio
+
+`scopeId` es el proyecto cuando hay proyecto y el territorio cuando no, y se declara
+cuál de los dos se usó. Dos proyectos sobre el mismo cantón rotan por separado: la
+cobertura de uno no puede dar por escuchada una fuente que el otro no ha leído.
+Comprobado en pruebas con almacén compartido.
+
+### Prueba real · 31 ago 2026 · solo RSS
+
+11 feeds elegibles, presupuesto 8, **coste 0 USD**. Cero peticiones a Google News,
+YouTube, GDELT, SerpAPI y Brave: `habilitados: ["rss_directo"]` y nada más.
+
+| | pasada 7 · ciclo 4 | pasada 8 · ciclo 4 | pasada 9 · ciclo 5 |
+|---|---|---|---|
+| seleccionados | **8** | **3** | **8** |
+| repetidos del ciclo | 0 | 0 | — (ciclo nuevo) |
+| OK | 8 | 3 | 8 |
+| fallos | 0 | 0 | 0 |
+| evidencias | 76 | 101 | 76 |
+| **nuevas** | 76 | 101 | **0** |
+| **duplicadas** | 0 | 0 | **76** |
+| publicado hoy | 21 | 43 | 21 |
+| encontrado hoy / publicado antes | 55 | 58 | 55 |
+| fecha no resuelta | 0 | 0 | 0 |
+| plazas sin usar | 0 | 5 | 0 |
+| cierra ciclo | no | **sí** | no |
+
+**Cobertura del ciclo 4: 11/11.** Cero solapamiento dentro del ciclo, cero fuentes
+nunca atendidas, cero starvation.
+
+La pasada 9 es la prueba del dedup: al abrir el ciclo 5 vuelven a entrar los mismos
+ocho feeds, se releen 76 evidencias y **ninguna es nueva**. `nuevasParaSentinel: 0` no
+es un fallo de recolección: es que no ha pasado nada nuevo en esos feeds.
+
+> Las evidencias de esta prueba **no se escribieron** en el libro de evidencias: el
+> dedup se midió contra el corpus existente sin mutarlo. Contaminar el corpus es
+> trabajo de la ruta de análisis, no de un gate de rotación.
+
+El estado se leyó del fichero en cada pasada, así que la rotación **sobrevive a un
+reinicio**: las pasadas 7–9 continúan la numeración de una ejecución anterior del
+mismo día, que es exactamente lo que demuestra la persistencia.
+
+### Un defecto del recolector corregido de paso
+
+Los ocho lotes de RSS salían **sin identidad de feed**: `{providerId, estado,
+recibidas}` y nada más. Ocho lotes indistinguibles entre sí no permiten saber cuál
+falló, y sin eso no hay rotación posible. Se añadieron `feedUrl` y `sourceId` al lote
+—cambio aditivo, las suites previas no cambian—.
+
+También estaba mal `topePorPasada`: leía `presupuesto.rss_directo` cuando la forma real
+es `presupuesto.aplicado.rss_directo`, así que **siempre era null**. Corregido.
+
+### Observabilidad
+
+`escuchaAmpliada.rotacionRss` responde «¿qué fuentes RSS todavía no se han escuchado en
+este ciclo?» sin ejecutar nada: `feedsVerificados`, `presupuestoPorPasada`, `ciclo`,
+`cobertura`, `pendientes`, `diferidasEnCiclo`, `nuncaAtendidas` y `proximaCohorte`.
+
+> **La próxima cohorte sí se declara; la fecha no.** El algoritmo es determinista, así
+> que QUÉ entrará se puede saber. CUÁNDO no: no hay demonio de ingesta, y
+> `proximaRotacion` es `null` con su motivo. Poner una fecha sería inventarla.
+
+### Interfaz
+
+`ProvidersStatusPanel` muestra el ciclo, la cobertura `8/11`, cuántas faltan por
+escuchar y la próxima cohorte con la advertencia de que no hay fecha. Si no hay
+rotación activa, el bloque **no aparece**: no se inventa un ciclo. Tres casos de SSR lo
+fijan, incluido el que comprueba que no se imprime una fecha futura.
+
+### Ficheros
+
+| Pieza | Fichero |
+|---|---|
+| Algoritmo, backoff, ámbito y almacén | `territorial/rssRotation.js` |
+| Atribución del lote a su feed | `ingest/territorialCollector.js` |
+| Selección, anotación y observabilidad | `routes/territorio.js` |
+| Interfaz | `territorio/panels/ProvidersStatusPanel.jsx` |
+
+Almacén en `apps/backend/data/territorial-rss-rotation/`, partición mensual,
+`appendFile` y sin `writeFile`.
+
+### Pruebas
+
+`territorial` 160 · `c2` 53 · `d` 39 · `d2` 92 · `ingest-real` 93 · `territorial-fresh`
+50 · `territorial-sources` 61 · **`territorial-rotation` 42** = **590** en backend, más
+SSR **120** = **710**.
+
+Nuevo script: **`npm run test:territorial`** ejecuta las ocho suites territoriales de
+una vez. Sigue **fuera de `npm test`**: esa línea la mantiene la Línea A y no se toca
+desde aquí (pendiente #18).
+
+Sin red y comprobable: contador sobre el `fetch` global, y marca cero.
+
+---
+
 ## 13-decies. Roadmap territorial
 
 Orden oficial:
@@ -1605,6 +1781,7 @@ Orden oficial:
 ✅ INGEST-REAL-01  Adquisición multifuente
 ✅ TERRITORIAL-FRESH-01             Escucha del día · frescura
 ✅ TERRITORIAL-SOURCE-UNIVERSE-01   Fuentes locales comprobadas · RSS operativo
+✅ TERRITORIAL-RSS-ROTATION-01      Rotación del universo RSS · sin starvation
 →  1.  Primera prueba real multifuente        ← siguiente, EXIGE CREDENCIALES
    2.  DATA-PROVIDER-EVAL real
    3.  Ampliar providers donde el benchmark demuestre valor
@@ -1657,7 +1834,7 @@ Evaluaciones registradas: **`DATA-PROVIDER-EVAL-01`** (estructura definida, ning
 | 28 | **Benchmark antes/después sin ejecutar** | demostrar que el stack nuevo mejora | 🔴 bloqueado por las dos credenciales |
 | 29 | **Términos de servicio sin leer** | integrar cualquier plataforma social | 🔴 `legalTermsStatus: NO_LEIDO` en las 5 plataformas del registro |
 
-| 30 | **El tope de 8 feeds por pasada deja 12 feeds sin leer** | usar el universo completo | 🔴 hay **20 feeds válidos** y `PRESUPUESTO_POR_PASADA.rss_directo` lee **8**. El orden territorial decide bien cuáles entran, pero 12 fuentes comprobadas no se leen nunca. El tope es del recolector: **no se toca desde este gate** |
+| 30 | ~~El tope de 8 feeds por pasada deja fuentes sin leer~~ | — | ✅ **RESUELTO** (§13-duodecies) con rotación por ciclos, sin elevar el presupuesto. **La cifra del enunciado estaba mal**: de 20 feeds registrados, 8 eran de comentarios, así que los recolectables eran **12** y las fuentes nunca leídas **4**, no 12. Cobertura real medida: **11/11 en 2 pasadas** |
 | 31 | **Dos dominios del catálogo semilla no resuelven** | cobertura de radio local | 🔴 `ondacero.com.ec` y `radiotomebamba.com.ec` dan **ENOTFOUND**: no existen en el DNS. Requieren dominio real verificable; **no se sustituyen por uno inventado** |
 | 32 | **El Tiempo (`eltiempo.com.ec`) corta la conexión** | segundo diario de Cuenca | 🔴 **ECONNRESET** con y sin `www`. El dominio existe; el fallo puede ser nuestro o suyo. Sin diagnosticar |
 | 33 | **Ecuavisa y La Hora prohibidos por robots.txt** | ampliar nacionales | 🟡 quedan `NO_RESUELTO` y **se respeta**. Levantarlo es una decisión de negocio —permiso del medio—, no un problema técnico |
@@ -1666,6 +1843,11 @@ Evaluaciones registradas: **`DATA-PROVIDER-EVAL-01`** (estructura definida, ning
 | 36 | **Sin interfaz del universo de fuentes** | que el analista vea qué se escucha | 🟡 `GET /api/territorio/fuentes` responde y **ningún panel lo muestra**. Hoy solo se ve por API |
 | 37 | **Recomprobación periódica sin programar** | que el universo no envejezca | 🟡 `ultimaComprobacionEn` existe y es correcto, pero **nadie decide cuándo volver a mirar**. Un `NO_PUBLICA_RSS` de hoy puede ser falso en un mes |
 | 38 | **Cobertura de Azuay de los nacionales sin medir** | saber si aportan territorio | 🟡 5 nacionales con feed válido y `coberturaTerritorialMedida: false`. Uno solo —Expreso— aportó 40 de 106 evidencias sin que se sepa cuántas eran de Azuay |
+
+| 39 | **Sin ingesta programada, la rotación depende de que alguien pida un análisis** | cerrar ciclos sin intervención | 🟡 el algoritmo es determinista y sabe QUÉ toca, pero no CUÁNDO: `proximaRotacion` es null a propósito. Un ciclo puede quedarse a medias indefinidamente si nadie ejecuta. Es el pendiente #9 (ingesta continua) visto desde la rotación |
+| 40 | **La rotación no reintenta dentro de la misma pasada** | aprovechar plazas perdidas | 🟡 si un feed falla, su plaza no se reasigna a otra fuente en esa pasada: se pierde. Con 0 fallos medidos hoy no molesta; con varios sí |
+| 41 | **Los feeds de comentarios no se aprovechan** | escucha de la reacción ciudadana | 🟡 8 feeds de comentarios están comprobados y **excluidos** de la recolección de noticias, con razón. Serían la primera fuente ciudadana real del módulo, pero exigen su propio contrato: un comentario no es una nota de prensa |
+| 42 | **`gk.city` alterna entre alcanzable e inaccesible** | estabilidad del universo elegible | 🟡 el número de feeds elegibles varía entre 11 y 12 según la última comprobación. La rotación lo tolera —el universo variable está cubierto por pruebas— pero la cobertura declarada cambia de denominador |
 
 `POST /api/territorio/recargar` integra 1–4 **sin reiniciar el backend y sin
 cambiar arquitectura**.

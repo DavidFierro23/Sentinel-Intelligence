@@ -743,6 +743,80 @@ render("SourceAgendasPanel null", <SourceAgendasPanel escucha={null} />);
 render("FreshnessPanel null", <FreshnessPanel frescura={null} />);
 render("ProvidersStatusPanel null", <ProvidersStatusPanel datos={null} />);
 
+/*
+  ROTACION RSS — TERRITORIAL-RSS-ROTATION-01
+
+  El payload real de la suite no lleva rotacion, asi que el
+  bloque no se ejercitaria nunca. Se renderiza aparte con datos
+  de rotacion para comprobar dos cosas que un panel de este tipo
+  hace mal con facilidad:
+
+    - decir la cobertura de UNA pasada como si fuera la del
+      territorio;
+    - anunciar una fecha de proxima ejecucion que nadie garantiza.
+*/
+const conRotacion = render(
+  "ProvidersStatusPanel con rotacion",
+  <ProvidersStatusPanel
+    datos={{
+      escuchaAmpliada: {
+        lotes: [
+          { providerId: "rss_directo", estado: "OK", recibidas: 10, feedUrl: "https://a.test/feed/" }
+        ],
+        rotacionRss: {
+          feedsVerificados: 11,
+          presupuestoPorPasada: 8,
+          ciclo: 4,
+          cobertura: "8/11",
+          atendidasEnCiclo: 8,
+          pendientesEnCiclo: 3,
+          diferidasEnCiclo: 0,
+          cicloCompleto: false,
+          proximaRotacion: null,
+          proximaCohorte: ["expreso.ec", "extra.ec", "teleamazonas.com"],
+          pendientes: ["expreso.ec", "extra.ec", "teleamazonas.com"],
+          nuncaAtendidas: []
+        }
+      }
+    }}
+  />
+);
+
+t(
+  "la rotacion declara la cobertura del CICLO, no la de la pasada",
+  () => /8\/11/.test(conRotacion) && /ciclo 4/i.test(conRotacion)
+);
+
+t(
+  "se dice cuantas fuentes faltan por escuchar en el ciclo",
+  () => /3 pendiente/i.test(conRotacion)
+);
+
+t(
+  "se anuncia la proxima cohorte SIN inventar una fecha",
+  () =>
+    /expreso\.ec/.test(conRotacion) &&
+    /sin fecha/i.test(conRotacion) &&
+    !/próxima ejecución:\s*\d/i.test(conRotacion)
+);
+
+const rotacionInactiva = render(
+  "ProvidersStatusPanel sin rotacion",
+  <ProvidersStatusPanel
+    datos={{
+      escuchaAmpliada: {
+        lotes: [{ providerId: "rss_directo", estado: "SIN_FUENTES", recibidas: 0 }],
+        rotacionRss: { activa: false, motivo: "No hay feeds elegibles: nada que rotar." }
+      }
+    }}
+  />
+);
+
+t(
+  "sin rotacion activa el bloque no aparece: no se inventa un ciclo",
+  () => !/Rotación RSS/.test(rotacionInactiva)
+);
+
 const frescuraRota = render(
   "FreshnessPanel con error",
   <FreshnessPanel frescura={{ error: "x", declaracion: "Sin frescura calculada NO se puede afirmar qué se publicó hoy." }} />

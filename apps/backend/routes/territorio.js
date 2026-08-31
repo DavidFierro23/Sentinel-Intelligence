@@ -130,6 +130,23 @@ import {
 
 import { comprobarUniverso } from "../services/territorial/sourceVerifier.js";
 
+/* --- TERRITORIAL-RSS-ROTATION-01 --- */
+
+import {
+  PRESUPUESTO_POR_PASADA as PRESUPUESTO_RECOLECTOR
+} from "../services/ingest/territorialCollector.js";
+
+import {
+  ambitoDeRotacion,
+  seleccionarCohorte,
+  clasificarIntento,
+  registrarRotacion,
+  reconstruirRotacion,
+  siguienteCicloYPasada,
+  estadoRotacion,
+  crearAlmacenFichero as crearAlmacenDeRotacion
+} from "../services/territorial/rssRotation.js";
+
 import {
   crearAlmacenFichero as crearAlmacenDeFuentes,
   registrarComprobacion,
@@ -269,6 +286,11 @@ veinte medios.
 
 function almacenDeFuentes() {
   return crearAlmacenDeFuentes();
+}
+
+
+function almacenDeRotacion() {
+  return crearAlmacenDeRotacion();
 }
 
 
@@ -628,6 +650,75 @@ router.post("/analisis", async (req, res) => {
       }
     }
 
+    /*
+      -------------------------------------------------------
+      ROTACION RSS — TERRITORIAL-RSS-ROTATION-01
+
+      `feedsDeclarados` son TODOS los elegibles. El recolector
+      solo lee los primeros 8, asi que con orden fijo los otros
+      doce no se leian nunca.
+
+      Aqui se decide CUALES 8 entran en esta pasada. El
+      presupuesto del recolector NO se toca: lo que cambia es la
+      lista que recibe.
+
+      Leer el almacen de rotacion no sale a la red.
+      -------------------------------------------------------
+    */
+    const presupuestoRss = PRESUPUESTO_RECOLECTOR.rss_directo;
+
+    const ambitoRotacion = ambitoDeRotacion({
+      projectId: cuerpo.proyectoId || null,
+      territoryId: ambito.unidadId || null
+    });
+
+    let rotacion = null;
+
+    let cohorte = null;
+
+    let feedsDeLaPasada = feedsDeclarados;
+
+    if (modoAmpliado && feedsDeclarados.length > 0 && cuerpo.rotarFuentes !== false) {
+      try {
+        const previo = reconstruirRotacion(
+          await almacenDeRotacion().leerTodos(),
+          ambitoRotacion.scopeId
+        );
+
+        const siguiente = siguienteCicloYPasada({
+          estado: previo.estado,
+          ciclo: previo.ciclo,
+          pasada: previo.pasada,
+          elegibles: feedsDeclarados
+        });
+
+        cohorte = seleccionarCohorte({
+          elegibles: feedsDeclarados,
+          estado: previo.estado,
+          presupuesto: presupuestoRss,
+          ciclo: siguiente.ciclo,
+          pasada: siguiente.pasada
+        });
+
+        feedsDeLaPasada = cohorte.seleccionados.map((f) => ({
+          url: f.feedUrl,
+          publisher: f.publisher,
+          sourceId: f.sourceId,
+          prioridad: f.prioridad,
+          territorioDeclarado: f.territorioDeclarado
+        }));
+
+        rotacion = { previo, siguiente };
+      } catch (e) {
+        /*
+          Que la rotacion falle no debe tumbar un analisis: se
+          sigue con el orden por prioridad, que es lo que habia
+          antes de este gate, y se declara.
+        */
+        rotacion = { error: e?.message || "fallo la rotacion" };
+      }
+    }
+
     if (modoAmpliado) {
       try {
         ampliada = await recolectarAmpliado({
@@ -638,7 +729,7 @@ router.post("/analisis", async (req, res) => {
             de una recoleccion: pedir la portada de cada medio
             es otra operacion con su propio presupuesto.
           */
-          feeds: feedsDeclarados,
+          feeds: feedsDeLaPasada,
 
           ventana: ventanaTerritorial,
           observedAt: retrievedAt,
@@ -683,6 +774,47 @@ router.post("/analisis", async (req, res) => {
           declaracion:
             "La escucha ampliada falló. El resto del análisis sigue siendo válido con el corpus del recolector base, y esta ausencia se declara en lugar de silenciarse."
         };
+      }
+    }
+
+    /*
+      -------------------------------------------------------
+      ANOTAR LA ROTACION — TERRITORIAL-RSS-ROTATION-01
+
+      Se anota TANTO lo que funciono como lo que no. Un fallo sin
+      anotar se repite igual en la pasada siguiente; uno anotado
+      espacia el reintento y deja la plaza a otra fuente.
+
+      La atribucion sale de `lote.feedUrl`, que el recolector
+      emite desde este gate: ocho lotes de RSS sin identidad de
+      feed son indistinguibles y no permiten saber cual fallo.
+      -------------------------------------------------------
+    */
+    let rotacionAnotada = null;
+
+    if (cohorte && !rotacion?.error) {
+      try {
+        const lotesRss = (ampliada?.lotes || []).filter(
+          (l) => l.providerId === "rss_directo" && l.feedUrl
+        );
+
+        const resultados = lotesRss.map((l) => ({
+          feedUrl: l.feedUrl,
+          estado: clasificarIntento(l),
+          recibidas: l.recibidas ?? 0
+        }));
+
+        rotacionAnotada = await registrarRotacion({
+          almacen: almacenDeRotacion(),
+          scopeId: ambitoRotacion.scopeId,
+          cohorte,
+          resultados,
+          instante: retrievedAt,
+          estado: rotacion?.previo?.estado || new Map(),
+          runId: `rotacion-${retrievedAt}`
+        });
+      } catch (e) {
+        rotacionAnotada = { error: e?.message || "fallo al anotar la rotacion" };
       }
     }
 
@@ -1249,15 +1381,60 @@ router.post("/analisis", async (req, res) => {
             */
             fuentesRss: {
               origen: origenDeLosFeeds,
-              feedsUsados: feedsDeclarados.length,
 
-              topePorPasada: ampliada?.presupuesto?.rss_directo ?? null,
+              /* Elegibles del universo, no los de esta pasada. */
+              feedsElegibles: feedsDeclarados.length,
+              feedsUsados: feedsDeLaPasada.length,
+
+              topePorPasada: ampliada?.presupuesto?.aplicado?.rss_directo ?? null,
 
               nota:
                 origenDeLosFeeds === "universo_vacio"
                   ? "El universo de fuentes está vacío o sin feeds válidos. Ejecutar POST /api/territorio/fuentes/verificar."
                   : null
-            }
+            },
+
+            /*
+              ROTACION — TERRITORIAL-RSS-ROTATION-01
+
+              Responde «¿qué fuentes RSS todavía no se han
+              escuchado en este ciclo?» sin tener que ejecutar
+              nada.
+            */
+            rotacionRss:
+              cohorte && !rotacion?.error
+                ? {
+                    ...estadoRotacion({
+                      elegibles: feedsDeclarados,
+                      estado: rotacion?.previo?.estado || new Map(),
+                      ciclo: cohorte.ciclo,
+                      pasada: cohorte.pasada,
+                      presupuesto: cohorte.presupuesto,
+                      ambito: ambitoRotacion
+                    }),
+
+                    /* Lo que hizo ESTA pasada. */
+                    estaPasada: {
+                      ciclo: cohorte.ciclo,
+                      pasada: cohorte.pasada,
+                      seleccionados: cohorte.seleccionados.map((f) => f.sourceId || f.feedUrl),
+                      diferidos: cohorte.diferidos,
+                      plazasSinUsar: cohorte.plazasSinUsar,
+                      cicloCierra: cohorte.cicloCierra,
+                      metricas: rotacionAnotada?.metricas || null,
+                      errorAlAnotar: rotacionAnotada?.error || null
+                    }
+                  }
+                : {
+                    activa: false,
+
+                    motivo:
+                      rotacion?.error
+                        ? `La rotación falló y se usó el orden por prioridad: ${rotacion.error}`
+                        : feedsDeclarados.length === 0
+                          ? "No hay feeds elegibles: nada que rotar."
+                          : "Rotación desactivada en esta petición (`rotarFuentes: false`)."
+                  }
           }
         : {
             ejecutada: false,
