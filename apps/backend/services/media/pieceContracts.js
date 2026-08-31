@@ -84,6 +84,22 @@ export const CLASES_EMISOR = Object.freeze({
   COMUNIDAD: "COMUNIDAD",
   PLATAFORMA: "PLATAFORMA",
   OTRO: "OTRO",
+
+  /*
+    MEDIA-REAL-DEMO-01 §6: la cuenta existe y esta identificada,
+    pero NINGUNA evidencia dice que sea medio, periodista, creador
+    o actor.
+
+    Antes se devolvia CREADOR por defecto con una advertencia. Era
+    peor de lo que parecia: en un panel, "CREADOR" se lee como una
+    conclusion y la advertencia se ignora. NO_CLASIFICADO no se
+    puede malinterpretar.
+
+    Se distingue de NO_DETERMINADO: alli no sabemos QUIEN es el
+    emisor; aqui lo sabemos y no sabemos QUE es.
+  */
+  NO_CLASIFICADO: "NO_CLASIFICADO",
+
   NO_DETERMINADO: "NO_DETERMINADO"
 });
 

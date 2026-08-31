@@ -876,3 +876,212 @@ test("alcance: Instagram no promete metricas de terceros pese al DISPONIBLE ofic
 
   assert.match(ig.capacidadOficial.avisoDeAlcance, /tercero/i);
 });
+
+
+/* --------------------------------------------------------
+   12. DEFECTOS REALES ENCONTRADOS EN MEDIA-REAL-DEMO-01
+-------------------------------------------------------- */
+
+test("demo-01: el emisor de una cuenta sin evidencia es NO_CLASIFICADO", async () => {
+  const { CLASES_EMISOR: CE } = await import("../services/media/pieceContracts.js");
+
+  const r = resolverPieza({ url: "https://x.com/una_cuenta_sin_catalogo/status/1" });
+
+  assert.equal(r.emisor.clase, CE.NO_CLASIFICADO);
+
+  /*
+    Antes devolvia CREADOR "por defecto". En un panel eso se lee
+    como una conclusion, y no habia evidencia ninguna.
+  */
+  assert.notEqual(r.emisor.clase, CE.CREADOR);
+  assert.ok(r.emisor.advertencia);
+});
+
+
+test("demo-01: una correspondencia con el catalogo NO cambia la clase", async () => {
+  const { correspondenciasDeCuenta } = await import(
+    "../services/media/emitterCorrespondence.js"
+  );
+
+  /* Handle que coincide con un medio real del catalogo. */
+  const c = correspondenciasDeCuenta("tomebamba");
+
+  assert.ok(c.total >= 1, "deberia encontrar el medio del catalogo");
+  assert.equal(c.candidatos[0].estado, "OBSERVADA_NO_VERIFICADA");
+  assert.equal(c.candidatos[0].requiereConfirmacion, true);
+  assert.ok(c.declaracion.texto.includes("no es una identidad") ||
+            /no prueba/i.test(c.declaracion.texto));
+
+  /* La pieza sigue sin clasificar pese a la correspondencia. */
+  const r = resolverPieza({ url: "https://x.com/tomebamba/status/1" });
+
+  assert.equal(r.emisor.clase, "NO_CLASIFICADO");
+  assert.ok(r.emisor.correspondencia.total >= 1);
+});
+
+
+test("demo-01: un handle generico no produce correspondencia falsa", async () => {
+  const { correspondenciasDeCuenta } = await import(
+    "../services/media/emitterCorrespondence.js"
+  );
+
+  /*
+    "radio" y "cuenca" los comparte medio catalogo: no distinguen
+    a nadie y no deben generar coincidencia.
+  */
+  ["radionoticias", "cuencadigital", "eldiario"].forEach((h) => {
+    const c = correspondenciasDeCuenta(h);
+
+    c.candidatos.forEach((x) => {
+      assert.ok(
+        x.terminos.every((t) => !["radio", "cuenca", "diario"].includes(t)),
+        `${h}: correspondencia sostenida por un termino generico (${x.terminos})`
+      );
+    });
+  });
+});
+
+
+test("demo-01: la comparacion de nombres ignora acentos", async () => {
+  const { relacionarConCandidato } = await import(
+    "../services/media/pieceCandidate.js"
+  );
+
+  /*
+    `variantesDeNombre` devuelve las variantes sin acentos y el
+    texto real los lleva. Sin normalizar las dos partes, una
+    pieza que nombra al candidato salia como "no lo menciona".
+  */
+  const r = relacionarConCandidato({
+    pieza: {
+      titulo: null,
+      snippet:
+        "Se oficializo la precandidatura de Paúl Carrasco Carpio a la Alcaldía de Cuenca.",
+      evidenceId: "ev-acentos",
+      publishedAt: "2026-07-03T00:00:00Z"
+    },
+    emisor: { dominio: "x.com", nombre: "Un medio" },
+    candidato: {
+      candidateId: "paul-carrasco-carpio",
+      nombre: "Paúl Carrasco Carpio",
+      alias: [],
+      cuentas: []
+    }
+  });
+
+  assert.equal(r.vinculado, true, "debe detectar el nombre con acentos");
+  assert.equal(r.relaciones.length, 1);
+});
+
+
+test("demo-01: la clave de entidad es estable con y sin esquema", async () => {
+  const { componerSnapshotPieza } = await import(
+    "../services/media/pieceSnapshot.js"
+  );
+
+  /*
+    La misma pieza no puede generar dos claves segun si la API
+    respondio: eso rompia el dedup y el historico.
+  */
+  const a = componerSnapshotPieza({
+    pieceId: "ev-k",
+    canonicalUrl: "x.com/a/status/1",
+    observedAt: "2026-08-01T00:00:00.000Z",
+    metricas: []
+  });
+
+  const b = componerSnapshotPieza({
+    pieceId: "ev-k",
+    canonicalUrl: "x.com/a/status/1",
+    observedAt: "2026-08-01T00:00:00.000Z",
+    metricas: []
+  });
+
+  assert.equal(a.snapshotId, b.snapshotId);
+});
+
+
+test("demo-01: persistido refleja lo realmente escrito", async () => {
+  const { guardarAnalisis } = await import("../services/media/pieceStore.js");
+
+  const r = await guardarAnalisis({
+    entrada: { projectId: "test-honestidad" },
+    observedAt: new Date().toISOString(),
+    pieza: {
+      pieceId: "ev-honest",
+      publicationId: "1",
+      canonicalUrl: "x.com/h/status/1",
+      url: "https://x.com/h/status/1",
+      dominio: "x.com",
+      plataforma: "x",
+      evidenceId: "ev-honest",
+      hash: "h1"
+    },
+    emisor: { dominio: "x.com", clase: "NO_CLASIFICADO", nombre: "H" },
+    snapshot: {
+      snapshotId: "snap-honest-" + Date.now(),
+      pieceId: "ev-honest",
+      observedAt: new Date().toISOString(),
+      metricas: {}
+    },
+    amplificacion: { nodos: [] },
+    candidato: { relaciones: [], relacionesAmplificacion: [] }
+  });
+
+  /*
+    `escribirLoteEnLake` no lanza cuando el Lake rechaza: informar
+    `persistido: true` sin mirar el recuento era afirmar un
+    guardado que no habia ocurrido.
+  */
+  assert.equal(typeof r.escritos, "number");
+  assert.equal(typeof r.rechazados, "number");
+
+  if (r.escritos === 0) {
+    assert.equal(r.persistido, false, "sin escrituras no puede decir persistido");
+    assert.ok(r.motivosRechazo.length > 0, "debe declarar por que se rechazo");
+  } else {
+    assert.equal(r.persistido, true);
+    assert.equal(r.rechazados, 0, r.motivosRechazo?.join(" | "));
+  }
+});
+
+
+test("demo-01: las limitaciones resueltas no se arrastran", async () => {
+  const { podarLimitaciones } = await import("../services/media/analyzePiece.js");
+
+  const crudas = [
+    "Autor no resuelto: este gate no descarga el HTML de la pieza.",
+    "Fecha de publicacion no resuelta: sin ella no se puede ordenar la pieza.",
+    "La evidencia es minima (sin título ni extracto): se conserva la URL.",
+    "No se leyo la pagina: robots.txt prohibe /."
+  ];
+
+  /* Con todo resuelto, solo sobrevive la de robots. */
+  const podadas = podarLimitaciones(
+    crudas,
+    { autor: null, publishedAt: "2026-07-03T00:00:00Z", snippet: "texto real" },
+    { nombre: "La Voz del Tomebamba" }
+  );
+
+  assert.equal(podadas.length, 1);
+  assert.match(podadas[0], /robots\.txt/);
+
+  /* Sin resolver nada, se conservan todas. */
+  assert.equal(podarLimitaciones(crudas, {}, {}).length, 4);
+});
+
+
+test("demo-01: X no dispara el fallback web buscando un titulo que no existe", async () => {
+  const { matrizDePieza: mdp } = await import("../services/media/pieceFieldMatrix.js");
+
+  const x = mdp("x");
+
+  const titulo = x.campos.find((c) => c.id === "titulo");
+
+  /*
+    La matriz declara que una publicacion de X no tiene titulo.
+    El orquestador consulta esto antes de gastar consultas web
+    buscandolo.
+  */
+  assert.equal(titulo.estado, ESTADOS_CAMPO.NO_DISPONIBLE);
+});

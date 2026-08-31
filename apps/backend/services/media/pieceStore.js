@@ -6,9 +6,22 @@ import {
   obtenerHistorialEntidad
 } from "../knowledgeLake/lakeQuery.js";
 
-import { TIPOS_ENTIDAD, ZONAS } from "../knowledgeLake/lakeWriter.js";
+import { TIPOS_ENTIDAD, ZONAS, claveEntidad } from "../knowledgeLake/lakeWriter.js";
 
 import { crearAlmacenPiezas, anexarSnapshot, snapshotsDePieza } from "./pieceSnapshot.js";
+
+import { normalizarUrl } from "../textUtils.js";
+
+
+/*
+  La clave de entidad tiene que ser ESTABLE entre ejecuciones, o
+  el Lake guarda la misma pieza dos veces y el historico no la
+  encuentra. Se normaliza siempre, tanto al escribir como al
+  leer.
+*/
+function claveDePieza(url) {
+  return normalizarUrl(String(url || "")) || String(url || "");
+}
 
 /*
 ===========================================================
@@ -56,11 +69,30 @@ vea el resultado que ya se calculo.
 const memoria = crearAlmacenPiezas();
 
 
+/*
+  DT1 exige `tenantId` y DT3 exige `linaje.submotor`. Sin ellos
+  `validarRegistro` RECHAZA la fila.
+
+  Estaban ausentes, asi que el Lake rechazaba las 18 filas de
+  cada analisis mientras `guardarAnalisis` informaba
+  `persistido: true`. El analisis parecia guardado y no lo
+  estaba: el peor de los dos errores, porque nadie lo miraba.
+*/
+const TENANT_POR_DEFECTO = "sentinel-local";
+
+const SUBMOTOR = "media_piece";
+
+
 function registroBase(entrada, contexto) {
   return {
-    tenantId: contexto.tenantId || null,
+    tenantId: contexto.tenantId || TENANT_POR_DEFECTO,
     proyectoId: contexto.projectId || null,
     zona: ZONAS.RAW,
+
+    linaje: {
+      submotor: SUBMOTOR,
+      cadena: [entrada.paso || "analizar_pieza"]
+    },
 
     fuente: entrada.fuente || null,
     motorOrigen: entrada.motorOrigen || "media_piece_01",
@@ -104,7 +136,7 @@ export async function guardarAnalisis(analisis, opciones = {}) {
   filas.push(
     registroBase(
       {
-        entidad: pieza.canonicalUrl || pieza.url,
+        entidad: claveDePieza(pieza.canonicalUrl || pieza.url),
         tipoEntidad: TIPOS_ENTIDAD.PUBLICACION,
         fuente: pieza.dominio || null,
         urlOriginal: pieza.url,
@@ -155,7 +187,7 @@ export async function guardarAnalisis(analisis, opciones = {}) {
     filas.push(
       registroBase(
         {
-          entidad: `${pieza.canonicalUrl || pieza.url}#snapshot`,
+          entidad: `${claveDePieza(pieza.canonicalUrl || pieza.url)}#snapshot`,
           tipoEntidad: TIPOS_ENTIDAD.PUBLICACION,
           fuente: pieza.dominio || null,
           urlCanonica: pieza.canonicalUrl,
@@ -221,14 +253,40 @@ export async function guardarAnalisis(analisis, opciones = {}) {
   try {
     const r = await escribirLoteEnLake(filas, opciones);
 
+    /*
+      `escribirLoteEnLake` NO lanza cuando el Lake rechaza una
+      fila: devuelve el recuento. Informar `persistido: true` sin
+      mirarlo era afirmar un guardado que no ocurrio.
+    */
+    const escritos = r?.escritos ?? 0;
+
+    const rechazados = r?.rechazados ?? 0;
+
+    const motivosRechazo = [
+      ...new Set(
+        (r?.resultados || [])
+          .filter((x) => x && x.escrito === false)
+          .flatMap((x) => x.errores || [x.motivo])
+          .filter(Boolean)
+      )
+    ];
+
     return {
-      persistido: true,
+      persistido: escritos > 0,
+
       filas: filas.length,
+      escritos,
+      rechazados,
+      omitidosSinCambios: r?.omitidosSinCambios ?? 0,
+      motivosRechazo,
+
       resultado: r || null,
       respaldoMemoria: respaldo,
 
       declaracion:
-        "Escrito en el Knowledge Lake, que es append-only: este analisis no puede ser sobrescrito por el siguiente."
+        escritos > 0
+          ? `Escritas ${escritos} de ${filas.length} filas en el Knowledge Lake, que es append-only: este analisis no puede ser sobrescrito por el siguiente.`
+          : `El Lake rechazo las ${filas.length} filas. El analisis se entrega igual y queda en el respaldo en memoria de este proceso.`
     };
   } catch (error) {
     return {
@@ -254,9 +312,32 @@ analisis.
 export async function historialDePieza(canonicalUrl, opciones = {}) {
   const enMemoria = snapshotsDePieza(memoria, opciones.pieceId || "");
 
+  const clave = `${claveDePieza(canonicalUrl)}#snapshot`;
+
   try {
-    const h = await obtenerHistorialEntidad(`${canonicalUrl}#snapshot`, {
+    /*
+      Se pasa `claveEntidad`: el Lake se niega —con razon— a
+      elegir entre entidades parecidas y devuelve `ambigua`. Con
+      la clave exacta no hay nada que elegir.
+    */
+    /*
+      Se construye la clave interna EXACTA con la misma funcion
+      que la genero al escribir. Sin ella el Lake responde
+      `ambigua` y se niega a elegir —con razon—, y el historico
+      volvia vacio aunque los snapshots estuvieran guardados.
+    */
+    const claveInterna =
+      opciones.claveEntidad ||
+      claveEntidad({
+        tenantId: opciones.tenantId || TENANT_POR_DEFECTO,
+        proyectoId: opciones.proyectoId || null,
+        tipoEntidad: TIPOS_ENTIDAD.PUBLICACION,
+        entidad: clave
+      });
+
+    const h = await obtenerHistorialEntidad(clave, {
       ...opciones,
+      claveEntidad: claveInterna,
       tipoEntidad: TIPOS_ENTIDAD.PUBLICACION
     });
 

@@ -15,6 +15,8 @@ import { extraerDominio } from "../textUtils.js";
 
 import { PLATAFORMAS, CLASES_EMISOR } from "./pieceContracts.js";
 
+import { correspondenciasDeCuenta } from "./emitterCorrespondence.js";
+
 /*
 ===========================================================
 RESOLVER UNA URL A UNA PIEZA — MEDIA-PIECE-01 §2
@@ -276,15 +278,30 @@ export function clasificarEmisor({ url, plataforma, cuentaEnUrl, autorDeclarado 
         `El dominio ${dominio} es una plataforma en el catalogo, pero la URL identifica la cuenta "${cuentaEnUrl}": el emisor es la cuenta.`
       );
 
+      const corr = correspondenciasDeCuenta(cuentaEnUrl);
+
+      if (corr.total) {
+        razones.push(
+          `Correspondencia observada con el catalogo: ${corr.candidatos[0].motivo}`
+        );
+      }
+
       return {
-        clase: CLASES_EMISOR.CREADOR,
+        /*
+          MEDIA-REAL-DEMO-01 §6: sin evidencia que diga QUE es
+          esta cuenta, la clase honesta es NO_CLASIFICADO. Antes
+          se devolvia CREADOR con una advertencia, y en un panel
+          "CREADOR" se lee como conclusion.
+        */
+        clase: CLASES_EMISOR.NO_CLASIFICADO,
         nombre: cuentaEnUrl,
         dominio,
         procedencia: "catalogo_de_medios + forma_de_la_url",
         razones,
         catalogo: ficha,
+        correspondencia: corr,
         advertencia:
-          "CREADOR es la clase por defecto para una cuenta sin catalogar. Podria ser un periodista, un medio o una institucion: exige verificacion del analista."
+          "La cuenta esta identificada, pero ninguna evidencia dice si es un medio, un periodista, un creador o un actor. No se clasifica por su numero de seguidores."
       };
     }
 
@@ -360,15 +377,24 @@ export function clasificarEmisor({ url, plataforma, cuentaEnUrl, autorDeclarado 
       `La URL pertenece a ${plataforma} e identifica la cuenta "${cuentaEnUrl}".`
     );
 
+    const corr = correspondenciasDeCuenta(cuentaEnUrl);
+
+    if (corr.total) {
+      razones.push(
+        `Correspondencia observada con el catalogo: ${corr.candidatos[0].motivo}`
+      );
+    }
+
     return {
-      clase: CLASES_EMISOR.CREADOR,
+      clase: CLASES_EMISOR.NO_CLASIFICADO,
       nombre: cuentaEnUrl,
       dominio,
       procedencia: "forma_de_la_url",
       razones,
       catalogo: null,
+      correspondencia: corr,
       advertencia:
-        "CREADOR es la clase por defecto para una cuenta que no esta en ningun catalogo. No se ha comprobado si es periodista, medio o institucion, y NO se deduce de su numero de seguidores."
+        "La cuenta esta identificada, pero ninguna evidencia dice si es un medio, un periodista, un creador o un actor. No se deduce de su numero de seguidores."
     };
   }
 
@@ -484,6 +510,14 @@ export function resolverPieza(entrada = {}) {
     dominio: extraerDominio(evidencia.canonicalUrl || urlEntrada),
     plataforma: plat.plataforma,
     contentType: plat.contentType,
+
+    /*
+      El handle tal como aparece en la URL. Se conserva porque la
+      API devuelve el NOMBRE de la cuenta y sobrescribe
+      `emisor.nombre`: sin esto se perderia el "@handle", que es
+      lo que identifica de forma estable.
+    */
+    cuentaEnUrl: plat.cuentaEnUrl || null,
 
     titulo: evidencia.title || null,
     snippet: evidencia.snippet || null,

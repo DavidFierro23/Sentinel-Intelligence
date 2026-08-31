@@ -149,10 +149,31 @@ test("clasificacion: no se usa el numero de seguidores en ningun camino", () => 
     cuentaEnUrl: "alguien"
   });
 
-  const texto = JSON.stringify(e).toLowerCase();
+  /*
+    Se prohibe USAR los seguidores como criterio, no nombrarlos.
 
-  assert.ok(!texto.includes("seguidor"), "no debe mencionar seguidores");
-  assert.ok(!texto.includes("follower"), "no debe mencionar followers");
+    El modulo declara a proposito "NO se clasifica por su numero
+    de seguidores", y una comprobacion por substring hacia fallar
+    el test justamente por decirlo. Se buscan campos y
+    afirmaciones; las negaciones explicitas son legitimas.
+  */
+  const texto = JSON.stringify(e);
+
+  assert.ok(
+    !/"(seguidores|followers|followerCount)"\s*:/i.test(texto),
+    "no debe existir un campo de seguidores en la clasificacion"
+  );
+
+  const bajo = texto.toLowerCase();
+
+  [...bajo.matchAll(/seguidor|follower/g)].forEach((m) => {
+    const contexto = bajo.slice(Math.max(0, m.index - 60), m.index);
+
+    assert.ok(
+      contexto.includes(" no ") || contexto.includes("nunca"),
+      `los seguidores se mencionan sin negacion: ...${contexto}`
+    );
+  });
 });
 
 

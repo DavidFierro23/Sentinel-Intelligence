@@ -283,13 +283,43 @@ export async function analizarPieza(entrada = {}, opciones = {}) {
     if (m.enriquecimiento) {
       const e = m.enriquecimiento;
 
+      /*
+        MEDIA-REAL-DEMO-01: se aplica tambien `texto`.
+
+        Antes solo se leia `titulo`, y una publicacion de X NO
+        tiene titulo: tiene texto. El resultado era que el texto
+        REAL devuelto por la API se descartaba, la pieza se
+        quedaba sin contenido y el fallback web acababa poniendo
+        el snippet de un buscador en su lugar.
+
+        Es justo la confusion que el gate prohibe: un snippet no
+        es el contenido de la publicacion. La API es la mejor
+        fuente disponible y tiene prioridad sobre todo lo demas.
+      */
       pieza = {
         ...pieza,
         titulo: e.titulo || pieza.titulo,
+        snippet: e.texto || pieza.snippet,
         publishedAt: e.publishedAt || pieza.publishedAt,
-        canonicalUrl: e.canonicalUrl || pieza.canonicalUrl,
-        cuenta: e.cuenta || null,
-        cuentaId: e.cuentaId || null,
+
+        /*
+          `canonicalUrl` NO se sobrescribe.
+
+          El adapter devuelve la URL con esquema
+          (`https://x.com/...`) y el contrato de evidencia usa la
+          normalizada sin esquema (`x.com/...`) como IDENTIDAD.
+          Dejar que la primera pisara la segunda daba a la MISMA
+          pieza dos claves distintas segun si la API habia
+          respondido, y con eso se rompian el dedup y el
+          historico: dos analisis de la misma publicacion se
+          guardaban como dos entidades.
+
+          La URL con esquema se conserva aparte, para enlazar.
+        */
+        urlPublica: e.canonicalUrl || pieza.urlPublica || pieza.url,
+
+        cuenta: e.cuenta || pieza.cuenta || null,
+        cuentaId: e.cuentaId || pieza.cuentaId || null,
 
         autorProcedencia: e.titulo ? e.procedencia : pieza.autorProcedencia,
         publishedAtProcedencia: e.publishedAt
@@ -298,30 +328,60 @@ export async function analizarPieza(entrada = {}, opciones = {}) {
       };
 
       /*
+        La procedencia tiene que reflejar que estos campos vienen
+        de la API, o la UI mostraria un dato de la plataforma sin
+        decir de donde salio.
+      */
+      if (procedenciaCampos) {
+        if (e.titulo) procedenciaCampos.titulo = e.procedencia;
+        if (e.texto) procedenciaCampos.snippet = e.procedencia;
+        if (e.publishedAt) procedenciaCampos.publishedAt = e.procedencia;
+      }
+
+      /*
         Si el emisor quedo sin resolver porque la cuenta no
         estaba en la URL, la lectura de la plataforma acaba de
         aportarla. Ahora SI se puede nombrar al emisor, y con
         procedencia de la propia plataforma, que es la mejor
         fuente posible.
       */
-      if (emisor?.pendienteDeResolver && e.cuenta) {
+      /*
+        IDENTIDAD DEL EMISOR SEGUN LA PLATAFORMA
+
+        Se aplica SIEMPRE que la API devuelva la cuenta, no solo
+        cuando el emisor quedara pendiente.
+
+        Antes solo entraba con `pendienteDeResolver`, asi que en
+        `x.com/tomebamba/status/...` —donde el handle SI esta en
+        la URL— el emisor se quedaba con el handle "tomebamba" y
+        se perdia el nombre real que devuelve la API, "La Voz del
+        Tomebamba". El handle identifica; el nombre es lo que un
+        cliente reconoce.
+
+        La CLASE no se toca: que la API confirme el nombre no
+        dice si es un medio, un periodista o un actor. Eso sigue
+        exigiendo evidencia (§6).
+      */
+      if (e.cuenta) {
         emisor = {
           ...emisor,
-          clase: "CREADOR",
           nombre: e.cuenta,
-          cuentaId: e.cuentaId || null,
+          handle: pieza.cuentaEnUrl || emisor.handle || null,
+          cuentaId: e.cuentaId || emisor.cuentaId || null,
           procedencia: e.procedencia,
           pendienteDeResolver: false,
 
           razones: [
             ...(emisor.razones || []),
-            `La lectura de la plataforma resolvio la cuenta: "${e.cuenta}"${
-              e.cuentaId ? ` (${e.cuentaId})` : ""
+            `La API de la plataforma confirmo la cuenta: "${e.cuenta}"${
+              e.cuentaId ? ` (id ${e.cuentaId})` : ""
             }.`
           ],
 
           advertencia:
-            "CREADOR es la clase por defecto para una cuenta de plataforma. Podria ser un medio, un periodista o una institucion: exige verificacion del analista y NO se deduce de sus suscriptores."
+            emisor.clase === "NO_CLASIFICADO"
+              ? "La cuenta esta confirmada por la propia plataforma, pero ninguna evidencia dice si es un medio, un periodista, un creador o un actor. NO se clasifica por su numero de seguidores."
+              : emisor.advertencia
         };
       }
     }
@@ -436,7 +496,34 @@ export async function analizarPieza(entrada = {}, opciones = {}) {
   */
   let fallback = null;
 
-  if (!dryRun && !sinBusqueda && !pieza.titulo) {
+  /*
+    Condicion corregida en MEDIA-REAL-DEMO-01.
+
+    Antes bastaba `!pieza.titulo`, y eso disparaba el fallback en
+    TODA publicacion de X: un post de X no tiene titulo por
+    diseno —la propia matriz de campos lo declara NO_DISPONIBLE—,
+    asi que el fallback salia a buscar un titulo que no existe,
+    gastaba tres consultas web y acababa poniendo el snippet de
+    un buscador encima del texto REAL que la API ya habia dado.
+
+    Ahora se exige que no haya NINGUN contenido utilizable, y se
+    respeta lo que la matriz dice de esa plataforma: si alli no
+    hay titulo, no se busca.
+  */
+  const matrizPieza = matrizDePieza(pieza.plataforma);
+
+  const tituloExisteEnLaPlataforma =
+    matrizPieza.campos.find((c) => c.id === "titulo")?.estado !==
+    "NO_DISPONIBLE";
+
+  const sinContenidoUtilizable = !pieza.titulo && !pieza.snippet;
+
+  if (
+    !dryRun &&
+    !sinBusqueda &&
+    sinContenidoUtilizable &&
+    tituloExisteEnLaPlataforma
+  ) {
     try {
       fallback = await fallbackWebDePieza(pieza, { fetch: opciones.fetch });
 
@@ -669,7 +756,7 @@ export async function analizarPieza(entrada = {}, opciones = {}) {
     metadataPublica: metadata,
     procedenciaCampos,
     camposPendientes,
-    matrizDeCampos: matrizDePieza(pieza.plataforma),
+    matrizDeCampos: matrizPieza,
 
     metricas,
     disponibilidadMetricas: disponibilidad,
@@ -695,7 +782,7 @@ export async function analizarPieza(entrada = {}, opciones = {}) {
 
     evidencias,
 
-    limitaciones: [...new Set(limitaciones.filter(Boolean))],
+    limitaciones: podarLimitaciones(limitaciones, pieza, emisor),
 
     cuota,
 
@@ -739,6 +826,57 @@ export async function analizarPieza(entrada = {}, opciones = {}) {
 
 /*
 -----------------------------------------------------------
+PODAR LIMITACIONES OBSOLETAS
+
+El paso 1 declara lo que no pudo resolver DESDE LA URL. Pasos
+mas tarde, la API de la plataforma rellena varios de esos
+campos. Si nadie retira esas lineas, el informe acaba diciendo
+«autor no resuelto» junto al nombre del autor.
+
+No es cosmetico: una limitacion que se contradice con el dato
+de al lado destruye la confianza en TODAS las limitaciones, que
+son justo lo que hace creible al modulo.
+
+Se retira una limitacion SOLO si el campo del que hablaba esta
+efectivamente resuelto. Las demas se conservan intactas.
+-----------------------------------------------------------
+*/
+const LIMITACIONES_RESUELTAS = [
+  {
+    patron: /^Autor no resuelto/i,
+    resuelta: (p, e) => Boolean(p?.autor || e?.nombre)
+  },
+  {
+    patron: /^Fecha de publicacion no resuelta/i,
+    resuelta: (p) => Boolean(p?.publishedAt)
+  },
+  {
+    patron: /^La evidencia es minima/i,
+    resuelta: (p) => Boolean(p?.titulo || p?.snippet)
+  },
+  {
+    patron: /^Se reconocio la plataforma pero no el identificador/i,
+    resuelta: (p) => Boolean(p?.publicationId)
+  }
+];
+
+
+export function podarLimitaciones(limitaciones = [], pieza = null, emisor = null) {
+  const unicas = [...new Set(limitaciones.filter(Boolean))];
+
+  return unicas.filter((l) => {
+    const regla = LIMITACIONES_RESUELTAS.find((r) => r.patron.test(l));
+
+    if (!regla) return true;
+
+    /* Se conserva solo si sigue siendo verdad. */
+    return !regla.resuelta(pieza, emisor);
+  });
+}
+
+
+/*
+-----------------------------------------------------------
 COMPROBACION DE HIGIENE
 
 Recorre la respuesta buscando las afirmaciones prohibidas.
@@ -765,4 +903,4 @@ export function auditarAfirmaciones(analisis) {
 }
 
 
-export default { analizarPieza, auditarAfirmaciones };
+export default { analizarPieza, auditarAfirmaciones, podarLimitaciones };

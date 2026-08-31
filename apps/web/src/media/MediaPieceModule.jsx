@@ -21,6 +21,23 @@ import {
 
 const BACKEND = "http://localhost:3001";
 
+
+/*
+  La `canonicalUrl` del contrato de evidencia es un IDENTIFICADOR
+  y viene sin esquema (`x.com/a/status/1`). Usarla como `href`
+  la convertiria en una ruta relativa del propio frontend y el
+  enlace llevaria a ninguna parte.
+
+  `urlPublica` es la direccion navegable; esta es el respaldo.
+*/
+function enlace(...candidatos) {
+  const v = candidatos.find((x) => x);
+
+  if (!v) return null;
+
+  return /^https?:\/\//i.test(v) ? v : `https://${v}`;
+}
+
 /*
 ===========================================================
 ANALIZAR PUBLICACION — MEDIA-PIECE-01 §16
@@ -636,7 +653,7 @@ export default function MediaPieceModule() {
 
             <div style={{ marginTop: "6px" }}>
               <a
-                href={r.pieza?.canonicalUrl || r.pieza?.url}
+                href={enlace(r.pieza?.urlPublica, r.pieza?.url, r.pieza?.canonicalUrl)}
                 target="_blank"
                 rel="noreferrer"
                 style={{
@@ -813,7 +830,7 @@ export default function MediaPieceModule() {
                       }}
                     >
                       <a
-                        href={n.canonicalUrl || n.url}
+                        href={enlace(n.url, n.canonicalUrl)}
                         target="_blank"
                         rel="noreferrer"
                         style={{
@@ -1092,7 +1109,7 @@ export default function MediaPieceModule() {
                   <>
                     {" "}
                     <a
-                      href={e.canonicalUrl}
+                      href={enlace(e.canonicalUrl)}
                       target="_blank"
                       rel="noreferrer"
                       style={{ color: "var(--sentinel-cyan)" }}

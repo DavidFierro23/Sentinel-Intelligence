@@ -547,7 +547,14 @@ function agruparPorContenido(items) {
   const grupos = [];
 
   items.forEach((it) => {
-    const t = it?.titulo || it?.title || null;
+    /*
+      Una publicacion de X no tiene titulo: tiene texto. Si solo
+      se agrupara por titulo, cada pieza social formaria su propio
+      "contenido" y el recuento diria 8 piezas / 8 contenidos
+      cuando en realidad hablan del mismo hecho. Se usa el texto
+      como respaldo.
+    */
+    const t = it?.titulo || it?.title || it?.snippet || null;
 
     if (!t) {
       grupos.push({ representante: it, miembros: [it], sinTitulo: true });
@@ -555,7 +562,9 @@ function agruparPorContenido(items) {
     }
 
     const g = grupos.find((x) => {
-      const tr = x.representante?.titulo || x.representante?.title;
+      const r = x.representante;
+
+      const tr = r?.titulo || r?.title || r?.snippet;
 
       return tr && similitud(tr, t) >= 0.72;
     });
@@ -566,7 +575,11 @@ function agruparPorContenido(items) {
 
   return grupos.map((g, i) => ({
     contenidoId: `cont-${i + 1}`,
-    titularRepresentante: g.representante?.titulo || g.representante?.title || null,
+    titularRepresentante:
+      g.representante?.titulo ||
+      g.representante?.title ||
+      String(g.representante?.snippet || "").slice(0, 120) ||
+      null,
     piezas: g.miembros.length,
     fuentes: new Set(
       g.miembros.map((m) => m.dominio || extraerDominio(m.canonicalUrl || m.url))

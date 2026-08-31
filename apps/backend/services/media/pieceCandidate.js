@@ -12,6 +12,8 @@ import { variantesDeNombre, contarMenciones } from "../conversation/actorMention
 
 import { aFormaConversacion } from "./pieceTopics.js";
 
+import { normalizarTexto } from "../textUtils.js";
+
 /*
 ===========================================================
 RELACION PIEZA -> CANDIDATO — MEDIA-PIECE-01 §5
@@ -118,11 +120,25 @@ export function relacionarConCandidato(entrada = {}) {
     }
   })();
 
-  /* Comprobacion directa sobre la pieza analizada. */
-  const textoPieza = `${pieza?.titulo || ""} ${pieza?.snippet || ""}`.toLowerCase();
+  /*
+    Comprobacion directa sobre la pieza analizada.
+
+    Se normalizan LAS DOS PARTES con `normalizarTexto`.
+
+    `variantesDeNombre` devuelve las variantes SIN acentos
+    ("paul carrasco carpio"), y el texto real de una publicacion
+    ecuatoriana los lleva ("Paúl Carrasco Carpio"). Comparando el
+    texto crudo en minusculas contra una variante sin acentos, la
+    coincidencia NUNCA ocurria: una pieza que nombra al candidato
+    con su nombre completo salia como "no lo menciona".
+  */
+  const textoPieza = normalizarTexto(
+    `${pieza?.titulo || ""} ${pieza?.snippet || ""}`
+  );
 
   const varianteEncontrada =
-    variantes.find((v) => v && textoPieza.includes(String(v).toLowerCase())) || null;
+    variantes.find((v) => v && textoPieza.includes(normalizarTexto(String(v)))) ||
+    null;
 
   const mencionaLaPieza = Boolean(varianteEncontrada);
 
@@ -184,9 +200,9 @@ export function relacionarConCandidato(entrada = {}) {
   const relacionesAmplificacion = [];
 
   piezasAmplificacion.forEach((p) => {
-    const t = `${p?.titulo || p?.title || ""} ${p?.snippet || ""}`.toLowerCase();
+    const t = normalizarTexto(`${p?.titulo || p?.title || ""} ${p?.snippet || ""}`);
 
-    const v = variantes.find((x) => x && t.includes(String(x).toLowerCase()));
+    const v = variantes.find((x) => x && t.includes(normalizarTexto(String(x))));
 
     if (!v) return;
 
