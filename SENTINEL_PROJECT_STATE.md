@@ -6283,6 +6283,123 @@ no se rellena nada.
 
 ---
 
+## 18-septricies. P-CAND-IG-MULTICANDIDATO-01 (2026-08-31)
+
+**1101 comprobaciones, 26 suites, 0 fallos.** **4 llamadas Meta.**
+Cero llamadas a X, YouTube, TikTok y buscadores.
+
+### Antes del gate: el PASO 5 quedo validado
+
+El intercambio a token de larga duracion **ya estaba hecho** cuando empezo esta
+sesion, y no habia constancia de ello en ningun sitio: ni commit, ni log, ni
+entrada en este documento. Se determino con `debug_token`, que es la unica
+fuente que lo puede decir.
+
+    emitido      2026-08-31T05:06:31Z
+    caduca       2026-10-30  (~60 dias)
+    acceso datos 2026-11-29  (~90 dias)
+    permisos     pages_show_list, instagram_basic,
+                 instagram_manage_insights, pages_read_engagement,
+                 public_profile
+
+No se regenero. `GET /me` devolvio 200 con el helper que ya existia. El contrato
+sigue siendo `FACEBOOK_USER_ACCESS_TOKEN`: no se creo variable nueva.
+
+**La leccion de operacion:** un token de 60 dias que nadie apunta es un token
+que el proximo gate va a volver a generar. La caducidad vive en Meta, no en el
+repositorio, y por eso queda escrita aqui.
+
+### La ejecucion
+
+Doce activos de Instagram, siete candidatos. Tres elegibles, y **solo esos tres
+gastaron llamada**.
+
+Los nueve declarados `INSTAGRAM_PERSONAL` no se consultaron. La razon no es
+ahorro: `elegibilidadMeta` ya dice que ninguna via oficial abre una cuenta
+personal, asi que la llamada solo habria confirmado lo que el contrato afirma.
+Quedan `NO_SOPORTADO_PERSONAL` con procedencia **DECLARADA**, que no es lo mismo
+que MEDIDA, y se reporta con esa etiqueta puesta.
+
+    @jotalloretv      OBSERVADA  MEDIDO_PROPIO_AUTORIZADO   10.822 seguidores
+    @pedropalaciosu   OBSERVADA  MEDIDO_TERCERO              9.718 seguidores
+    @yakuperezg       OBSERVADA  MEDIDO_TERCERO             83.233 seguidores
+
+**Primera medicion multicandidato de terceros en Instagram.** Dos candidatos
+que no administramos, quince publicaciones con permalink, timestamp y metricas.
+
+Y la distincion volvio a ganarse el sitio: `@jotalloretv` salio
+`MEDIDO_PROPIO_AUTORIZADO` porque aparece en `me/accounts`. La respuesta de Meta
+es identica a la de un tercero —mismos campos, mismo 200— y sin esa
+comprobacion previa el gate habria contado tres terceros donde hay dos.
+
+### AUSENTE != 0, medido otra vez
+
+    likes      12 DISPONIBLE   3 NO_DISPONIBLE
+    comments   15 DISPONIBLE   0 NO_DISPONIBLE
+
+Tres publicaciones de `@jotalloretv` no traen `like_count`. Quedan
+`NO_DISPONIBLE`, no en cero: un cero es una medicion y la ausencia no lo es.
+
+`comments_count` **si se mide**, y en `@pedropalaciosu` hay dos ceros que son
+ceros de verdad. `comments_text` sigue `NO_SOPORTADO` por esta via —400 code 100
+medido en el gate anterior—, asi que Comments Intelligence continua sin fuente
+hasta PPCA.
+
+`reach`, `impressions`, `saved` y `shares` no se pidieron: son OWNER_INSIGHT y
+no existirian para el Instagram de un candidato ajeno.
+
+### Dedup verificado sin gastar Meta
+
+Reescrito el mismo lote: los lotes suben de 3 a 4 y las publicaciones se quedan
+en 5, con `publicationId` y `evidenceId` unicos. Volver a llamar a Meta para
+comprobarlo habria gastado tres llamadas para observar lo mismo.
+
+### Matriz social real del proyecto
+
+    CANDIDATO                 X         YOUTUBE   INSTAGRAM       FACEBOOK  TIKTOK
+    Paul Carrasco             NO_PROB   MEDIDO    NO_SOPORTADO    NO_PROB   NO_PROB
+    J. C. Lloret              MEDIDO    MEDIDO    MEDIDO_PROPIO   NO_PROB   NO_PROB
+    Pedro Palacios            MEDIDO    SIN_CTA   MEDIDO (1/1)    NO_PROB   NO_PROB
+    Juan Carlos Vega          MEDIDO    SIN_CTA   NO_SOPORTADO    SIN_CTA   NO_PROB
+    Yaku Perez                MEDIDO    MEDIDO    PARCIAL (1/2)   NO_PROB   NO_PROB
+    Marcelo Cabrera           MEDIDO    SIN_CTA   NO_SOPORTADO    NO_PROB   NO_PROB
+    Leonardo Morales          MEDIDO    SIN_CTA   NO_SOPORTADO    NO_PROB   NO_PROB
+
+Instagram deja de ser `NO_PROBADO` en los siete: 1 MEDIDO, 1 PARCIAL,
+1 MEDIDO_PROPIO y 4 NO_SOPORTADO. Las dos reglas del gate anterior se cumplieron
+sobre datos reales: Yaku queda **PARCIAL** con uno de dos activos medidos, y
+Lloret **MEDIDO_PROPIO**, que no cuenta como cobertura.
+
+X y YouTube se reconstruyeron de lo ya persistido en el Lake. No se volvio a
+preguntar a nadie.
+
+### habilitaBenchmark.instagram
+
+**TRUE, y ya lo era.** Paso a true en META-THIRD-PARTY-REAL-02 y esta fijado por
+test. Este gate **no lo cambio**: lo respaldo. Lo que antes sostenia un tercero
+genuino ahora lo sostienen dos, en un proyecto real y con la matriz distinguiendo
+cual de los tres activos medidos era nuestro.
+
+La regla sigue siendo una funcion y no una costumbre: solo `MEDIDO_TERCERO`
+habilita. Si lo unico medido hubiera sido `@jotalloretv`, seguiria en false.
+
+### Riesgos
+
+- **La cobertura de Instagram es estructuralmente parcial.** 9 de 12 activos son
+  personales y ninguna revision de Meta los abre. El techo por esta via son 3 de
+  12, y hoy se alcanzo entero.
+- **Un solo candidato tiene cobertura de tercero completa en Instagram.** Pedro
+  Palacios. Yaku queda parcial y Lloret no cuenta.
+- El token sigue administrando la Pagina de un candidato del proyecto. La
+  decision sigue pendiente y ahora hay una medicion que lo evidencia en el dato.
+- La ruta HTTP `POST /:proyectoId/candidatos/:candidatoId/observar` **no puede
+  disparar Instagram todavia**: no pasa `idParaBusinessDiscovery` ni
+  `cuentasPropias` a `observarCandidato`, asi que por ahi `observarInstagram`
+  devuelve `NO_EJECUTABLE`. El motor funciona —este gate lo ejecuto por los
+  servicios— y lo que falta es cablear dos parametros. No se toco en este gate.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -6790,6 +6907,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-31 | P-CAND-IG-MULTICANDIDATO-01 | Instagram pasa de motor a datos: primera medicion multicandidato de terceros, cuatro llamadas Meta en total. Antes del gate se determino que el PASO 5 ya estaba hecho y no constaba en ninguna parte —ni commit, ni log, ni este documento—: `debug_token` mostro un token emitido el 2026-08-31T05:06:31Z que caduca el 2026-10-30, unos 60 dias, con acceso a datos hasta el 2026-11-29 y los cinco permisos necesarios. No se regenero, y la caducidad queda escrita aqui porque vive en Meta y no en el repositorio, que es como se pierde. El contrato sigue siendo FACEBOOK_USER_ACCESS_TOKEN y no se creo variable nueva. De los doce activos de Instagram solo los tres elegibles gastaron llamada; los nueve declarados INSTAGRAM_PERSONAL no se consultaron porque `elegibilidadMeta` ya afirma que ninguna via oficial los abre y la llamada solo habria confirmado el contrato, asi que quedan NO_SOPORTADO_PERSONAL con procedencia DECLARADA y no MEDIDA, con la etiqueta puesta. Resultado: @pedropalaciosu y @yakuperezg MEDIDO_TERCERO con 9.718 y 83.233 seguidores, y @jotalloretv MEDIDO_PROPIO_AUTORIZADO con 10.822 porque aparece en me/accounts —la respuesta de Meta es identica a la de un tercero, mismo 200 y mismos campos, y sin esa comprobacion previa el gate habria contado tres terceros donde hay dos—. Quince publicaciones con permalink, timestamp y metricas; likes 12 DISPONIBLE y 3 NO_DISPONIBLE porque tres publicaciones de Lloret no traen like_count y quedan ausentes en lugar de en cero; comments_count medido en las quince, con dos ceros reales en Palacios; comments_text sigue NO_SOPORTADO por esta via hasta PPCA; reach, impressions, saved y shares no se pidieron por ser OWNER_INSIGHT. Dedup verificado sin gastar Meta reescribiendo el mismo lote: los lotes suben de 3 a 4 y las publicaciones se quedan en 5 con publicationId y evidenceId unicos. Instagram deja de ser NO_PROBADO en los siete candidatos y queda 1 MEDIDO, 1 PARCIAL, 1 MEDIDO_PROPIO y 4 NO_SOPORTADO, con las dos reglas del gate anterior cumplidas sobre datos reales: Yaku PARCIAL con uno de dos activos y Lloret MEDIDO_PROPIO sin contar como cobertura. X y YouTube se reconstruyeron de lo ya persistido en el Lake, sin volver a preguntar. habilitaBenchmark("instagram") sigue TRUE y este gate no lo cambio: lo respaldo, porque lo que antes sostenia un tercero genuino ahora lo sostienen dos. Riesgo estructural declarado: 9 de 12 activos son personales y ninguna revision de Meta los abre, asi que el techo de esta via son 3 de 12 y hoy se alcanzo entero. Detectado y no tocado: la ruta POST /observar no pasa idParaBusinessDiscovery ni cuentasPropias, asi que por HTTP Instagram devuelve NO_EJECUTABLE y falta cablear dos parametros. 1101 pruebas, 0 fallos. Nueva §18-septricies. |
 | 2026-08-30 | P-CAND-SOCIAL-COVERAGE-01 | El gate iba a pasar Instagram de prueba a operacion sobre los siete candidatos y no llego a ejecutarse: el token de Facebook caduco entre gates, por cincuenta y seis segundos, porque los del Graph API Explorer viven alrededor de una hora y las pruebas anteriores duraban minutos. Es un hallazgo de operacion y no de arquitectura, y produjo la distincion que faltaba: CREDENCIAL_EXPIRADA no es CREDENCIAL_RECHAZADA, porque una manda a revisar de donde salio el token y la otra a conseguir uno de larga duracion —regenerar otro corto caduca igual—. Nuevo tokenDeLargaDuracion() para el intercambio a ~60 dias, que exige META_APP_ID y META_APP_SECRET y no intenta la llamada si faltan. Lo que si quedo construido: observarInstagram bajo el mismo contrato que observarX y observarYouTube, con una sola llamada por activo porque Meta permite anidar la muestra en el propio fields; el campo alcanceDeLaMedicion que separa MEDIDO_TERCERO de MEDIDO_PROPIO_AUTORIZADO y que NO sale de la respuesta de Meta —sobre una cuenta propia y una ajena la respuesta es identica, y ahi estuvo el riesgo del gate anterior— sino de cruzar el handle con me/accounts; el estado NO_SOPORTADO_PERSONAL, porque business_discovery solo responde sobre cuentas Business o Creator y leer ese error como CUENTA_NO_RESUELTA diria «no encontramos la cuenta» cuando la verdad es que la cuenta esta ahi y la via no la abre; Instagram registrado en el puerto de adaptadores, donde una sola funcion cumple las cuatro capacidades; matrizSocialDelProyecto con siete estados de celda que se niegan a colapsar en «sin datos», con dos reglas fijadas por test —dos de tres activos medidos es PARCIAL y no MEDIDO, y MEDIDO_PROPIO no cuenta como cobertura—; y evidenceId derivado del permalink, estable entre ejecuciones, que es lo que impide duplicar una publicacion al reobservar. Sobre Facebook se determino la via exacta: de las tres alternativas que Meta nombraba en su error, pages_read_engagement no aplica a terceros y Page Public Metadata Access esta sustituida, asi que solo queda Page Public Content Access, que exige App Review y Business Verification verbatim y en modo desarrollo solo alcanza Paginas cuyo administrador tenga rol en la app —exactamente lo medido—. No hay ningun cambio de configuracion que abra terceros sin revision. Y un dato que cambia la prioridad: PPCA habilita /page-post/comments, o sea texto de comentarios publicos, que Instagram no entrega; PPCA no es «tambien Facebook», es la condicion para que Comments Intelligence tenga fuente. Preparado docs/META-FB-PUBLIC-ACCESS-REQUEST.md sin enviar nada. 1101 pruebas, 0 fallos, 1 llamada Meta. Nueva §18-sextricies. |
 | 2026-08-30 | META-THIRD-PARTY-REAL-02 | Reintento con la credencial correcta, siete llamadas. El hallazgo que casi rompe el gate llego en la llamada de prerequisito: `me/accounts` revelo que el token ADMINISTRA la Pagina del candidato patron y su Instagram vinculado, asi que las dos primeras sondas preguntaron por nuestro propio activo y devolvieron datos reales —10.821 y 55.859 seguidores— con cero evidencia sobre terceros. Un resultado positivo con el sujeto equivocado se lee exactamente igual que un exito, y sin esa llamada el gate habria declarado MEDIDO_TERCERO con evidencia de MEDIDO_PROPIO. Se repitio contra un candidato ausente de me/accounts. INSTAGRAM: MEDIDO_TERCERO — business_discovery devolvio username, name, followers_count 9.719, media_count 1.635 y cinco publicaciones con id, permalink, timestamp, media_type, like_count y comments_count; no volvieron follows_count ni view_count y no se pidieron los owner insights. FACEBOOK: BLOQUEADO_PERMISOS — la Page que administramos dio 200 y la de un tercero 400 code 100, con TRES alternativas nombradas por Meta que no cuestan lo mismo (pages_read_engagement, Page Public Content Access, Page Public Metadata Access) y sin mencionar Business Verification; esta si es causa demostrada porque el error llega a evaluar permisos. COMENTARIOS de Instagram PARCIAL: el recuento llega y el texto no, medido con un 400 code 100 al pedir comments{text} dentro de business_discovery.media, asi que Comments Intelligence sigue sin fuente por esta via. Tres activos pasan a META_API/VERIFICADA porque business_discovery solo responde sobre cuentas profesionales y responder ES la evidencia del tipo; los otros veinte quedan intactos. habilitaBenchmark("instagram") pasa a true con siete capacidades sobre un tercero genuino, el mismo baremo con el que entraron X y YouTube, mientras views y shares se quedan en PROPIO porque son OWNER_INSIGHT y no vinieron del tercero. Registrada una discrepancia con META-PUBLIC-ACCESS-01, que documentaba Advanced Access y Business Verification como obligatorios: la llamada funciono sin que consten, y POR QUE funciona no esta demostrado. Corregido un defecto encontrado de paso: guardarDeclaracionesDeTipo usaba candidato + fecha como clave de entidad, asi que dos lotes con el mismo declaradoEn colisionaban y el primero dejaba de leerse devolviendo escrito true. Once aserciones cambiaron y ninguna se debilito. 1076 pruebas, 0 fallos. Nueva §18-quintricies. |
 | 2026-08-30 | META-FB-LOGIN-SETUP-01 | Gate de preparacion, cero llamadas Meta. El gate anterior concluyo «falta un token de Facebook Login», que era cierto y no era todo: el adaptador tenia UNA lista de variables y una sola funcion credencial(), y el token que devolvia se enviaba a los dos hosts. Eso es lo que produjo el 400 code 190, y habria sobrevivido a la solucion — al anadir el token de Facebook, graph.facebook.com habria seguido recibiendo el de Instagram porque era el primero de la lista, con el mismo 190 y la credencial correcta guardada al lado sin usarse, que es el peor caso posible porque parece que la configuracion ya esta hecha. Corregido: el token lo decide el host y no el orden de una lista, sin respaldo cruzado, y si falta el que toca la llamada no se hace —SIN_CREDENCIAL con llamadas 0 y la familia que falta—, porque contar una llamada que no salio falsearia el unico numero que este proyecto vigila. sanitizar() redacta ahora las dos familias, ya que el error de un host puede traer el token del otro y redactar solo uno lo dejaria a la vista precisamente en el mensaje que alguien va a copiar y pegar. Ocho pruebas antiguas cambiaron y no se debilitaron: pedian una respuesta simulada de graph.facebook.com y llegaban al fetch inyectado con un token que ese host nunca habria aceptado, asi que vivian del defecto sin saberlo. Documentada la credencial requerida por via —las dos comparten familia, Facebook User access token del flujo Facebook Login for Business, y no comparten permiso— y declarado que un token no resuelve el acceso: Standard Access alcanza solo a usuarios y Paginas con un rol en la app y un candidato nunca lo tendra, asi que el reintento seguira fallando, pero fallara con un error de permisos, que es informacion que hoy no existe. estadoDeCredenciales() lo declara en el dato: con el token presente, alcanza sigue vacio. App Review y Business Verification siguen TODAVIA NO DEMOSTRADOS porque ninguna llamada ha llegado a evaluar permisos, y la distincion entre «lo lei» y «lo medi» es la que sostiene los ultimos cuatro gates. 1059 pruebas, 0 fallos. Nueva §18-quatertricies. |
