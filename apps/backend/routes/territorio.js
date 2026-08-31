@@ -107,6 +107,35 @@ import {
 
 import { crearRegistroMedios, listarMedios } from "../services/ingest/mediaSourceRegistry.js";
 
+/*
+  DOS ALIAS OBLIGADOS
+
+  `estadoUniverso` ya lo exporta `conversation/sourceUniverse.js`
+  y son cosas distintas: aquel resume las fuentes OBSERVADAS en
+  la evidencia; este, las COMPROBADAS por HTTP.
+
+  `crearAlmacenFichero` ya lo exporta `snapshotStore.js`, y
+  tampoco es el mismo almacen: uno guarda snapshots de ventana,
+  el otro comprobaciones de fuentes.
+
+  Sin los alias el modulo no compila, y con ellos queda claro
+  cual es cual en cada llamada.
+*/
+import {
+  candidatosPara,
+  feedsParaRecoleccion,
+  estadoUniverso as estadoUniversoFuentes,
+  ESTADOS_FUENTE
+} from "../services/territorial/verifiedSourceUniverse.js";
+
+import { comprobarUniverso } from "../services/territorial/sourceVerifier.js";
+
+import {
+  crearAlmacenFichero as crearAlmacenDeFuentes,
+  registrarComprobacion,
+  reconstruirUniverso
+} from "../services/territorial/sourceUniverseStore.js";
+
 import { huellaDeEvidencia } from "../services/ingest/evidenceContract.js";
 
 import { normalizarUrl } from "../services/textUtils.js";
@@ -218,6 +247,144 @@ router.post("/recargar", (req, res) => {
     res.json({ recargado: true, catalogo: catalogoTerritorial().registro });
   } catch (e) {
     res.status(500).json({ error: e?.message || "fallo la recarga" });
+  }
+});
+
+
+/*
+===========================================================
+UNIVERSO DE FUENTES — TERRITORIAL-SOURCE-UNIVERSE-01
+===========================================================
+
+Dos rutas, y la separacion entre ellas es deliberada:
+
+  GET  /fuentes            lee lo ya comprobado. Cero red.
+  POST /fuentes/verificar  sale a comprobar. Gasta peticiones.
+
+Consultar el universo NO debe salir a internet. Si leerlo
+disparara comprobaciones, abrir el panel pediria la portada de
+veinte medios.
+===========================================================
+*/
+
+function almacenDeFuentes() {
+  return crearAlmacenDeFuentes();
+}
+
+
+router.get("/fuentes", async (req, res) => {
+  try {
+    const almacen = almacenDeFuentes();
+
+    const universo = reconstruirUniverso(await almacen.leerTodos());
+
+    const fichas = [...universo.values()];
+
+    const territorioId = req.query?.territorio || null;
+
+    const filtradas = territorioId
+      ? fichas.filter(
+          (f) => f.territorioId === territorioId || f.territorioDeclarado === territorioId
+        )
+      : fichas;
+
+    res.json({
+      gate: "TERRITORIAL-SOURCE-UNIVERSE-01",
+
+      territorioId,
+
+      resumen: estadoUniversoFuentes(filtradas),
+
+      /*
+        Los feeds que ALIMENTARIAN una recoleccion ahora mismo.
+        Se muestran para que el panel pueda decir cuantos hay sin
+        tener que ejecutar nada.
+      */
+      feedsDisponibles: feedsParaRecoleccion(filtradas),
+
+      fuentes: filtradas.sort(
+        (a, b) => a.prioridad - b.prioridad || String(a.nombre).localeCompare(String(b.nombre))
+      ),
+
+      /*
+        Candidatos que existen y NUNCA se han comprobado. Sin
+        esta cifra, un universo vacio y uno completo se leen
+        igual.
+      */
+      candidatosSinComprobar: territorioId
+        ? candidatosPara(territorioId)
+            .filter((c) => !universo.has(c.sourceId))
+            .map((c) => ({
+              sourceId: c.sourceId,
+              nombre: c.nombre,
+              prioridad: c.prioridad,
+              metodoDescubrimiento: c.metodoDescubrimiento
+            }))
+        : [],
+
+      declaracion:
+        "Esta ruta NO sale a internet: devuelve lo que ya se comprobó. Para comprobar, POST /fuentes/verificar."
+    });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo al leer el universo de fuentes" });
+  }
+});
+
+
+router.post("/fuentes/verificar", async (req, res) => {
+  try {
+    const cuerpo = req.body || {};
+
+    const territorioId = cuerpo.territorio || "ec-azuay-cuenca";
+
+    const almacen = almacenDeFuentes();
+
+    const estadoPrevio = reconstruirUniverso(await almacen.leerTodos());
+
+    /*
+      Comprobacion REAL: robots.txt, portadas y feeds publicos.
+      Coste 0 USD y ninguna credencial. Es la unica operacion de
+      este gate que sale a la red.
+    */
+    const universo = await comprobarUniverso({
+      territorioId,
+      instante: new Date().toISOString(),
+      limite: cuerpo.limite || null,
+      incluirNacionales: cuerpo.incluirNacionales !== false,
+      ...(cuerpo.soloSourceIds
+        ? {
+            candidatos: candidatosPara(territorioId).filter((c) =>
+              cuerpo.soloSourceIds.includes(c.sourceId)
+            )
+          }
+        : {})
+    });
+
+    const registro = await registrarComprobacion({
+      almacen,
+      universo,
+      estadoPrevio,
+      runId: `fuentes-${universo.comprobadoEn}`
+    });
+
+    res.json({
+      gate: "TERRITORIAL-SOURCE-UNIVERSE-01",
+
+      territorioId,
+      comprobadoEn: universo.comprobadoEn,
+
+      resumen: universo.resumen,
+      metricas: registro.metricas,
+      coste: universo.coste,
+
+      feedsDisponibles: feedsParaRecoleccion(registro.fichas),
+
+      fuentes: registro.fichas,
+
+      declaraciones: [...universo.resumen.declaraciones, ...registro.declaraciones]
+    });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo la comprobacion de fuentes" });
   }
 });
 
@@ -409,6 +576,58 @@ router.post("/analisis", async (req, res) => {
 
     const registroMediosIngesta = crearRegistroMedios();
 
+    /*
+      -------------------------------------------------------
+      FEEDS — TERRITORIAL-SOURCE-UNIVERSE-01
+
+      Hasta este gate, `feeds` solo podia llegar en el cuerpo de
+      la peticion, y nadie los mandaba nunca: RSS quedaba en
+      `SIN_FUENTES` de forma permanente y el 89 % del corpus
+      entraba por un solo proveedor.
+
+      Ahora, si el cuerpo no los trae, se leen del universo YA
+      COMPROBADO. Leer el almacen no sale a la red: la
+      comprobacion es otra operacion, con su propia ruta y su
+      propio presupuesto. Esa separacion es justo la que el
+      recolector exige.
+
+      Si el universo esta vacio, `feeds` sigue siendo `[]` y RSS
+      vuelve a declarar `SIN_FUENTES`. El comportamiento previo
+      se conserva; lo que cambia es que ahora hay una forma de
+      que deje de estarlo.
+      -------------------------------------------------------
+    */
+    let feedsDeclarados = (cuerpo.feeds || []).filter((f) => f?.url);
+
+    let origenDeLosFeeds = feedsDeclarados.length > 0 ? "cuerpo_de_la_peticion" : null;
+
+    if (modoAmpliado && feedsDeclarados.length === 0 && cuerpo.usarUniversoDeFuentes !== false) {
+      try {
+        const universoFuentes = reconstruirUniverso(await almacenDeFuentes().leerTodos());
+
+        const delTerritorio = [...universoFuentes.values()].filter(
+          (f) =>
+            !ambito.unidadId ||
+            f.territorioId === ambito.unidadId ||
+            f.territorioDeclarado === ambito.unidadId ||
+
+            /* Nacionales comprobados: sin cobertura declarada. */
+            (f.territorioDeclarado === null && f.estadoVerificacion === ESTADOS_FUENTE.VERIFICADO_FEED)
+        );
+
+        feedsDeclarados = feedsParaRecoleccion(delTerritorio);
+
+        origenDeLosFeeds =
+          feedsDeclarados.length > 0 ? "universo_de_fuentes_comprobado" : "universo_vacio";
+      } catch (e) {
+        /*
+          Que el almacen falle NO debe tumbar un analisis. Se
+          sigue sin feeds y RSS lo declarara.
+        */
+        origenDeLosFeeds = `almacen_no_legible: ${e?.message || "error"}`;
+      }
+    }
+
     if (modoAmpliado) {
       try {
         ampliada = await recolectarAmpliado({
@@ -419,7 +638,7 @@ router.post("/analisis", async (req, res) => {
             de una recoleccion: pedir la portada de cada medio
             es otra operacion con su propio presupuesto.
           */
-          feeds: (cuerpo.feeds || []).filter((f) => f?.url),
+          feeds: feedsDeclarados,
 
           ventana: ventanaTerritorial,
           observedAt: retrievedAt,
@@ -1020,7 +1239,25 @@ router.post("/analisis", async (req, res) => {
             nuevasFuentes: ampliada?.nuevasFuentes || [],
             presupuesto: ampliada?.presupuesto || null,
             run: ampliada?.run || null,
-            declaracion: ampliada?.declaracion || null
+            declaracion: ampliada?.declaracion || null,
+
+            /*
+              De donde salieron los feeds de esta pasada. Sin
+              esto, un RSS con resultados no dice si los feeds
+              los mando el cliente o si vinieron del universo
+              comprobado, y son dos cosas muy distintas.
+            */
+            fuentesRss: {
+              origen: origenDeLosFeeds,
+              feedsUsados: feedsDeclarados.length,
+
+              topePorPasada: ampliada?.presupuesto?.rss_directo ?? null,
+
+              nota:
+                origenDeLosFeeds === "universo_vacio"
+                  ? "El universo de fuentes está vacío o sin feeds válidos. Ejecutar POST /api/territorio/fuentes/verificar."
+                  : null
+            }
           }
         : {
             ejecutada: false,

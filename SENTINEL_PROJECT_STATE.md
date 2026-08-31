@@ -9,9 +9,10 @@
 
 | Campo | Valor comprobado |
 |---|---|
-| Fecha de actualización | 2026-08-24 |
+| Fecha de actualización | **2026-08-31** (última sección añadida: §13-undecies) |
 | Rama | `dev` |
-| Último commit | `b2dcdc5` — *feat(projects): project lifecycle management and UTF-8 diagnosis* (2026-08-24 00:16 −05) |
+| Último commit **base** de esta actualización | `a369ed2` — *feat(candidate): close Facebook coverage assessment* (Terminal 1 comiteó 4 veces mientras se cerraba este gate) |
+| Último commit **territorial** | `36eb751` — *feat(territorial): add live today-window collection* → le sigue el de §13-undecies |
 | Versión monorepo | `sentinel-intelligence-platform` 0.1.0 |
 | Versión backend | `sentinel-backend` 1.0.0 |
 | Versión frontend | `web` 0.0.0 (sin versionar) |
@@ -39,6 +40,13 @@ archivos `an2.json`, `an3.json` y `srv.log` aparecieron mientras se inspeccionab
 el repositorio.
 
 Estos cambios **no** son de esta tarea y **no se han revertido ni comiteado**. Ver §29.
+
+> **Nota de 2026-08-31 (§13-undecies).** El bloque de `git status` de arriba es el del
+> **24 de agosto** y se conserva sin tocar como registro de aquel momento. No describe
+> el estado actual del repositorio. Al cerrar TERRITORIAL-SOURCE-UNIVERSE-01, la línea
+> territorial tenía su árbol limpio y había cambios sin comitear de **otras líneas**
+> —`instagramAdapter.js` y `socialCapabilityMatrix.js`, de Candidate Intelligence— que
+> **no se tocaron ni se incluyeron** en su commit.
 
 ---
 
@@ -1377,6 +1385,211 @@ Las dos ventanas se calculan por calendario en la misma zona. Si HOY fuera calen
 
 ---
 
+## 13-undecies. TERRITORIAL-SOURCE-UNIVERSE-01 — fuentes locales comprobadas (2026-08-31)
+
+✅ RSS deja de estar **estructuralmente** `SIN_FUENTES`.
+
+### El defecto que cierra este gate
+
+`territorialCollector` recibe `feeds` y, si llega vacía, declara `SIN_FUENTES` y no
+ejecuta RSS. Es lo correcto: no sale a descubrir feeds en mitad de una recolección.
+
+**Pero nadie le pasaba feeds nunca.** `routes/territorio.js` los tomaba solo del
+cuerpo de la petición. En TERRITORIAL-FRESH-01 eso se midió: 56 de 63 evidencias
+—el **89 %**— por un único proveedor que además oculta al publicador.
+
+### Comprobado ≠ verificado
+
+Dos palabras distintas, a propósito:
+
+| | |
+|---|---|
+| **comprobado** | Sentinel fue al sitio por HTTP y anotó qué pasó. Observación nuestra, con fecha. |
+| **verificado** | contrastado contra un registro **oficial** de medios por un analista. |
+
+`registroOficialContrastado: false` en **las 28 fichas**: no se ha consultado ningún
+registro oficial de medios del Ecuador. Haber leído un feed no verifica a nadie;
+solo demuestra que el feed responde.
+
+### Cinco estados, ninguno redundante
+
+Lo que los separa es **quién tiene el problema** y **qué se puede afirmar después**.
+
+| estado | qué significa | ¿reintentar? |
+|---|---|---|
+| `VERIFICADO_FEED` | declara feed, responde y es parseable | único que alimenta al recolector |
+| `NO_PUBLICA_RSS` | la portada respondió y no declara feed | no: es un hecho del medio |
+| `VERIFICADO_SIN_FEED` | declara feed y ninguno resultó usable | sitio comprobado, feed no |
+| `INACCESIBLE` | la portada no respondió | puede ser nuestro |
+| `NO_RESUELTO` | no se llegó a comprobar | nunca afirma nada |
+
+### Comprobación real · 31 ago 2026 · 28 candidatos
+
+```
+VERIFICADO_FEED       12      20 feeds válidos
+NO_PUBLICA_RSS         9
+INACCESIBLE            3
+VERIFICADO_SIN_FEED    2
+NO_RESUELTO            2      robots.txt lo desaconseja
+```
+
+Comprobadas —el sitio respondió— **23 de 28**. Coste **0 USD**, 91 peticiones HTTP a
+robots.txt, portadas y feeds públicos. Ninguna credencial.
+
+**Fuentes con feed válido:**
+
+| fuente | tipo | territorio | feed |
+|---|---|---|---|
+| El Mercurio | medio local | cantón | `elmercurio.com.ec/feed/` |
+| Unsión TV | medio local | cantón | `unsion.tv/feed/` |
+| EMAC EP | institución | cantón | `emac.gob.ec/feed/` |
+| EMOV EP | institución | cantón | `www.emov.gob.ec/feed/` |
+| ETAPA EP | institución | cantón | `www.etapa.net.ec/feed/` |
+| Prefectura del Azuay | institución | provincia | `www.azuay.gob.ec/feed/` |
+| La Voz del Tomebamba | **no clasificado** | no declarado | `www.lavozdeltomebamba.com/feed/` |
+| Expreso · Extra · GK · Plan V · Teleamazonas | nacionales | **cobertura de Azuay NO medida** | 5 feeds |
+
+> El dominio propuesto **resolvió**: `lavozdeltomebamba.com` existe y publica feed. Y
+> sigue en `NO_CLASIFICADO`, porque la clasificación de medios sale del catálogo, no
+> del nombre. Su relación con `radiotomebamba.com.ec` **no está establecida**.
+
+### El estado de una fuente varia entre pasadas
+
+`gk.city` dio `INACCESIBLE` en una pasada y `VERIFICADO_FEED` en la siguiente; sus
+feeds devolvieron 403 en una tercera. El almacen reconstruye **la ultima
+comprobacion**, asi que la lectura actual del universo puede diferir en una o dos
+fuentes de las cifras de arriba, que son las de la pasada del 31 de agosto.
+
+Comprobado en la ruta ya montada: `GET /api/territorio/fuentes` devuelve **28
+fuentes** y **11 feeds disponibles** con el estado persistido en ese momento.
+
+Esto no es un defecto del registro: es lo que hay. Un sitio que responde a veces es
+distinto de uno que no responde nunca, y por eso se guarda **cuando** se miro y no
+solo **que** se vio.
+
+### Lo que la comprobación descubrió sobre el catálogo semilla
+
+`fetch failed` no distingue dos cosas muy distintas. Es la misma lección que dejó
+GDELT en FRESH-01: la causa vive en `error.cause.code`.
+
+```
+ondacero.com.ec         ENOTFOUND    el dominio NO EXISTE en el DNS
+radiotomebamba.com.ec   ENOTFOUND    el dominio NO EXISTE en el DNS
+eltiempo.com.ec         ECONNRESET   existe y corta la conexión
+```
+
+> **Dos de las cinco entradas locales del catálogo semilla apuntan a dominios que no
+> resuelven.** Es un hecho sobre el catálogo, no sobre la red, y por eso se anota
+> aparte. **No se sustituyen por dominios inventados.**
+
+Y `www` no es adivinar una ruta: es el host canónico. Probarlo **una** vez, y solo en
+el camino de error, recuperó tres sitios —entre ellos la **Prefectura del Azuay**, que
+pasó de `INACCESIBLE` a `VERIFICADO_FEED`, y `cuenca.gob.ec`, que resultó
+`NO_PUBLICA_RSS`—.
+
+### Pasada RSS real
+
+| | |
+|---|---|
+| feeds resueltos | 20 |
+| feeds leídos | **8** — tope de `PRESUPUESTO_POR_PASADA.rss_directo` |
+| evidencias | **106** |
+| **publicado hoy** | **27** |
+| encontrado hoy, publicado antes | **79** |
+| fecha no resuelta | **0** |
+| duplicados contra el corpus previo | **0** de 81 |
+
+Distribución por `publishedAt`: hoy 27 · ayer 18 · 2–7 días 18 · anterior 43.
+
+**Emisores resueltos: 8 de 8 — ninguno sin identificar.**
+
+```
+40  Expreso                 nacional
+10  El Mercurio             local
+10  Unsión TV               local
+10  EMAC EP                 institución
+10  EMOV EP                 institución
+10  Prefectura del Azuay    institución
+10  La Voz del Tomebamba    local, no clasificado
+ 6  ETAPA EP                institución
+```
+
+66 de 106 evidencias —el **62 %**— vienen de fuentes de Cuenca/Azuay. El publicador
+**no se adivina: es el feed.** Cero evidencias con el publicador sin resolver, frente
+al 40 % del corpus que en FRESH-01 llegaba por YouTube sin saber quién publica.
+
+> **La agenda institucional pasa de CERO a cuatro fuentes propias.** Era el pendiente
+> #20: «ninguna consulta trae fuentes institucionales propias». Ya las trae.
+
+Los duplicados son **0 de 81** porque el corpus previo es de Google News y YouTube, que
+entregan otras URL. La idempotencia sí quedó demostrada en el almacén de fuentes: **196
+comprobaciones registradas, 28 fuentes**, `nuevasParaSentinel: 0` en las reejecuciones.
+
+### Dos defectos corregidos durante la prueba
+
+**1 · Los feeds de comentarios se comían el presupuesto.** WordPress declara `/feed/` y
+`/comments/feed/` en el mismo `link rel=alternate`. Medido: el de comentarios ocupó una
+de las ocho plazas y metió **10 comentarios en el corpus etiquetados como NOTICIA**.
+Ahora constan en la ficha —el sitio los declara— y no se recolectan.
+
+**2 · Los nacionales desplazaban a las instituciones del cantón.** Con orden por
+prioridad pura, `gk.city` (P2) entró antes que EMAC, EMOV y ETAPA (P3) y agotó el
+presupuesto con dos feeds que devolvieron 403. Ahora ordena **territorio declarado
+primero** y después prioridad: en un módulo territorial, el orden inverso es el que
+sirve. Resultado medido: de 6 de 8 plazas para nacionales a **7 de 8 territoriales**.
+
+### Lo que NO se hizo
+
+- **No se adivinan rutas.** Ni `/rss` ni `/feed` ni `/rss.xml`. Un feed entra cuando el
+  sitio lo DECLARA en su `link rel=alternate`. Fijado en pruebas: el camino feliz gasta
+  exactamente 2 peticiones y ninguna a una ruta adivinada.
+- **No se raspa.** Sin feed, la respuesta es «no publica feed».
+- **No se reimplementó RSS.** `descubrirFeeds` y `leerFeed` son de INGEST-REAL-01 y se
+  invocan tal cual. `conversationHarvester` no se tocó.
+- **No se creó un segundo catálogo.** La clasificación sigue saliendo de
+  `conversation/mediaRegistry.js`. Este gate añade *qué comprobar* y *qué resultó*.
+- **No se leyó ninguna licencia.** `usoComercialPermitido: null` en las 28 fichas, y
+  null bloquea igual que false.
+- **No se tocó la frescura.** `publishedAt`, `firstObservedAt`, `lastObservedAt` y
+  `retrievedAt` siguen intactos, y hay pruebas que lo fijan.
+
+### robots.txt se lee antes de la portada
+
+Su ausencia **no** es una prohibición: un 404 significa que el sitio no publica reglas.
+Se anota `NO_PUBLICADO` y se sigue. Si prohíbe la ruta, la fuente queda `NO_RESUELTO`
+—no `INACCESIBLE`—, porque `INACCESIBLE` invita a reintentar y esto no. Ecuavisa y La
+Hora quedaron ahí: **se respeta y se dice**.
+
+Se elige el grupo de reglas más específico que nos aplique —nuestro token, y `*` si
+no—: una regla escrita para Googlebot no nos concierne.
+
+### Ficheros
+
+| Pieza | Fichero |
+|---|---|
+| Contrato, candidatos y resolución de feeds | `territorial/verifiedSourceUniverse.js` |
+| Comprobación real y robots.txt | `territorial/sourceVerifier.js` |
+| Persistencia append-only | `territorial/sourceUniverseStore.js` |
+| Rutas y conexión al recolector | `routes/territorio.js` |
+
+`GET /api/territorio/fuentes` **no sale a internet**: devuelve lo comprobado.
+`POST /api/territorio/fuentes/verificar` es la única operación que sale a la red.
+Separarlas evita que abrir un panel pida la portada de veinte medios.
+
+El almacén vive en `apps/backend/data/territorial-sources/`, partición mensual,
+`appendFile` y sin `writeFile`. `primeraComprobacionEn` es inmutable, por la misma razón
+que `firstObservedAt`.
+
+### Pruebas
+
+`territorial` 160 · `c2` 53 · `d` 39 · `d2` 92 · `ingest-real` 93 · `territorial-fresh`
+50 · **`territorial-sources` 60** · SSR 114 = **661**.
+
+Sin red, y comprobable: la suite envuelve el `fetch` global con un contador y la última
+prueba **falla** si algún caso se escapa a internet. Marca **cero**.
+
+---
+
 ## 13-decies. Roadmap territorial
 
 Orden oficial:
@@ -1390,6 +1603,8 @@ Orden oficial:
 🟡 F1   Mapa verificado — sin zonas analíticas ni MapLibre
 ✅ D2   Open Listening Foundation
 ✅ INGEST-REAL-01  Adquisición multifuente
+✅ TERRITORIAL-FRESH-01             Escucha del día · frescura
+✅ TERRITORIAL-SOURCE-UNIVERSE-01   Fuentes locales comprobadas · RSS operativo
 →  1.  Primera prueba real multifuente        ← siguiente, EXIGE CREDENCIALES
    2.  DATA-PROVIDER-EVAL real
    3.  Ampliar providers donde el benchmark demuestre valor
@@ -1431,16 +1646,26 @@ Evaluaciones registradas: **`DATA-PROVIDER-EVAL-01`** (estructura definida, ning
 | 17 | **MapLibre, basemap y zoom** | War Room completo (UX-WR-001) | 🟡 F1 usa SVG; el agregado no cambia al migrar |
 | 18 | **`territorial-c2`, `-d`, `-d2` e `ingest-real` fuera de `npm test`** | ejecución automática de la suite territorial | 🟡 `apps/backend/package.json` lo mantiene **Línea A** (modificado sin commitear otra vez en este gate); no se toca desde esta línea |
 | 19 | **Emisores dentro de plataformas sin identificar** | diversidad real, agenda de creadores | 🔴 40 % del corpus llega por YouTube sin saber quién publica — requiere YouTube Data API, en `DATA-PROVIDER-EVAL-01` |
-| 20 | **Agendas ciudadana, institucional y de creadores a cero** | lectura no exclusivamente mediática | 🔴 ninguna consulta trae fuentes comunitarias ni institucionales propias; es carencia de observación, ya declarada en la interfaz |
-| 21 | **RSS directos de medios locales** | diversidad y resolución del publicador | 🟡 la mejora más barata disponible: leer El Mercurio directamente evita rescatar el publicador del sufijo del titular |
+| 20 | **Agendas ciudadana y de creadores a cero** | lectura no exclusivamente mediática | 🟡 la **institucional está RESUELTA** (§13-undecies: EMAC, EMOV, ETAPA y Prefectura, con feed propio). Ciudadana y de creadores siguen a cero: sigue siendo carencia de observación, ya declarada en la interfaz |
+| 21 | ~~RSS directos de medios locales~~ | — | ✅ **RESUELTO** (§13-undecies): 12 fuentes con feed válido, 106 evidencias reales y **8 de 8 publicadores resueltos**. El publicador ya no se rescata del sufijo del titular: es el feed |
 | 22 | **`AI-EVAL-01`** | integrar cualquier modelo de lenguaje | 🔴 no iniciada; hoy Sentinel funciona sin IA y esa es la línea base |
 | 23 | **Snapshots acumulándose desde 2026-08-25** | ventanas comparables (E1) | 🟡 el histórico empieza hoy; **5 de 5 ventanas con histórico insuficiente** |
 | 24 | **`BRAVE_API_KEY`** | segundo buscador web y su benchmark | 🔴 adapter completo desde antes de D2; solo falta la clave |
 | 25 | **`YOUTUBE_API_KEY`** | identificar los emisores del 40 % del corpus | 🔴 adapter completo; es el hueco más grande que hay hoy |
 | 26 | **Cobertura de GDELT en Azuay** | decidir si el histórico real es viable | 🟡 adapter implementado, cobertura SIN MEDIR; se decide con `fuentesNuevas` |
-| 27 | **Feeds RSS de medios de Cuenca** | diversidad y publicador sin adivinar | 🟡 el adapter lee feeds DECLARADOS; falta recorrer los sitios y registrar cuáles publican |
+| 27 | ~~Feeds RSS de medios de Cuenca~~ | — | ✅ **RESUELTO** (§13-undecies): 28 candidatos recorridos, 23 comprobados, 20 feeds válidos registrados con procedencia y fecha |
 | 28 | **Benchmark antes/después sin ejecutar** | demostrar que el stack nuevo mejora | 🔴 bloqueado por las dos credenciales |
 | 29 | **Términos de servicio sin leer** | integrar cualquier plataforma social | 🔴 `legalTermsStatus: NO_LEIDO` en las 5 plataformas del registro |
+
+| 30 | **El tope de 8 feeds por pasada deja 12 feeds sin leer** | usar el universo completo | 🔴 hay **20 feeds válidos** y `PRESUPUESTO_POR_PASADA.rss_directo` lee **8**. El orden territorial decide bien cuáles entran, pero 12 fuentes comprobadas no se leen nunca. El tope es del recolector: **no se toca desde este gate** |
+| 31 | **Dos dominios del catálogo semilla no resuelven** | cobertura de radio local | 🔴 `ondacero.com.ec` y `radiotomebamba.com.ec` dan **ENOTFOUND**: no existen en el DNS. Requieren dominio real verificable; **no se sustituyen por uno inventado** |
+| 32 | **El Tiempo (`eltiempo.com.ec`) corta la conexión** | segundo diario de Cuenca | 🔴 **ECONNRESET** con y sin `www`. El dominio existe; el fallo puede ser nuestro o suyo. Sin diagnosticar |
+| 33 | **Ecuavisa y La Hora prohibidos por robots.txt** | ampliar nacionales | 🟡 quedan `NO_RESUELTO` y **se respeta**. Levantarlo es una decisión de negocio —permiso del medio—, no un problema técnico |
+| 34 | **La Voz del Tomebamba sin clasificar** | clasificación y orden territorial | 🟡 el dominio propuesto resolvió y publica feed, pero sigue `NO_CLASIFICADO` y **sin cobertura declarada**, así que ordena detrás de las territoriales. Exige entrada de catálogo con respaldo |
+| 35 | **Licencia y términos de los 12 feeds sin leer** | uso comercial del contenido sindicado | 🔴 `usoComercialPermitido: null` en las 28 fichas. Leer un feed público no autoriza a explotarlo: null bloquea igual que false |
+| 36 | **Sin interfaz del universo de fuentes** | que el analista vea qué se escucha | 🟡 `GET /api/territorio/fuentes` responde y **ningún panel lo muestra**. Hoy solo se ve por API |
+| 37 | **Recomprobación periódica sin programar** | que el universo no envejezca | 🟡 `ultimaComprobacionEn` existe y es correcto, pero **nadie decide cuándo volver a mirar**. Un `NO_PUBLICA_RSS` de hoy puede ser falso en un mes |
+| 38 | **Cobertura de Azuay de los nacionales sin medir** | saber si aportan territorio | 🟡 5 nacionales con feed válido y `coberturaTerritorialMedida: false`. Uno solo —Expreso— aportó 40 de 106 evidencias sin que se sepa cuántas eran de Azuay |
 
 `POST /api/territorio/recargar` integra 1–4 **sin reiniciar el backend y sin
 cambiar arquitectura**.
