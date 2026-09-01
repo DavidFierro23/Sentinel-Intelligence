@@ -52,6 +52,16 @@ import { resolverAdaptador, ESTADOS_ADAPTADOR } from "./platformAdapterPort.js";
 
 import { capacidad, ESTADOS_CAPACIDAD } from "./socialCapabilityMatrix.js";
 
+/*
+  P-CAND-INSTAGRAM-ROUTE-01. Se importa el orquestador ya
+  construido y probado en el gate anterior, no se reimplementa
+  nada de el aqui. `observarInstagramConFallback` decide
+  internamente si la via oficial puede medir el activo —vuelve a
+  usar `fuenteParaActivo`—, asi que este archivo no duplica esa
+  logica: solo la invoca cuando hay opt-in explicito.
+*/
+import { observarInstagramConFallback } from "./instagramProviderFallback.js";
+
 
 export const ESTADOS_OBSERVACION_REAL = Object.freeze({
   /* Se pidio y se obtuvieron publicaciones. */
@@ -114,7 +124,19 @@ export const ESTADOS_OBSERVACION_REAL = Object.freeze({
   /* 403: el token vale y el plan no cubre este endpoint. */
   PERMISOS_INSUFICIENTES: "PERMISOS_INSUFICIENTES",
 
-  ERROR: "ERROR"
+  ERROR: "ERROR",
+
+  /*
+    P-CAND-INSTAGRAM-ROUTE-01. La via oficial no alcanzaba este
+    activo y un proveedor de respaldo SI lo midio. Nunca sale de
+    `observarInstagram`: solo lo produce `observarCandidato`
+    cuando el opt-in de proveedor esta activo, y siempre con el
+    estado oficial original conservado en `resultadoOficial`.
+
+    No cuenta como MEDIDO_OFICIAL en ningun sitio: son
+    procedencias distintas y no se funden.
+  */
+  MEDIDO_PROVEEDOR: "MEDIDO_PROVEEDOR"
 });
 
 
@@ -1128,7 +1150,29 @@ export async function observarCandidato(entrada = {}) {
 
       Un mapa vacio no rompe nada: sin dato se pregunta.
     */
-    tiposDeActivo = {}
+    tiposDeActivo = {},
+
+    /*
+      -----------------------------------------------------------
+      OPT-IN EXPLICITO DE PROVEEDOR — P-CAND-INSTAGRAM-ROUTE-01
+      -----------------------------------------------------------
+
+      `null` por defecto: sin este parametro, `observarCandidato`
+      se comporta EXACTAMENTE igual que antes de este gate. Nada
+      de esto se activa "por si acaso".
+
+      Forma esperada cuando se activa:
+
+          { id: "scrapecreators", entorno, fetchImpl }
+
+      `id` es el proveedor a intentar; `entorno` y `fetchImpl` se
+      reenvian al cliente generico, que es quien de verdad decide
+      si sale a la red —bandera, aprobacion y credencial—. Este
+      archivo no repite esa comprobacion: confia en la guarda que
+      ya existe y esta probada en `socialProviderClient.js`.
+      -----------------------------------------------------------
+    */
+    proveedorInstagram = null
   } = entrada;
 
   const resultados = [];
@@ -1189,7 +1233,106 @@ export async function observarCandidato(entrada = {}) {
 
       unidades += r.traza?.unidadesConsumidas || 0;
 
-      resultados.push(r);
+      let resultado = r;
+
+      /*
+        FALLBACK DE PROVEEDOR, SOLO CON OPT-IN.
+
+        Se llama siempre que `proveedorInstagram` este presente,
+        sin repetir aqui si la via oficial puede o no: eso ya lo
+        decide `observarInstagramConFallback` reutilizando
+        `fuenteParaActivo`. Cuando la oficial ya midio —OBSERVADA—
+        el orquestador corta antes de tocar la red, asi que esta
+        llamada es gratis en el caso feliz.
+      */
+      if (proveedorInstagram) {
+        const fb = await observarInstagramConFallback({
+          cuenta,
+          resultadoOficial: r,
+          proveedorId: proveedorInstagram.id || "scrapecreators",
+          entorno: proveedorInstagram.entorno,
+          fetchImpl: proveedorInstagram.fetchImpl ?? fetchImpl
+        });
+
+        unidades += fb.llamadas || 0;
+
+        if (fb.usoFallback) {
+          resultado = {
+            plataformaId: "instagram",
+            candidateId,
+            accountId: cuenta?.id || null,
+
+            estado: ESTADOS_OBSERVACION_REAL.MEDIDO_PROVEEDOR,
+
+            /*
+              `canal` queda en null a proposito: es el campo que
+              llena `observarInstagram` con la forma de
+              business_discovery, y el perfil de un proveedor
+              distinto no tiene por que compartirla. Forzarlo
+              dentro de `canal` invitaria a comparar campos que no
+              son equivalentes, que es justo lo que este gate
+              prohibe.
+            */
+            canal: null,
+            canalProveedor: fb.perfil,
+            publicaciones: [],
+
+            sourceKind: fb.marca?.sourceKind || null,
+            provider: fb.marca?.providerName || null,
+            measurementStatus: fb.marca?.measurementStatus || null,
+            datoLicenciadoPorLaPlataforma:
+              fb.marca?.datoLicenciadoPorLaPlataforma ?? false,
+
+            /*
+              EL ESTADO OFICIAL NUNCA DESAPARECE. Viaja completo,
+              no resumido, junto al nuevo estado: es lo que impide
+              que esta funcion sobrescriba por accidente la razon
+              por la que la via oficial no alcanzaba el activo.
+            */
+            resultadoOficial: r,
+            estadoOficialConservado:
+              fb.decision?.estadoOficialConservado || r.estado,
+
+            observedAt,
+
+            traza: {
+              plataformaId: "instagram",
+              llamadas: [
+                ...(r.traza?.llamadas || []),
+                {
+                  endpoint:
+                    (proveedorInstagram.id || "scrapecreators") +
+                    ":instagram:perfil",
+                  estado: "OK",
+                  unidades: fb.llamadas || 0
+                }
+              ],
+              unidadesConsumidas:
+                (r.traza?.unidadesConsumidas || 0) + (fb.llamadas || 0)
+            },
+
+            motivo:
+              "la via oficial devolvio " +
+              r.estado +
+              "; medido por proveedor de respaldo."
+          };
+        } else if (fb.proveedorError) {
+          /*
+            El proveedor no pudo, por lo que sea: sin aprobar, sin
+            credencial, bloqueado, error de red. El estado oficial
+            SIGUE siendo el que ya era —nunca se inventa dato— y
+            la observacion del resto del candidato continua sin
+            interrumpirse.
+          */
+          resultado = {
+            ...r,
+            proveedorIntentado: true,
+            proveedorError: fb.proveedorError
+          };
+        }
+      }
+
+      resultados.push(resultado);
 
       continue;
     }
@@ -1227,6 +1370,16 @@ export async function observarCandidato(entrada = {}) {
       observadas: resultados.filter(
         (r) => r.estado === ESTADOS_OBSERVACION_REAL.OBSERVADA
       ).length,
+
+      /*
+        Aparte de `observadas` a proposito: fundirlas confundiria
+        MEDIDO_OFICIAL con MEDIDO_PROVEEDOR en el mismo numero,
+        que es exactamente la distincion que este gate defiende.
+      */
+      medidoProveedor: resultados.filter(
+        (r) => r.estado === ESTADOS_OBSERVACION_REAL.MEDIDO_PROVEEDOR
+      ).length,
+
       publicaciones: publicaciones.length,
 
       snapshots: publicaciones.reduce((s, p) => s + (p.metricas || []).length, 0)

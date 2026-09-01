@@ -8838,6 +8838,112 @@ comportamiento de ningun llamador existente.
 
 ---
 
+## 18-sexquadragies. P-CAND-INSTAGRAM-ROUTE-01 (2026-09-01)
+
+**31 comprobaciones nuevas, 0 requests externas.** ScrapeCreators no se toco:
+siguen los mismos 81 creditos del gate anterior.
+
+Entregable: `docs/P-CAND-INSTAGRAM-ROUTE-01.md`.
+
+### Lo que estaba pendiente
+
+`socialSourceRouting.js` e `instagramProviderFallback.js` quedaron
+construidos y probados por separado en el gate anterior, pero **ninguno
+estaba conectado** a `observarCandidato` -la funcion que Candidate
+Intelligence invoca de verdad-. El fallback existia y funcionaba en
+aislamiento; no se podia disparar desde el flujo real.
+
+### La conexion, opt-in y sin tocar la semantica existente
+
+Nuevo parametro `proveedorInstagram` en `observarCandidato`, `null` por
+defecto. **Sin pasarlo, el comportamiento es identico byte a byte al de antes
+de este gate** -verificado ejecutando las 34 suites de Candidate antes y
+despues de la integracion: mismos 1236 checks, 0 fallos en ambos casos-.
+
+Cuando se activa, no se duplica ninguna decision: `observarCandidato` llama
+siempre a `observarInstagramConFallback`, que internamente reutiliza
+`fuenteParaActivo` para decidir si la via oficial alcanza. Por debajo siguen
+actuando, sin cambios, las dos guardas ya probadas en el gate anterior:
+`fuenteParaActivo` decide si corresponde intentar el proveedor, y
+`pedirAlProveedor` exige bandera de entorno, proveedor aprobado y credencial
+antes de tocar la red.
+
+### Nuevo estado, sin renombrar los que ya existian
+
+`ESTADOS_OBSERVACION_REAL.MEDIDO_PROVEEDOR`, aditivo. **No se renombro
+`OBSERVADA` a `MEDIDO_OFICIAL`**: eso habria tocado la semantica que ya usan
+`igRoute`, `multiAsset`, `socialCoverage` y el resto de la suite, que el gate
+prohibe expresamente. "Meta gano" se reconoce porque el resultado no tiene
+`sourceKind` ni `canalProveedor`, no por un literal nuevo.
+
+### Provenance, y la regla que no se rompe
+
+    canal: null                    -- NUNCA se rellena con datos del proveedor
+    canalProveedor: { ... }        -- el perfil real, en su propio campo
+    resultadoOficial: { ... }      -- el estado oficial, INTACTO y completo
+    estadoOficialConservado: "NO_SOPORTADO_PERSONAL"
+
+`canal` se deja en null a proposito: forzar el perfil de un proveedor
+distinto ahi invitaria a comparar `followers` de Meta con `followers` de
+ScrapeCreators como si fueran la misma medicion, que es justo lo que este
+gate prohibe reinterpretar. El estado oficial nunca desaparece: viaja
+completo en `resultadoOficial`, no resumido.
+
+### Los diez casos de prueba, todos verificados
+
+A) Meta gana y el proveedor no se llama. B) Fallback real: perfil mapeado,
+`MEDIDO_PROVEEDOR`. C) Proveedor deshabilitado: estado explicito
+-`proveedorError.estado = "PROVEEDOR_DESHABILITADO"`-, nunca excepcion. D)
+Proveedor falla -401, 429, timeout-: no tumba la observacion, distingue
+`CREDENCIAL_RECHAZADA` de `CUOTA_AGOTADA`, preserva el estado oficial. E)
+Multi-activo: dos Instagram del mismo candidato resuelven de forma
+independiente, ninguno colapsa. F) Reobservacion: `accountProviderId`
+identico entre dos ejecuciones, un resultado por activo. G) Provenance:
+`MEDIDO_PROVEEDOR` y `OBSERVADA` nunca se confunden. H) Project isolation:
+mismo `accountId` en dos `projectId` distintos no comparte estado. I) Budget
+guard: proveedor con bandera y clave pero SIN aprobar sigue bloqueado -dos
+capas independientes-. C bis) Un fallo temporal -`NO_EJECUTABLE` por falta de
+Pagina vinculada- NO abre el fallback aunque haya opt-in: se arregla
+vinculando la Pagina, no comprando el dato.
+
+31/31 en `tests/candidateInstagramFallbackRoute.test.mjs`, cero red.
+
+### Presupuesto
+
+**0 requests externas en todo el gate.** Todo se probo con `fetch` inyectado
+reproduciendo la forma real ya medida sobre `@paulcarrascoc` en
+P-CAND-INSTAGRAM-FALLBACK-01. No hacia falta repetir `profile`, `posts` ni
+`comments` reales: lo que cambiaba era el cableado, no la respuesta del
+proveedor, que ya estaba certificada. **81 creditos de ScrapeCreators, sin
+tocar.**
+
+### Limitaciones
+
+- El opt-in solo cubre **perfil**, igual que el orquestador del gate anterior.
+  Publicaciones y comentarios via proveedor siguen sin estar en el flujo
+  automatico.
+- **La ruta HTTP sigue sin pasar `proveedorInstagram`.** La conexion de este
+  gate vive en la capa de servicio (`candidateObservation.js`); activar el
+  fallback desde `routes/projects.js` exige ademas disenar presupuesto de
+  creditos por request HTTP, deliberadamente fuera de este gate corto.
+- `NO_EJECUTABLE` sigue sin abrir el fallback, la misma decision del gate
+  anterior, no reabierta aqui.
+- `apps/backend/package.json` sigue con cambios mezclados de otras
+  terminales: no se toco, ni para registrar la nueva suite de tests.
+
+### Riesgos
+
+- El motor esta conectado a nivel de servicio y probado end-to-end sin red;
+  la ruta HTTP real todavia no lo expone.
+- Los 9 activos personales de Instagram del piloto siguen sin medirse
+  masivamente: este gate conecto el mecanismo, no ejecuto mediciones nuevas.
+- Isolation multiterminal: T2 y T3 seguian trabajando en paralelo durante
+  este gate -nuevos archivos territoriales y de media aparecieron a mitad de
+  sesion-; ninguno se toco, y `SENTINEL_PROJECT_STATE.md` se verifico limpio
+  de cambios ajenos sin comitear justo antes de esta seccion aditiva.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -9345,6 +9451,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-09-01 | P-CAND-INSTAGRAM-ROUTE-01 | Fallback de Instagram conectado al flujo real de observacion, 0 requests externas, 81 creditos de ScrapeCreators sin tocar. socialSourceRouting.js e instagramProviderFallback.js quedaron probados por separado en el gate anterior pero ninguno estaba conectado a observarCandidato; nuevo parametro proveedorInstagram, null por defecto, con el que sin pasarlo el comportamiento es identico byte a byte al de antes -verificado ejecutando las 34 suites de Candidate antes y despues, mismos 1236 checks, 0 fallos en ambos casos-. Cuando se activa no se duplica ninguna decision: se llama siempre a observarInstagramConFallback, que reutiliza fuenteParaActivo internamente, con las dos guardas del gate anterior intactas por debajo -bandera de entorno, proveedor aprobado y credencial-. Nuevo estado MEDIDO_PROVEEDOR aditivo, sin renombrar OBSERVADA a MEDIDO_OFICIAL para no tocar la semantica que ya usan igRoute, multiAsset, socialCoverage y el resto de la suite: Meta gano se reconoce porque el resultado no tiene sourceKind ni canalProveedor, no por un literal nuevo. Provenance con canal en null a proposito -forzar el perfil de un proveedor distinto ahi invitaria a comparar followers de Meta con followers de ScrapeCreators como si fueran la misma medicion- y resultadoOficial siempre intacto y completo, nunca resumido. Diez casos de prueba verificados: Meta gana sin llamar al proveedor, fallback real con perfil mapeado, proveedor deshabilitado con estado explicito PROVEEDOR_DESHABILITADO y nunca excepcion, fallos 401/429/timeout que no tumban la observacion y distinguen CREDENCIAL_RECHAZADA de CUOTA_AGOTADA, multi-activo sin colapsar, reobservacion con id estable, provenance sin confundir MEDIDO_PROVEEDOR con OBSERVADA, project isolation entre projectId distintos, budget guard con dos capas independientes, y un fallo temporal NO_EJECUTABLE que sigue sin abrir el fallback. 31/31 en tests/candidateInstagramFallbackRoute.test.mjs, cero red: todo se probo con fetch inyectado reproduciendo la forma real ya medida sobre @paulcarrascoc, sin repetir profile/posts/comments reales porque lo que cambiaba era el cableado y no la respuesta del proveedor. Limitaciones declaradas: el opt-in solo cubre perfil, la ruta HTTP routes/projects.js sigue sin pasar proveedorInstagram -disenar presupuesto de creditos por request HTTP queda fuera de este gate corto-, y NO_EJECUTABLE sigue sin abrir el fallback por decision ya tomada. package.json sigue mezclado entre terminales y no se toco. T2 y T3 trabajaban en paralelo durante el gate -nuevos archivos territoriales y de media aparecieron a mitad de sesion-; ninguno se toco y SENTINEL_PROJECT_STATE.md se verifico limpio de cambios ajenos sin comitear justo antes de esta seccion. Nueva §18-sexquadragies y docs/P-CAND-INSTAGRAM-ROUTE-01.md. |
 | 2026-08-31 | P-CAND-INSTAGRAM-FALLBACK-01 | ScrapeCreators validado como fallback real de Instagram cuando Meta oficial no alcanza: 5 requests, 5 creditos (86->81), 0 USD. El hueco es real: 9 de 12 activos de Instagram del piloto son personales y Meta les da cobertura cero sin remedio posible por esa via. Dos activos reales del Lake: CONTROL @pedropalaciosu, que Meta ya mide y que ScrapeCreators reprodujo con 9.718 followers coincidentes -sirve solo de control de consistencia-; y FALLBACK @paulcarrascoc, unico Instagram de Paul Carrasco y personal, con cobertura cero por Meta, donde ScrapeCreators devolvio 985 followers, 12 publicaciones -todas de 2019, cuenta inactiva- y 5 de 5 comentarios reales con texto, cobertura COMPLETA. No se presenta la cuenta inactiva como actividad vigente: solo valida el mecanismo. Nuevo socialSourceRouting.js con la regla por ACTIVO -Meta oficial primero, proveedor solo si la oficial no puede, estado explicito SIN_FUENTE si ninguna puede-, con Yaku Perez como caso que obliga a decidir por activo y no por candidato -su Instagram profesional lo mide Meta y el personal no-, con un fallo temporal de la oficial -credencial expirada, cuota agotada- que NO abre el fallback porque se arregla renovando la credencial y no comprando el dato, y con el estado oficial previo siempre conservado junto al nuevo estado del proveedor. 21 tests sinteticos cubren los siete casos exigidos, incluido multi-asset con tres activos de Marcelo Cabrera sin colapsar. Nuevo instagramProviderFallback.js, una funcion orquestadora real -no un stub- que compone el routing, el cliente generico y el mapper y preserva siempre el resultado oficial, con 13 tests sin red. Routing declarado PREPARADO_NO_ENGANCHADO en la ruta HTTP: ni candidateObservation.js ni routes/projects.js la invocan todavia, porque esos dos archivos sostienen 1205 comprobaciones de la suite de Candidate y engancharla exige ademas disenar presupuesto de creditos y manejo de errores por HTTP, mas superficie de la que autoriza un gate corto; el punto de integracion exacto queda documentado -linea ~1177 de candidateObservation.js, como parametro opt-in que no cambia ningun llamador existente-. Validado: persistencia real con los contratos existentes, dedup y rerun con firstObservedAt inmovil y observationCount 1->2, aislamiento de proyecto con 0 fugas, provenance sin credenciales, y regresion cero verificada ejecutando las 33 suites de Candidate -1205 comprobaciones adicionales, 0 fallos- pese a que el riesgo ya era bajo por no haber tocado los dos archivos centrales. Dos aserciones de socialProviderClient.test.mjs que asumian que Instagram no tenia endpoints declarados se actualizaron a la nueva realidad sin debilitarlas, sumando una prueba positiva. Limitaciones declaradas: ScrapeCreators raspa web publica, historico no verificado, la muestra no equivale al total declarado, y el fallback solo pide perfil por ahora. Sin cambios en .env, T2 ni T3. Nueva §18-quinquadragies y docs/P-CAND-INSTAGRAM-FALLBACK-01.md. |
 | 2026-09-01 | MEDIA-UX-HOME-01 | Media Intelligence deja de ser «Analizar publicacion»: esa pantalla pasa a ser una de sus nueve secciones y el modulo abre por su HOME del proyecto. 0 requests externos y 0 USD, porque la vista solo lee el Knowledge Lake. El vocabulario se fija ANTES que la metrica, que es el unico momento en que fijarlo sirve: PRESENCIA OBSERVADA y AMPLIFICACION OBSERVADA son recuentos auditables fila a fila, e INCIDENCIA se devuelve SIEMPRE sin valor con METODOLOGIA_EN_CONSTRUCCION y sus cuatro requisitos —existe como concepto para que nadie la sustituya por un conteo—, con el motivo calculado sobre datos reales y no generico: de 28 piezas, 26 no se pueden situar en el tiempo. Tres controles sostienen las cifras. AISLAMIENTO: el Lake real tiene Media de tres proyectos, dos de pruebas, y sumarlos habria puesto piezas inventadas en un panel de campana; el filtro es por proyectoId y el recuento de lo excluido VIAJA en la respuesta, verificado por HTTP contra un segundo proyecto real que devuelve 0 piezas y 0 filas. VIGENCIA: la pieza de X se reanalizo cuatro veces y contar filas convertiria «volver a mirar» en «mas presencia» —166 filas, 47 entidades—. CLAVE NORMALIZADA: la misma pieza vive bajo `https://x.com/…` y `x.com/…` por el defecto 6 de MEDIA-REAL-DEMO-01, y como el Lake es append-only no se borra sino que se colapsa al leer, declarando los colapsos. El caso que obligo a `medidaEnVentana()`: El Mercurio tiene 8 piezas y ninguna con fecha ISO, asi que la ventana HOY devolvia 0 y la fila se leia «no publico nada», lo contrario de lo que ocurre; ahora sin piezas es 0 y es una medicion, con piezas y ninguna datable es null + COBERTURA_INSUFICIENTE, y el ranking muestra dos columnas, ventana y corpus. Las fechas de buscador tipo «3 jul 2026» no se interpretan —`new Date` las da invalidas y un parser de meses en espanol situaria la pieza en una ventana que nadie observo—, y la fecha de DETECCION no sustituye a la de publicacion o una nota de 2023 caeria en HOY. `google.com` aparece con 7 piezas, mas que casi cualquier medio, porque SerpAPI envuelve los enlaces en `google.com/goto?url=`: no es un medio sino residuo de nuestro metodo, asi que sale del ranking a una lista de artefactos VISIBLE, porque ocultarlo seria tan malo como rankearlo. Ventanas reutilizando `dayWindow` de la linea territorial —HOY es dia calendario en America/Guayaquil y las cinco se alinean al mismo huso—, sin motor temporal paralelo, y filtran datos reales: HOY/7/15/30 situan 0 y 90d situa 1. No se uso `obtenerEventosProyecto` porque su proyeccion descarta `datos`, que es donde vive todo lo de Media, y ampliarla habria tocado un fichero compartido con Candidate y Territorial: cero ficheros del Lake modificados. Defecto encontrado por la validacion HTTP y corregido: `historialDePieza` filtraba `clase === "snapshot"` sobre el historial de VERSIONES, que no trae `datos`, asi que el historico volvia vacio con los snapshots guardados; era invisible porque el respaldo en memoria si los tenia y el hueco solo aparecia al reiniciar el backend. Verificado en proceso limpio: X devuelve 5 snapshots desde knowledge_lake con views 5.966, likes 13, comentarios 11, shares 6, quotes 0 y guardados 2, y El Mercurio 2. Cifras reales del piloto a 90d: 28 piezas, 10 fuentes originales, 4 medios, 1 periodista, 0 creadores, 1 institucion, 5 no clasificados, 2 candidatos, 28 evidencias; temas COBERTURA_INSUFICIENTE porque la amplificacion no persiste titular, territorio NO_DISPONIBLE porque GEO-1 lo resuelve por pieza y la fila no lo guarda. @tomebamba sigue NO_CLASIFICADO con su correspondencia OBSERVADA_NO_VERIFICADA: no se asciende a MEDIO. Sentinel AI NO implementado, solo declarado: 4 de 7 preguntas respondibles por la forma de la vista. UI construida y sin certificacion visual en navegador, que corresponde a MEDIA-UX-CERT-01. 134 pruebas de Media, suite completa 1.382, 0 fallos; suites de Media registradas en `npm test` via `test:media`. Nuevas §18-M1 a §18-M4, que recuperan ademas los tres gates de Media que el documento no tenia. |
 | 2026-08-31 | SOCIAL-PROVIDER-REAL-02 | ScrapeCreators validado con datos reales desde Sentinel: 8 requests, 8 creditos, 86 restantes y 0 USD, sin tocar Bright Data. Cierra los tres huecos que Candidate arrastraba: Facebook de terceros, TikTok con metricas y —por primera vez en cualquier plataforma— TEXTO DE COMENTARIOS, con lo que Comments Intelligence pasa de «sin fuente» a «con fuente». Facebook Pedro Palacios en 3 llamadas: perfil con id estable, 57.000 seguidores y 57.624 likes que son cifras distintas y no se funden, tres publicaciones con reacciones y comentarios reales, y un desglose de reacciones por tipo que no es adorno —en una publicacion haha 325 supera a like 173, y un reactionCount agregado de 508 lo habria escondido entero—; comentarios 10 observados de 122 declarados, 8 con texto, y los 2 restantes contados aparte porque no se determino si son de solo imagen o un limite del proveedor. TikTok Yaku Perez en 3 llamadas: id estable, 519.300 seguidores, 5,2 M de likes y 357 videos —exactamente lo que oEmbed no daba, cerrando la otra mitad de P-CAND-TIKTOK-01—, diez videos con views, likes, comentarios y shares, y 20 comentarios de 110 todos con texto; TikTok si entrega shares y Facebook no. Rerun de 2 llamadas: sin duplicar, publicationId y commentId estables, firstObservedAt inmovil, lastObservedAt avanzando y observationCount subiendo, que es lo que de verdad decide porque unos IDs inestables convertirian cada ejecucion en datos nuevos. Tres ausencias que NO son la misma y que colapsadas harian creer que Facebook no da lo mismo en tres casos distintos: shares UNSUPPORTED porque el endpoint no tiene el campo, video_views NO_DATA porque se pidio sobre tres publicaciones que SI eran video y volvio null las tres veces, e historical UNVERIFIED porque no se pagino. Capacidades promovidas una a una: 6 de Facebook y 10 de TikTok a SUPPORTED, Instagram entero sigue sin verificar porque no se probo, y aprobar a ScrapeCreators no movio a Bright Data, SocialCrawl ni Data365, con test que lo comprueba. Lo que NO demuestra, dicho explicitamente: no es cobertura de los 7 candidatos —se midieron dos activos—, no es historico, y los corpus de comentarios son muestras y no el universo. El proveedor no bajo al dominio: candidateObservation y la matriz social no saben que existe, y el unico archivo con conocimiento especifico es el mapper. Dos cosas que la documentacion no decia y costaron una llamada: con trim=true los videos traen url y no share_url, y las fechas vienen en tres formatos distintos segun endpoint. La aprobacion del proveedor es un cambio de codigo con fecha y gate y no una variable de entorno, para que quede en el historial. La clave no aparece en URL, resultado, traza, error, persistencia ni documentacion, verificado sobre el volcado crudo y sobre el Lake, y el aislamiento de proyecto se comprobo contra los otros 5 proyectos. Riesgo declarado: raspa web publica, no es proveedor licenciado, y un proveedor puede desaparecer sin aviso como acaba de hacer Bright Data. package.json quedo sin commitear por seguir mezclando lineas de T1 y T3. 1311 pruebas, 0 fallos. Nueva §18-quadriquadragies y docs/SOCIAL-PROVIDER-REAL-02-SCRAPECREATORS.md. |
