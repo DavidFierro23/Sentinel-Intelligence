@@ -6,6 +6,8 @@ import { TIPOS_ENTIDAD, ZONAS } from "../knowledgeLake/lakeWriter.js";
 
 import { leerCorpusDeProyecto } from "./mediaCorpus.js";
 
+import { SUBMOTOR_MEDICION } from "./mediaAssetMeasurement.js";
+
 import {
   SUBMOTOR_UNIVERSO,
   VERSION_UNIVERSO_MEDIOS,
@@ -253,8 +255,32 @@ export async function universoDeProyecto(opciones = {}) {
   */
   const { fundidas, candidatasNoFundidas } = deduplicar(entidades);
 
+  /*
+    -----------------------------------------------------------
+    ULTIMA MEDICION POR ACTIVO
+
+    El universo dice que activos conocemos; la medicion dice si
+    pudimos leerlos. Se adjunta la ULTIMA por activo para que la
+    tabla no tenga que unir dos respuestas en el cliente.
+
+    Es una lectura: no mide nada ni gasta nada. Si no hay
+    snapshot, el campo es null y NO se inventa un estado.
+    -----------------------------------------------------------
+  */
+  const ultimaMedicion = await leerUltimaMedicionPorActivo({
+    projectId,
+    tenantId: opciones.tenantId,
+    lake: opciones.lake || {}
+  });
+
   const conCobertura = fundidas.map((e) => ({
     ...e,
+
+    activos: e.activos.map((a) => ({
+      ...a,
+      ultimaMedicion: ultimaMedicion.get(`${e.mediaEntityId}::${a.assetId}`) || null
+    })),
+
     cobertura: coberturaDeEntidad(e)
   }));
 
@@ -302,6 +328,51 @@ export async function universoDeProyecto(opciones = {}) {
     noEsRanking:
       "Estar en el universo significa que Sentinel conoce esta fuente dentro del proyecto. No significa importante, popular ni influyente."
   };
+}
+
+
+/*
+  Ultima medicion de cada activo, indexada por entidad+activo.
+  Se queda con el snapshot mas reciente y descarta el resto.
+*/
+async function leerUltimaMedicionPorActivo({ projectId, tenantId, lake }) {
+  const mapa = new Map();
+
+  try {
+    const instancia = await abrirLake(lake);
+
+    instancia.lector
+      .aplicarFiltros(instancia.indice.buscar("proyecto", projectId), {
+        tenantId: tenantId || TENANT_POR_DEFECTO
+      })
+      .filter(
+        (r) =>
+          r?.linaje?.submotor === SUBMOTOR_MEDICION &&
+          r?.datos?.clase === "medicion_activo"
+      )
+      .forEach((r) => {
+        const d = r.datos;
+
+        const clave = `${d.mediaEntityId}::${d.assetId}`;
+
+        const previo = mapa.get(clave);
+
+        if (!previo || String(d.observedAt) > String(previo.observedAt)) {
+          mapa.set(clave, {
+            estado: d.estado,
+            via: d.via,
+            motivo: d.motivo,
+            canal: d.canal || null,
+            publicacionesObservadas: d.publicacionesObservadas ?? null,
+            observedAt: d.observedAt
+          });
+        }
+      });
+  } catch {
+    /* Sin mediciones el universo sigue siendo util. */
+  }
+
+  return mapa;
 }
 
 

@@ -21,6 +21,18 @@ import { fichaCompleta } from "../services/media/commercialProviderBenchmark.js"
 import { homeDeProyecto } from "../services/media/mediaHome.js";
 
 import {
+  medirYGuardar,
+  leerSnapshots,
+  leerPublicaciones
+} from "../services/media/mediaMeasurementStore.js";
+
+import {
+  IDENTIDAD_ACTIVO,
+  ESTADO_MEDICION,
+  EXPLICACION_MEDICION
+} from "../services/media/mediaAssetMeasurement.js";
+
+import {
   universoDeProyecto,
   declararYGuardar,
   editarYGuardar,
@@ -523,6 +535,110 @@ router.post("/:proyectoId/universo/:mediaEntityId/actividad", async (req, res) =
     });
 
     res.status(r.ok ? 200 : 422).json(r);
+  } catch (error) {
+    res.status(500).json({ ok: false, motivo: error?.message || "error desconocido" });
+  }
+});
+
+
+/*
+===========================================================
+MEDIA-SOURCE-MEASUREMENT-01 — MEDIR LOS ACTIVOS CONOCIDOS
+===========================================================
+
+    GET  /medicion/contrato              vocabulario
+    GET  /:proyectoId/medicion/plan      que se pediria, sin gastar
+    POST /:proyectoId/medicion           ejecuta y persiste
+    GET  /:proyectoId/medicion/snapshots serie acumulada
+
+El PLAN es un GET aparte por la misma razon que `/pieza/plan`:
+se puede mirar el gasto antes de gastarlo, y sin depender de
+que el cliente recuerde pasar una bandera.
+===========================================================
+*/
+
+router.get("/medicion/contrato", (req, res) => {
+  res.json({
+    gate: "MEDIA-SOURCE-MEASUREMENT-01",
+
+    declaracion:
+      "Medir un activo no dice que el medio sea importante. El orden lo calcula el ranking, con su ventana y su evidencia.",
+
+    reglas: [
+      "identityState y measurementState son preguntas distintas y viajan en campos distintos.",
+      "Un activo con identidad en CONFLICT o UNRESOLVED NO se mide: atribuiria cifras a quien quiza no las genero.",
+      "ANALYST_DECLARED es una referencia fuerte y NO equivale a verificado por el sistema.",
+      "La via oficial va primero; el proveedor solo entra cuando la oficial declara que NO PUEDE, nunca cuando fallo por algo nuestro.",
+      "Un feed entrega contenido, no metricas: no hay audiencia, lectores ni alcance en esa via."
+    ],
+
+    identidad: IDENTIDAD_ACTIVO,
+    medicion: ESTADO_MEDICION,
+    explicacion: EXPLICACION_MEDICION
+  });
+});
+
+
+router.get("/:proyectoId/medicion/plan", async (req, res) => {
+  try {
+    const r = await medirYGuardar({
+      projectId: String(req.params.proyectoId || "").trim(),
+      soloPlan: true,
+      credenciales: {},
+      presupuesto: { creditosProveedor: Number(req.query.creditos || 0) }
+    });
+
+    res.status(r.ok ? 200 : 422).json(r);
+  } catch (error) {
+    res.status(500).json({ ok: false, motivo: error?.message || "error desconocido" });
+  }
+});
+
+
+router.post("/:proyectoId/medicion", async (req, res) => {
+  const b = req.body || {};
+
+  try {
+    const r = await medirYGuardar({
+      projectId: String(req.params.proyectoId || "").trim(),
+
+      /*
+        Los canales se pueden acotar desde la peticion. Por
+        defecto se miden los gratuitos y los sociales solo si hay
+        credencial: nunca se gasta por defecto.
+      */
+      canales: b.canales || undefined,
+
+      credenciales: b.credenciales || {},
+      presupuesto: b.presupuesto || { creditosProveedor: 0 },
+      sinPersistir: b.sinPersistir === true
+    });
+
+    res.status(r.ok ? 200 : 422).json(r);
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      motivo: `La medicion fallo: ${error?.message || "error desconocido"}.`
+    });
+  }
+});
+
+
+router.get("/:proyectoId/medicion/snapshots", async (req, res) => {
+  try {
+    const projectId = String(req.params.proyectoId || "").trim();
+
+    const snapshots = await leerSnapshots({ projectId });
+
+    const publicaciones = await leerPublicaciones({ projectId });
+
+    res.json({
+      ok: true,
+      projectId,
+      snapshots: snapshots.length,
+      publicaciones: publicaciones.length,
+      detalle: snapshots
+    });
   } catch (error) {
     res.status(500).json({ ok: false, motivo: error?.message || "error desconocido" });
   }

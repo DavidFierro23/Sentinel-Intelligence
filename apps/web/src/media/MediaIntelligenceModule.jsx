@@ -752,6 +752,7 @@ function UniversoDeMedios({ universo, onDeclararMedio }) {
                 <th style={TH}>Tipo</th>
                 <th style={TH}>Territorio declarado</th>
                 <th style={TH}>Activos</th>
+                <th style={TH}>Medición</th>
                 <th style={TH}>Origen</th>
                 <th style={TH}>Estado</th>
                 <th style={TH}>Última observación</th>
@@ -817,6 +818,49 @@ function UniversoDeMedios({ universo, onDeclararMedio }) {
                         cobertura declarada
                       </div>
                     ) : null}
+                  </td>
+
+                  {/*
+                    Estado de MEDICION, que es otra pregunta que la
+                    de identidad: conocer un activo no es poder
+                    leerlo. Sin snapshot se muestra «no medido», no
+                    un cero.
+                  */}
+                  <td style={{ ...TD, fontSize: "0.68rem" }}>
+                    {e.activos.map((a) => {
+                      const m = a.ultimaMedicion;
+
+                      const medido =
+                        m &&
+                        ["MEDIDO_OFICIAL", "MEDIDO_PROVEEDOR", "MEDIDO_PUBLICO", "PARCIAL"].includes(
+                          m.estado
+                        );
+
+                      return (
+                        <div key={a.assetId} style={{ marginBottom: "3px" }}>
+                          <span
+                            title={m?.motivo || m?.estado || "Sin medición registrada."}
+                            style={{
+                              color: !m
+                                ? "var(--sentinel-texto-tenue)"
+                                : medido
+                                  ? "var(--sentinel-live)"
+                                  : "#eda100",
+                              fontWeight: 600
+                            }}
+                          >
+                            {m ? m.estado.replace(/_/g, " ").toLowerCase() : "no medido"}
+                          </span>
+
+                          {m?.publicacionesObservadas ? (
+                            <span style={{ color: "var(--sentinel-texto-tenue)" }}>
+                              {" "}
+                              · {m.publicacionesObservadas} piezas
+                            </span>
+                          ) : null}
+                        </div>
+                      );
+                    })}
                   </td>
 
                   <td style={{ ...TD, fontSize: "0.7rem" }}>{e.origen}</td>
