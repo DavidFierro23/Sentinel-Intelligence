@@ -9391,6 +9391,97 @@ tocarlo.
 
 ---
 
+## 18-M7. MEDIA-SOURCE-UNIVERSE-01 — universo de medios por proyecto (2026-09-01)
+
+**0 requests externos, 0 USD.** Entregable:
+`docs/MEDIA-SOURCE-UNIVERSE-01.md`.
+
+### Lo que ya existía, y por qué no se duplicó
+
+Antes de crear nada se auditaron cuatro estructuras que ya representan fuentes:
+`conversation/mediaRegistry` (catálogo semilla), `conversation/sourceUniverse`
+(registro con estados y orígenes), `ingest/mediaSourceRegistry` (medios y feeds)
+y `territorial/verifiedSourceUniverse` (fuentes verificadas de un territorio).
+
+De `sourceUniverse` se **reutiliza el vocabulario entero** por reexport, no por
+copia: tipos, subtipos, estados y orígenes. Una taxonomía paralela habría
+producido dos verdades sobre la misma pregunta.
+
+Lo que ninguna modelaba es la pieza que faltaba: **una entidad media por encima
+de los dominios**. Las cuatro indexan por dominio, pero «La Voz del Tomebamba»
+es UNA entidad que posee sitio, Facebook, Instagram, X, YouTube y feed; con un
+registro por dominio son seis fuentes y ninguna sabe de las otras. Y faltaba que
+persistiera y fuera por proyecto: `crearUniverso()` vive en memoria y nada de lo
+que un analista declare sobrevive a la petición.
+
+### Las cinco reglas
+
+ENTIDAD ≠ DOMINIO ≠ ACTIVO · N activos por plataforma, con clave
+`plataforma + handle` como en Candidate · **declarar no es verificar** · **no se
+deduplica por nombre**, porque «El Diario» existe en media docena de países · la
+infraestructura no entra, porque si entra acaba en un ranking.
+
+El id sale del **dominio**, no del nombre: un medio se renombra y el id no puede
+cambiar con él, porque es lo que ata las evidencias.
+
+### Los dos planos que no se mezclan
+
+El **descubrimiento** se deriva del corpus en cada lectura y NO se persiste: si
+se guardara, al mejorar el clasificador mañana quedarían congeladas las
+entidades mal tipadas de hoy. Lo que se persiste es la **intervención humana**
+—declarar, editar, verificar, dar de baja—, que no se puede derivar de nada. Al
+leer, los dos planos se funden y lo declarado gana sobre lo inferido.
+
+### Resultado real sobre el piloto
+
+**11 entidades · 14 activos** (6 dominios, 7 sociales, 1 feed) · 3 artefactos
+fuera · 0 sin resolver · 0 posibles duplicados. Por tipo: MEDIA 5, OTHER 5,
+INSTITUTION 1. Por estado: DESCUBIERTA 9, OBSERVADA 1, VERIFICADA 1.
+
+Fuera del universo, con su motivo: `google.com` (agregador, 7 piezas), el
+balanceador de AWS (infraestructura, 2) e `instagram.com` (plataforma sin cuenta
+identificable en la URL, 2).
+
+### Dos defectos que encontró el corpus real
+
+`threads.com` entraba como si fuera una cabecera, porque
+`sourceUniverse.esPlataforma` no lo conoce y ese fichero lo comparten
+conversation y territorial; se combina con una tabla local en vez de ampliar el
+fichero ajeno. Y el nombre del emisor a veces ES el dominio —el corpus trae
+`nombreEmisor: "threads.com"`—, lo que dejaba una entidad llamada «threads.com»
+cuyo único activo era `@notivozec`: si el nombre no aporta nada sobre la cuenta,
+gana el handle.
+
+### El caso que define la deduplicación
+
+`@elmercurioec` y `El Mercurio` **no se funden**. Se propone la correspondencia
+con su fuerza y su estado, sin confirmar, y decide un analista. Unirlas por
+parecido de handle es exactamente lo que la regla prohíbe. Sí funden
+`elmercurio.com.ec` y `www.elmercurio.com.ec`, y funde un alias declarado.
+
+### UI construida
+
+`apps/web` no estaba en conflicto, así que se construyó la tabla del universo en
+**Medios** y se cerró la promesa que `MEDIA-UX-CERT-01` dejó como
+«próximamente»: **`+ Agregar medio` guarda de verdad**, y lo que entra queda
+DECLARADO y sin verificar, con el aviso en la propia pantalla.
+
+### Coordinación pendiente
+
+Terminal 2 ha creado `services/territorial/journalistUniverse.js`. No se tocó.
+Antes de construir Journalist Intelligence en Media hay que decidir si esa
+entidad es compartida — exactamente el error que este gate evitó con las cuatro
+estructuras de fuentes.
+
+### Comprobaciones
+
+`mediaSourceUniverse` 32/32 · `mediaTime` 28/28 · Media registradas 142/142 ·
+suite completa 1.473, 0 fallos · render 53/53 con universo y 47/47 sin él ·
+ranking y normalización temporal sin regresión · build limpio · lint con los 6
+preexistentes y 0 en Media.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -9898,6 +9989,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-09-01 | MEDIA-SOURCE-UNIVERSE-01 | Universo de medios persistente y por proyecto. 0 requests externos, 0 USD. Antes de crear nada se auditaron las CUATRO estructuras que ya representan fuentes —mediaRegistry, sourceUniverse, ingest/mediaSourceRegistry y territorial/verifiedSourceUniverse— y ninguna se duplico: de sourceUniverse se reutiliza el vocabulario entero por reexport, porque una taxonomia paralela habria producido dos verdades sobre la misma pregunta. Lo que ninguna modelaba es la pieza que faltaba, UNA ENTIDAD MEDIA POR ENCIMA DE LOS DOMINIOS: las cuatro indexan por dominio, pero «La Voz del Tomebamba» es una entidad que posee sitio, Facebook, Instagram, X, YouTube y feed, y con un registro por dominio son seis fuentes que no saben unas de otras; y faltaba que persistiera y fuera por proyecto, porque crearUniverso() vive en memoria y nada de lo que un analista declare sobrevive a la peticion. Cinco reglas: ENTIDAD != DOMINIO != ACTIVO; N activos por plataforma con clave plataforma+handle igual que Candidate; DECLARAR NO ES VERIFICAR; NO se deduplica por nombre, porque «El Diario» existe en media docena de paises; y la infraestructura no entra, porque si entra acaba en un ranking. El id sale del DOMINIO y no del nombre: un medio se renombra y el id no puede cambiar con el, porque es lo que ata las evidencias. Dos planos que no se mezclan: el descubrimiento se deriva del corpus en cada lectura y NO se persiste —si se guardara, al mejorar el clasificador manana quedarian congeladas las entidades mal tipadas de hoy—, mientras que lo que si se persiste es la intervencion humana, que no se puede derivar de nada; al leer, los dos se funden y lo declarado gana sobre lo inferido. Resultado real sobre el piloto: 11 entidades y 14 activos —6 dominios, 7 sociales, 1 feed—, 3 artefactos fuera, 0 sin resolver y 0 posibles duplicados, con MEDIA 5, OTHER 5 e INSTITUTION 1, y estados DESCUBIERTA 9, OBSERVADA 1 y VERIFICADA 1. Fuera del universo con su motivo: google.com como agregador con 7 piezas, el balanceador de AWS como infraestructura con 2, e instagram.com como plataforma sin cuenta identificable en la URL con 2. Dos defectos que encontro el corpus real: threads.com entraba como si fuera una cabecera porque sourceUniverse.esPlataforma no lo conoce y ese fichero lo comparten conversation y territorial, asi que se combina con una tabla local en vez de ampliar el ajeno; y el nombre del emisor a veces ES el dominio —el corpus trae nombreEmisor «threads.com»—, lo que dejaba una entidad llamada threads.com cuyo unico activo era @notivozec, asi que si el nombre no aporta nada sobre la cuenta gana el handle. El caso que define la deduplicacion: @elmercurioec y El Mercurio NO se funden, se propone la correspondencia sin confirmar y decide un analista, porque unirlas por parecido de handle es justo lo que la regla prohibe; si funden elmercurio.com.ec con www.elmercurio.com.ec y si funde un alias declarado. Verificar exige decir QUIEN verifica y sin autor devuelve 422, comprobado por HTTP. Desactivar no borra: conserva activos, evidencias e historia. Aislamiento comprobado con el MISMO dominio en dos proyectos, con recuentos separados y 0 fugas. ENCONTRADO no es MEDIDO y hay test que lo fija: ningun canal pasa a MEDIDO en este gate. La UI no estaba en conflicto, asi que se construyo la tabla del universo en Medios y se cerro la promesa que MEDIA-UX-CERT-01 dejo como «proximamente»: + Agregar medio guarda de verdad, y lo que entra queda DECLARADO y sin verificar con el aviso en la propia pantalla. Coordinacion pendiente: T2 ha creado territorial/journalistUniverse.js y no se toco; antes de construir Journalist Intelligence en Media hay que decidir si esa entidad es compartida, que es exactamente el error que este gate evito con las cuatro estructuras de fuentes. mediaSourceUniverse 32/32, mediaTime 28/28, Media registradas 142/142, suite completa 1.473 con 0 fallos, render 53/53 con universo y 47/47 sin el, ranking y normalizacion temporal sin regresion, build limpio y lint con los 6 preexistentes y 0 en Media. Nueva §18-M7 y docs/MEDIA-SOURCE-UNIVERSE-01.md. |
 | 2026-09-01 | MEDIA-TIME-NORMALIZATION-01 | Normalizacion temporal de las piezas de Media sin inventar una sola fecha. 0 requests externos, 0 USD. Empieza corrigiendo el baseline que este documento traia: «26 piezas en FECHA_NO_NORMALIZADA» mezclaba dos estados distintos —9 con un valor que no era ISO y 17 SIN NINGUN valor de fecha—, y la distincion no es cosmetica porque una se arregla con un parser y la otra solo volviendo a la fuente; colapsarlas hacia parecer que el gate podia resolver 26 casos cuando el techo real eran 9. Escalera de fuentes temporales con el metodo registrado en cada pieza: ISO_8601, TEXTO_ES_INEQUIVOCO, NUMERICA_INEQUIVOCA y RELATIVO_A_OBSERVACION, sin ningun peldano para «usar observedAt» y con un test que comprueba que no existe camino que lo permita. El detalle que decide si HOY significa algo: «3 jul 2026» tiene precision de DIA, y anclarlo a medianoche UTC lo pondria a las 19:00 del 2 de julio en Guayaquil, desplazando piezas de un dia al otro de forma sistematica con ventanas de calendario; se ancla a medianoche LOCAL y se declara precision DIA, y lo mismo se aplica a una fecha ISO sin hora porque la precision del dato no cambia por el formato. Lo que se niega a resolver: 03/07/2026 queda AMBIGUA porque puede ser 3 de julio o 7 de marzo y la convencion del publicador no viaja en el dato —elegir DD/MM acertaria muchas veces y fallaria EN SILENCIO el resto, la peor combinacion posible—, mientras 21/05/2025 si se resuelve porque no hay mes 21; «ayer» sin instante de observacion tampoco se resuelve; y los motivos no se colapsan en «no se pudo», porque SIN_VALOR se arregla reingiriendo y AMBIGUA no se arregla nunca sin mas contexto. NO hubo backfill, y es una decision: la normalizacion ocurre AL LEER, asi que el valor crudo queda intacto, la operacion es idempotente por construccion —leer dos veces no puede duplicar nada ni mover un id— y mejorar el parser manana mejora todo el corpus sin reescribir nada; un backfill habria escrito 9 versiones nuevas para el mismo resultado con riesgo de sobrescribir una fecha valida, y se verifico que registrosEnLake es identico tras dos lecturas. Antes/despues: piezas con fecha utilizable 2 -> 11 de 28, proporcion datable 7% -> 39%, FECHA_NO_NORMALIZADA 9 -> 0, SIN_EVIDENCIA 17 sin cambio por no ser normalizable sin reingestion; ventana 90d 1 -> 5 piezas situadas, y HOY-30D siguen en 0 correctamente porque la pieza datable mas reciente es de julio. El cambio mas visible esta en el ranking: El Mercurio pasa de aparentar inactividad —0 con 8 piezas en corpus— a encabezar la lista con 2 piezas reales dentro de la ventana, mientras El Universo y Primicias muestran un 0 LEGITIMO por tener piezas datables de 2023 y 2025 fuera de los 90 dias, y Facebook e Instagram siguen en cobertura insuficiente porque sus piezas no tienen fecha y no se les asigna un cero. Sin cambios en Candidatos x Medios, donde piezas por candidato sigue NO_DISPONIBLE porque la arista se deduplica por par, ni en Amplificacion, que sigue sin afirmar copia ni causalidad; Incidencia sigue METODOLOGIA_EN_CONSTRUCCION y su motivo se recalcula solo diciendo ya 17 en vez de 26, porque normalizar fechas no crea la segunda ventana comparable que le falta. Tres tests cambiaron de fixture y ninguno se debilito: usaban «3 jul 2026» como ejemplo de fecha no interpretable y ahora se resuelve, asi que pasan a 03/07/2026, que sigue siendo genuinamente ambigua, y se anadio la contraparte que comprueba que la fecha en espanol SI se resuelve. mediaTime.test.mjs 28/28, Media registradas 142/142, suite completa 1.473 con 0 fallos, render de pantalla 47/47, build limpio, lint con los 6 preexistentes y 0 en Media. La suite nueva NO se registra en npm test porque package.json sigue mezclando lineas sin comitear de otra terminal y este gate tenia prohibido tocarlo. Nueva §18-M6 y docs/MEDIA-TIME-NORMALIZATION-01.md. |
 | 2026-09-01 | MEDIA-UX-CERT-01 | Certificacion visual de Media Intelligence y correccion de lo que la inspeccion encontro. 0 requests externos y 0 USD. Primero lo que este gate NO puede afirmar: el entorno no tiene navegador automatizable —ni Playwright ni Puppeteer—, asi que no hay capturas ni comprobacion de color, espaciado o responsive, y la revision de apariencia sigue siendo humana. Lo que si es real: la app corre con backend en 3001 y Vite en 5173 respondiendo 200, Vite compila y sirve el modulo, el backend responde el contrato entero, y las OCHO secciones se renderizan con la respuesta REAL de la API mediante tests/media-home.check.jsx, siguiendo la convencion de render que el repositorio ya tenia desde P-CAND-ASSET-TYPE-UI-FIX-01 —que la funcion devuelva el dato no significa que la pantalla lo pinte—: 47 comprobaciones, 0 fallos, en 90d y en hoy. Ninguna P0: el modulo se entendia y se usaba. Siete correcciones P1, todas de semantica engañosa. La que mas importa: un balanceador de AWS, mw-public-alb-...elb.amazonaws.com, figuraba en el puesto #5 del ranking ENTRE El Universo y Expreso; es el servidor de origen desde el que se sirvio una pagina, no una cabecera, y es el mismo error de categoria que google.com salvo que aquella regla estaba atada al tipo del catalogo y este host no esta en ningun catalogo —nuevo esHostDeInfraestructura() con sufijos que nunca son marca editorial, el host pasa a artefactos con clase propia INFRAESTRUCTURA distinta de AGREGADOR porque no se arreglan igual, y la lista se deja corta a proposito con un test que fija que un dominio propio raro NO se reclasifica por parecerlo—. Las otras seis: identificadores tecnicos donde iban nombres (paul-carrasco-carpio pintado tal cual; se resuelve del proyecto y el id no se pierde, viaja debajo porque es lo que permite auditar la arista); ids de unidad territorial (ec-azuay-cuenca en pantalla, incumpliendo la regla que MEDIA-REAL-DEMO-01 ya habia fijado; ahora Cuenca y Azuay, con el id en territorioId); estados crudos (COBERTURA_INSUFICIENTE pasa a «Cobertura insuficiente», traducido en UN solo sitio porque dos diccionarios divergen, y el crudo no desaparece porque quien audita lo necesita); el titulo del ranking, que pasa a PRESENCIA MEDIATICA OBSERVABLE con la ventana y la nota metodologica visibles, decidido en el backend para que no haya dos nombres de la misma lista; la ventana que se leia como «cero actividad» cuando la verdad es que 26 piezas no se pueden situar en el tiempo, y ahora muestra el par pegado y no sumable «0 situada(s) en la ventana · 26 con fecha no normalizada»; y los artefactos mezclados con medios en Candidatos x Medios, donde google.com figuraba como «fuente» de un candidato con el mismo peso que El Mercurio —separados y contados aparte, Carrasco baja de 7 fuentes a 6 mas 1 artefacto y Lloret de 6 a 4 mas 2, la cifra baja y es mas verdadera—. Dos añadidos P2: «¿Por que esta aqui?» por fila, que no pide nada al backend porque la justificacion viaja en la fila construida solo con hechos contables y con su limite declarado, y «Ver evidencia» deshabilitado y declarado en lugar de inventado; y Top 10/20/50 mas las seis dimensiones futuras visibles y atenuadas, con solo PRESENCIA activa y cada una declarando que le falta, para que el diseño no bloquee la evolucion. Universo de medios preparado con «+ Agregar medio · proximamente» DESHABILITADO: no se pinto formulario, porque uno que no guarda es peor que ninguno. Se separa MediaIntelligenceVista de MediaIntelligenceModule, sin lo cual la pantalla solo se puede comprobar abriendo un navegador. Las dos demos reales reproducen tras reiniciar el backend: Tomebamba 5 snapshots desde knowledge_lake con views 5.966, El Mercurio 2 con metricas null y motivo. Render 47/47, Media 39/39, suite completa 1.472, 0 fallos, build limpio, lint con los 6 preexistentes y 0 en Media. Nueva §18-M5 y docs/MEDIA-UX-CERT-01.md. |
 | 2026-09-01 | P-CAND-INSTAGRAM-ROUTE-01 | Fallback de Instagram conectado al flujo real de observacion, 0 requests externas, 81 creditos de ScrapeCreators sin tocar. socialSourceRouting.js e instagramProviderFallback.js quedaron probados por separado en el gate anterior pero ninguno estaba conectado a observarCandidato; nuevo parametro proveedorInstagram, null por defecto, con el que sin pasarlo el comportamiento es identico byte a byte al de antes -verificado ejecutando las 34 suites de Candidate antes y despues, mismos 1236 checks, 0 fallos en ambos casos-. Cuando se activa no se duplica ninguna decision: se llama siempre a observarInstagramConFallback, que reutiliza fuenteParaActivo internamente, con las dos guardas del gate anterior intactas por debajo -bandera de entorno, proveedor aprobado y credencial-. Nuevo estado MEDIDO_PROVEEDOR aditivo, sin renombrar OBSERVADA a MEDIDO_OFICIAL para no tocar la semantica que ya usan igRoute, multiAsset, socialCoverage y el resto de la suite: Meta gano se reconoce porque el resultado no tiene sourceKind ni canalProveedor, no por un literal nuevo. Provenance con canal en null a proposito -forzar el perfil de un proveedor distinto ahi invitaria a comparar followers de Meta con followers de ScrapeCreators como si fueran la misma medicion- y resultadoOficial siempre intacto y completo, nunca resumido. Diez casos de prueba verificados: Meta gana sin llamar al proveedor, fallback real con perfil mapeado, proveedor deshabilitado con estado explicito PROVEEDOR_DESHABILITADO y nunca excepcion, fallos 401/429/timeout que no tumban la observacion y distinguen CREDENCIAL_RECHAZADA de CUOTA_AGOTADA, multi-activo sin colapsar, reobservacion con id estable, provenance sin confundir MEDIDO_PROVEEDOR con OBSERVADA, project isolation entre projectId distintos, budget guard con dos capas independientes, y un fallo temporal NO_EJECUTABLE que sigue sin abrir el fallback. 31/31 en tests/candidateInstagramFallbackRoute.test.mjs, cero red: todo se probo con fetch inyectado reproduciendo la forma real ya medida sobre @paulcarrascoc, sin repetir profile/posts/comments reales porque lo que cambiaba era el cableado y no la respuesta del proveedor. Limitaciones declaradas: el opt-in solo cubre perfil, la ruta HTTP routes/projects.js sigue sin pasar proveedorInstagram -disenar presupuesto de creditos por request HTTP queda fuera de este gate corto-, y NO_EJECUTABLE sigue sin abrir el fallback por decision ya tomada. package.json sigue mezclado entre terminales y no se toco. T2 y T3 trabajaban en paralelo durante el gate -nuevos archivos territoriales y de media aparecieron a mitad de sesion-; ninguno se toco y SENTINEL_PROJECT_STATE.md se verifico limpio de cambios ajenos sin comitear justo antes de esta seccion. Nueva §18-sexquadragies y docs/P-CAND-INSTAGRAM-ROUTE-01.md. |

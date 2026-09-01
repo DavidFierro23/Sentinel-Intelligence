@@ -87,6 +87,18 @@ const ETIQUETA = {
   color: "var(--sentinel-texto-tenue)"
 };
 
+const CAMPO = {
+  width: "100%",
+  marginTop: "5px",
+  padding: "7px 9px",
+  background: "var(--sentinel-surface)",
+  border: "1px solid var(--sentinel-borde)",
+  borderRadius: "var(--radio-s, 8px)",
+  color: "var(--sentinel-texto)",
+  fontSize: "0.78rem",
+  boxSizing: "border-box"
+};
+
 const TH = {
   ...ETIQUETA,
   textAlign: "left",
@@ -649,6 +661,366 @@ MODULO
 */
 /*
 ===========================================================
+UNIVERSO DE MEDIOS — MEDIA-SOURCE-UNIVERSE-01
+===========================================================
+
+Quien publica dentro de este proyecto, con sus activos y su
+origen. NO es un ranking: el orden viene por piezas observadas
+porque hay que ordenar de alguna forma, y la seccion lo declara.
+
+El alta guarda de verdad. Es un formulario minimo a proposito
+—nombre, sitio, tipo— porque lo que importa del alta no son los
+campos sino la regla: lo que entra queda DECLARADO y NO
+verificado, y verificar es una accion aparte.
+===========================================================
+*/
+function UniversoDeMedios({ universo, onDeclararMedio }) {
+  const [abierto, setAbierto] = useState(false);
+  const [nombre, setNombre] = useState("");
+  const [website, setWebsite] = useState("");
+  const [tipo, setTipo] = useState("MEDIA");
+  const [subtipo, setSubtipo] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [aviso, setAviso] = useState(null);
+
+  const enviar = async () => {
+    if (!onDeclararMedio || (!nombre.trim() && !website.trim())) return;
+
+    setEnviando(true);
+    setAviso(null);
+
+    const r = await onDeclararMedio({
+      canonicalName: nombre.trim() || null,
+      website: website.trim() || null,
+      tipo,
+      subtipo: subtipo || null
+    });
+
+    setEnviando(false);
+
+    if (r?.ok) {
+      setAviso({
+        bien: true,
+        texto: `«${r.entidad.canonicalName}» añadido al universo como DECLARADO. No queda verificado: verificar es una acción aparte y explícita.`
+      });
+
+      setNombre("");
+      setWebsite("");
+      setSubtipo("");
+    } else {
+      setAviso({ bien: false, texto: r?.motivo || "No se pudo guardar." });
+    }
+  };
+
+  const entidades = universo?.entidades || [];
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+        <div style={ETIQUETA}>Universo de medios</div>
+
+        {universo?.resumen ? (
+          <>
+            <Chip texto={`${universo.resumen.entidades} entidades`} color="var(--sentinel-cyan)" />
+            <Chip texto={`${universo.resumen.activos.total} activos`} />
+            {universo.resumen.verificadas > 0 ? (
+              <Chip texto={`${universo.resumen.verificadas} verificadas`} color="var(--sentinel-live)" />
+            ) : null}
+          </>
+        ) : null}
+      </div>
+
+      <p
+        style={{
+          margin: "8px 0 12px",
+          fontSize: "0.72rem",
+          color: "var(--sentinel-texto-suave)",
+          lineHeight: 1.6,
+          maxWidth: "780px"
+        }}
+      >
+        {universo?.noEsRanking ||
+          "Estar en el universo significa que Sentinel conoce esta fuente dentro del proyecto."}
+      </p>
+
+      {entidades.length ? (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "860px" }}>
+            <thead>
+              <tr>
+                <th style={TH}>Nombre</th>
+                <th style={TH}>Tipo</th>
+                <th style={TH}>Territorio declarado</th>
+                <th style={TH}>Activos</th>
+                <th style={TH}>Origen</th>
+                <th style={TH}>Estado</th>
+                <th style={TH}>Última observación</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {entidades.map((e) => (
+                <tr key={e.mediaEntityId}>
+                  <td style={TD}>
+                    <div style={{ fontWeight: 650 }}>{e.canonicalName}</div>
+
+                    {e.correspondenciaPropuesta ? (
+                      <div style={{ marginTop: "4px" }}>
+                        <Chip
+                          texto={`~ ${e.correspondenciaPropuesta.nombre} · sin confirmar`}
+                          color="#eda100"
+                        />
+                      </div>
+                    ) : null}
+                  </td>
+
+                  <td style={TD}>
+                    <Chip
+                      texto={e.tipo}
+                      color={e.tipo === "MEDIA" ? "var(--sentinel-cyan)" : undefined}
+                    />
+
+                    {e.subtipo ? (
+                      <div
+                        style={{
+                          fontSize: "0.62rem",
+                          color: "var(--sentinel-texto-tenue)",
+                          marginTop: "3px"
+                        }}
+                      >
+                        {e.subtipo}
+                      </div>
+                    ) : null}
+                  </td>
+
+                  <td style={{ ...TD, fontSize: "0.7rem" }}>
+                    {e.scope?.declarado ? (
+                      e.scope.declarado.unidadId
+                    ) : (
+                      <span style={{ color: "var(--sentinel-texto-tenue)" }}>
+                        Sin alcance declarado
+                      </span>
+                    )}
+                  </td>
+
+                  <td style={{ ...TD, fontSize: "0.7rem" }}>
+                    {e.activos.map((a) => (
+                      <div key={a.assetId}>
+                        {a.plataforma || a.clase.toLowerCase()}
+                        {a.handle ? ` · @${a.handle}` : a.dominio ? ` · ${a.dominio}` : ""}
+                      </div>
+                    ))}
+
+                    {e.cobertura?.activosFueraDeCanales?.length ? (
+                      <div style={{ color: "#eda100", marginTop: "3px" }}>
+                        {e.cobertura.activosFueraDeCanales.length} fuera de los canales con
+                        cobertura declarada
+                      </div>
+                    ) : null}
+                  </td>
+
+                  <td style={{ ...TD, fontSize: "0.7rem" }}>{e.origen}</td>
+
+                  <td style={TD}>
+                    <Chip
+                      texto={e.estado}
+                      color={
+                        e.estado === "VERIFICADA"
+                          ? "var(--sentinel-live)"
+                          : e.estado === "OBSERVADA"
+                            ? "var(--sentinel-cyan)"
+                            : undefined
+                      }
+                    />
+
+                    {!e.activa ? (
+                      <div style={{ marginTop: "3px" }}>
+                        <Chip texto="INACTIVA" color="#eda100" />
+                      </div>
+                    ) : null}
+                  </td>
+
+                  <td style={{ ...TD, whiteSpace: "nowrap", color: "var(--sentinel-texto-suave)" }}>
+                    {fechaCorta(e.lastObservedAt)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p style={{ fontSize: "0.75rem", color: "var(--sentinel-texto-tenue)" }}>
+          Todavía no hay entidades en el universo de este proyecto.
+        </p>
+      )}
+
+      {universo?.artefactosExcluidos?.length ? (
+        <p
+          style={{
+            marginTop: "10px",
+            fontSize: "0.68rem",
+            color: "#eda100",
+            lineHeight: 1.55
+          }}
+        >
+          {universo.artefactosExcluidos.length} dominio(s) del corpus quedan fuera del
+          universo por no ser fuentes que publiquen:{" "}
+          {universo.artefactosExcluidos.map((a) => a.dominio).join(", ")}.
+        </p>
+      ) : null}
+
+      {universo?.posiblesDuplicados?.length ? (
+        <p style={{ marginTop: "8px", fontSize: "0.68rem", color: "#eda100" }}>
+          {universo.posiblesDuplicados.length} par(es) comparten nombre y NO se
+          fusionaron: hace falta un dominio común o un alias declarado.
+        </p>
+      ) : null}
+
+      <div style={{ marginTop: "14px" }}>
+        <button
+          onClick={() => setAbierto(!abierto)}
+          style={{
+            padding: "6px 12px",
+            borderRadius: "var(--radio-s, 8px)",
+            border: "1px solid var(--sentinel-borde-vivo)",
+            background: abierto ? "rgba(0,212,255,.10)" : "transparent",
+            color: "var(--sentinel-cyan)",
+            fontSize: "0.72rem",
+            fontWeight: 600,
+            cursor: "pointer"
+          }}
+        >
+          {abierto ? "Cancelar" : "+ Agregar medio"}
+        </button>
+
+        {abierto ? (
+          <div
+            style={{
+              marginTop: "12px",
+              padding: "14px",
+              background: "var(--sentinel-surface-alta)",
+              border: "1px solid var(--sentinel-borde)",
+              borderRadius: "var(--radio-s, 8px)",
+              maxWidth: "620px"
+            }}
+          >
+            <Aviso>
+              Lo que añadas entra como <strong>DECLARADO</strong> y{" "}
+              <strong>no verificado</strong>. Declarar no es verificar: verificar es una
+              acción aparte que exige decir quién la hace.
+            </Aviso>
+
+            <div style={{ display: "grid", gap: "10px" }}>
+              <label style={{ display: "block" }}>
+                <div style={ETIQUETA}>Nombre</div>
+
+                <input
+                  value={nombre}
+                  onChange={(e) => setNombre(e.target.value)}
+                  placeholder="Radio Tomebamba"
+                  style={CAMPO}
+                />
+              </label>
+
+              <label style={{ display: "block" }}>
+                <div style={ETIQUETA}>Sitio web</div>
+
+                <input
+                  value={website}
+                  onChange={(e) => setWebsite(e.target.value)}
+                  placeholder="https://radiotomebamba.com.ec"
+                  style={CAMPO}
+                />
+              </label>
+
+              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                <label style={{ flex: 1, minWidth: "160px" }}>
+                  <div style={ETIQUETA}>Tipo</div>
+
+                  <select value={tipo} onChange={(e) => setTipo(e.target.value)} style={CAMPO}>
+                    {["MEDIA", "INSTITUTION", "CREATOR", "COMMUNITY", "ORGANIZATION", "OTHER"].map(
+                      (t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      )
+                    )}
+                  </select>
+                </label>
+
+                <label style={{ flex: 1, minWidth: "160px" }}>
+                  <div style={ETIQUETA}>Subtipo (opcional)</div>
+
+                  <select
+                    value={subtipo}
+                    onChange={(e) => setSubtipo(e.target.value)}
+                    style={CAMPO}
+                  >
+                    <option value="">—</option>
+
+                    {["PRENSA", "RADIO", "TV", "DIGITAL", "PODCAST", "OTRO"].map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <div>
+                <button
+                  onClick={enviar}
+                  disabled={enviando || (!nombre.trim() && !website.trim())}
+                  style={{
+                    padding: "7px 14px",
+                    borderRadius: "var(--radio-s, 8px)",
+                    border: "1px solid var(--sentinel-cyan)",
+                    background: "rgba(0,212,255,.12)",
+                    color: "#FFFFFF",
+                    fontSize: "0.74rem",
+                    fontWeight: 650,
+                    cursor: enviando ? "default" : "pointer"
+                  }}
+                >
+                  {enviando ? "Guardando…" : "Añadir al universo"}
+                </button>
+              </div>
+
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: "0.66rem",
+                  color: "var(--sentinel-texto-tenue)",
+                  lineHeight: 1.55
+                }}
+              >
+                Las cuentas sociales y los feeds se pueden declarar por API. La pantalla
+                para editarlos llega con la consolidación de UX.
+              </p>
+            </div>
+
+            {aviso ? (
+              <p
+                style={{
+                  marginTop: "10px",
+                  fontSize: "0.72rem",
+                  color: aviso.bien ? "var(--sentinel-live)" : "#ff6b6b",
+                  lineHeight: 1.55
+                }}
+              >
+                {aviso.texto}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+
+/*
+===========================================================
 LA VISTA — separada del contenedor a proposito
 ===========================================================
 
@@ -673,12 +1045,14 @@ export function MediaIntelligenceVista({
   ventana = "90d",
   seccion = "resumen",
   home = null,
+  universo = null,
   cargando = false,
   error = null,
   onProyecto = () => {},
   onVentana = () => {},
   onSeccion = () => {},
-  onRecargar = () => {}
+  onRecargar = () => {},
+  onDeclararMedio = null
 }) {
   const ventanaTexto =
     VENTANAS.find((v) => v.id === ventana)?.texto || ventana;
@@ -1334,12 +1708,10 @@ export function MediaIntelligenceVista({
               />
 
               {/*
-                UNIVERSO DE MEDIOS — espacio preparado, sin backend.
-
-                No se pinta un formulario: un formulario que no
-                guarda nada es peor que no tenerlo, porque el
-                analista escribe un medio y lo pierde. Se declara
-                qué resolverá y qué gate lo trae.
+                UNIVERSO DE MEDIOS — ya con backend real desde
+                MEDIA-SOURCE-UNIVERSE-01. El botón dejó de ser una
+                promesa: guarda de verdad, y lo que guarda entra
+                DECLARADO y sin verificar.
               */}
               <div
                 style={{
@@ -1348,44 +1720,10 @@ export function MediaIntelligenceVista({
                   borderTop: "1px solid var(--sentinel-borde)"
                 }}
               >
-                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-                  <div style={ETIQUETA}>Universo de medios</div>
-
-                  <Chip texto="PREPARADO · MEDIA-SOURCE-UNIVERSE-01" color="#eda100" />
-                </div>
-
-                <p
-                  style={{
-                    margin: "8px 0 0",
-                    fontSize: "0.72rem",
-                    color: "var(--sentinel-texto-suave)",
-                    lineHeight: 1.6,
-                    maxWidth: "760px"
-                  }}
-                >
-                  Hoy los medios de esta tabla son los que aparecieron en el corpus,
-                  no un padrón. El universo permitirá sostener a la vez los medios
-                  que Sentinel descubre y los que el analista declara, con
-                  deduplicación, verificación, varios activos por plataforma e
-                  histórico preservado.
-                </p>
-
-                <button
-                  disabled
-                  title="Requiere el registro de medios por proyecto: MEDIA-SOURCE-UNIVERSE-01."
-                  style={{
-                    marginTop: "10px",
-                    padding: "6px 12px",
-                    borderRadius: "var(--radio-s, 8px)",
-                    border: "1px dashed var(--sentinel-borde-vivo)",
-                    background: "transparent",
-                    color: "var(--sentinel-texto-tenue)",
-                    fontSize: "0.7rem",
-                    cursor: "not-allowed"
-                  }}
-                >
-                  + Agregar medio · próximamente
-                </button>
+                <UniversoDeMedios
+                  universo={universo}
+                  onDeclararMedio={onDeclararMedio}
+                />
               </div>
             </Seccion>
           ) : null}
@@ -1893,6 +2231,7 @@ export default function MediaIntelligenceModule() {
   const [seccion, setSeccion] = useState("resumen");
 
   const [home, setHome] = useState(null);
+  const [universo, setUniverso] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState(null);
 
@@ -1950,6 +2289,23 @@ export default function MediaIntelligenceModule() {
       }
 
       setHome(j);
+
+      /*
+        El universo se pide en paralelo y su fallo NO tumba la
+        HOME: son dos preguntas distintas y una pantalla sin
+        universo sigue siendo util.
+      */
+      try {
+        const ru = await fetch(
+          `${BACKEND}/api/media/${encodeURIComponent(projectId)}/universo`
+        );
+
+        const ju = await ru.json();
+
+        setUniverso(ru.ok && ju?.ok !== false ? ju : null);
+      } catch {
+        setUniverso(null);
+      }
     } catch (e) {
       setHome(null);
 
@@ -1958,6 +2314,36 @@ export default function MediaIntelligenceModule() {
       setCargando(false);
     }
   }, [projectId, ventana]);
+
+
+  /*
+    Declarar un medio. Devuelve el resultado al formulario en
+    lugar de manejar el aviso aqui: el contenedor no deberia
+    saber como se presenta un error.
+  */
+  const declararMedio = useCallback(
+    async (datos) => {
+      try {
+        const r = await fetch(
+          `${BACKEND}/api/media/${encodeURIComponent(projectId)}/universo`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(datos)
+          }
+        );
+
+        const j = await r.json();
+
+        if (r.ok && j?.ok) await cargar();
+
+        return j;
+      } catch (e) {
+        return { ok: false, motivo: e.message };
+      }
+    },
+    [projectId, cargar]
+  );
 
   useEffect(() => {
     /* La sección «analizar» no necesita la HOME. */
@@ -1991,12 +2377,14 @@ export default function MediaIntelligenceModule() {
       ventana={ventana}
       seccion={seccion}
       home={home}
+      universo={universo}
       cargando={cargando}
       error={error}
       onProyecto={setProjectId}
       onVentana={setVentana}
       onSeccion={setSeccion}
       onRecargar={cargar}
+      onDeclararMedio={declararMedio}
     />
   );
 }

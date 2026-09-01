@@ -27,6 +27,15 @@ if (!ruta) {
 
 const home = JSON.parse(readFileSync(ruta, "utf8"));
 
+/*
+  Segundo payload opcional: el universo de medios. Si no se pasa,
+  las comprobaciones de universo se saltan en lugar de fallar,
+  porque el check tiene que seguir sirviendo para la HOME sola.
+*/
+const universo = process.argv[3]
+  ? JSON.parse(readFileSync(process.argv[3], "utf8"))
+  : null;
+
 const proyecto = {
   id: home.proyecto.projectId,
   nombre: "Elecciones Alcaldía Cuenca 2027",
@@ -44,6 +53,7 @@ function pintar(seccion) {
       ventana={home.ventana.id}
       seccion={seccion}
       home={home}
+      universo={universo}
       cargando={false}
       error={null}
     />
@@ -297,7 +307,60 @@ t("las dimensiones futuras se declaran pendientes", html.presencia.includes("pen
 
 t("el universo de medios se declara preparado", html.medios.includes("Universo de medios"));
 
-t("no hay formulario falso de alta de medio", html.medios.includes("próximamente") && !html.medios.includes("<form"));
+/*
+  Esta comprobacion nacio guardando contra un formulario FALSO:
+  el gate anterior dejo «+ Agregar medio · proximamente»
+  deshabilitado porque no habia backend.
+
+  MEDIA-SOURCE-UNIVERSE-01 lo construyo, asi que la afirmacion
+  cambia de sentido y se vuelve mas fuerte: el alta tiene que
+  existir de verdad Y tiene que declarar que declarar no es
+  verificar. Un alta real que no lo dijera seria peor que la
+  promesa que sustituye.
+*/
+t(
+  "el alta de medio existe de verdad y no es una promesa",
+  html.medios.includes("+ Agregar medio") &&
+    !html.medios.includes("próximamente")
+);
+
+
+if (universo) {
+  console.log("\n== 11 · UNIVERSO DE MEDIOS ==");
+
+  t("la seccion Medios pinta el universo", html.medios.includes("Universo de medios"));
+
+  t(
+    "el universo declara que no es un ranking",
+    html.medios.includes("No significa importante")
+  );
+
+  t(
+    "las entidades reales aparecen con su nombre",
+    universo.entidades.every((e) => html.medios.includes(e.canonicalName))
+  );
+
+  t(
+    "el alta ya no dice «proximamente»",
+    html.medios.includes("+ Agregar medio") && !html.medios.includes("proximamente")
+  );
+
+  t(
+    "los artefactos se declaran fuera del universo",
+    universo.artefactosExcluidos.length === 0 ||
+      html.medios.includes("quedan fuera del")
+  );
+
+  /* Ningun artefacto puede aparecer como una entidad del universo. */
+  const dominiosArtefacto = universo.artefactosExcluidos.map((a) => a.dominio);
+
+  const nombresEntidad = universo.entidades.map((e) => e.canonicalName);
+
+  t(
+    "ningun artefacto figura como entidad",
+    !dominiosArtefacto.some((d) => nombresEntidad.includes(d))
+  );
+}
 
 
 console.log(`\nPASS: ${pass}    FALL: ${fail}`);

@@ -21,6 +21,24 @@ import { fichaCompleta } from "../services/media/commercialProviderBenchmark.js"
 import { homeDeProyecto } from "../services/media/mediaHome.js";
 
 import {
+  universoDeProyecto,
+  declararYGuardar,
+  editarYGuardar,
+  verificarYGuardar,
+  cambiarActividad
+} from "../services/media/mediaUniverseStore.js";
+
+import {
+  TIPOS_SOURCE,
+  SUBTIPOS_MEDIA,
+  ESTADOS_SOURCE,
+  CLASES_ACTIVO,
+  ORIGENES_ENTIDAD,
+  ESTADOS_COBERTURA,
+  CANALES
+} from "../services/media/mediaSourceUniverse.js";
+
+import {
   CONTRATO_MEDIA_HOME,
   SECCIONES,
   DIMENSIONES,
@@ -340,6 +358,173 @@ router.get("/:proyectoId/home", async (req, res) => {
       motivo: `La vista de Media Intelligence fallo: ${error?.message || "error desconocido"}.`,
       stack: process.env.NODE_ENV === "production" ? undefined : error?.stack
     });
+  }
+});
+
+
+/*
+===========================================================
+MEDIA-SOURCE-UNIVERSE-01 — UNIVERSO DE MEDIOS DEL PROYECTO
+===========================================================
+
+Mismo router. `/api/media` sigue siendo el unico prefijo.
+
+    GET   /universo/contrato          vocabulario y campos
+    GET   /:proyectoId/universo       el universo del proyecto
+    POST  /:proyectoId/universo       declarar un medio
+    PATCH /:proyectoId/universo/:id   editar
+    POST  /:proyectoId/universo/:id/verificar
+    POST  /:proyectoId/universo/:id/actividad
+
+Todas project-scoped en la RUTA, por el mismo motivo que la
+HOME: con el proyecto en un query opcional, una llamada sin el
+mezclaria los medios de dos campanas y nadie lo notaria.
+===========================================================
+*/
+
+router.get("/universo/contrato", (req, res) => {
+  res.json({
+    gate: "MEDIA-SOURCE-UNIVERSE-01",
+
+    declaracion:
+      "Estar en el universo significa que Sentinel conoce esta fuente dentro del proyecto. No significa importante, popular ni influyente.",
+
+    reglas: [
+      "ENTIDAD != DOMINIO != ACTIVO: una entidad puede tener varios dominios y varias cuentas.",
+      "N activos por plataforma: la clave es plataforma + handle normalizado.",
+      "DECLARAR NO ES VERIFICAR: una entidad escrita por el analista no nace verificada.",
+      "NO se deduplica por nombre: hace falta dominio comun o alias declarado.",
+      "La infraestructura y los agregadores no entran en el universo."
+    ],
+
+    vocabulario: {
+      tipos: TIPOS_SOURCE,
+      subtiposMedia: SUBTIPOS_MEDIA,
+      estados: ESTADOS_SOURCE,
+      clasesDeActivo: CLASES_ACTIVO,
+      origenes: ORIGENES_ENTIDAD,
+      cobertura: ESTADOS_COBERTURA,
+      canales: CANALES
+    },
+
+    /*
+      Contrato del alta manual, para que la UI se construya
+      contra el y no al reves.
+    */
+    altaManual: {
+      obligatorio: ["canonicalName o website"],
+      opcional: [
+        "tipo",
+        "subtipo",
+        "website",
+        "aliases[]",
+        "scopeDeclarado",
+        "feeds[]",
+        "activosSociales[] con {plataforma, url, handle}"
+      ],
+      efecto:
+        "origen = analista, estado = DESCUBIERTA, verificacion = NO verificada. Verificar es una accion aparte y explicita."
+    }
+  });
+});
+
+
+router.get("/:proyectoId/universo", async (req, res) => {
+  try {
+    const u = await universoDeProyecto({
+      projectId: String(req.params.proyectoId || "").trim(),
+      tenantId: req.query.tenantId ? String(req.query.tenantId) : undefined
+    });
+
+    if (!u.ok) return res.status(422).json(u);
+
+    res.json(u);
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      motivo: `El universo de medios fallo: ${error?.message || "error desconocido"}.`
+    });
+  }
+});
+
+
+router.post("/:proyectoId/universo", async (req, res) => {
+  const projectId = String(req.params.proyectoId || "").trim();
+
+  const b = req.body || {};
+
+  if (!b.canonicalName && !b.nombre && !b.website) {
+    return res.status(400).json({
+      ok: false,
+      motivo: "Hace falta al menos un nombre o un sitio web para identificar el medio."
+    });
+  }
+
+  try {
+    const r = await declararYGuardar({ ...b, projectId });
+
+    res.status(r.ok ? 201 : 422).json(r);
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      motivo: `No se pudo declarar el medio: ${error?.message || "error desconocido"}.`
+    });
+  }
+});
+
+
+router.patch("/:proyectoId/universo/:mediaEntityId", async (req, res) => {
+  try {
+    const r = await editarYGuardar({
+      projectId: String(req.params.proyectoId || "").trim(),
+      mediaEntityId: String(req.params.mediaEntityId || "").trim(),
+      cambios: req.body?.cambios || req.body || {},
+      por: req.body?.por || null
+    });
+
+    res.status(r.ok ? 200 : 422).json(r);
+  } catch (error) {
+    res.status(500).json({ ok: false, motivo: error?.message || "error desconocido" });
+  }
+});
+
+
+router.post("/:proyectoId/universo/:mediaEntityId/verificar", async (req, res) => {
+  try {
+    const r = await verificarYGuardar({
+      projectId: String(req.params.proyectoId || "").trim(),
+      mediaEntityId: String(req.params.mediaEntityId || "").trim(),
+      por: req.body?.por || null,
+      motivo: req.body?.motivo || null
+    });
+
+    res.status(r.ok ? 200 : 422).json(r);
+  } catch (error) {
+    res.status(500).json({ ok: false, motivo: error?.message || "error desconocido" });
+  }
+});
+
+
+router.post("/:proyectoId/universo/:mediaEntityId/actividad", async (req, res) => {
+  if (typeof req.body?.activa !== "boolean") {
+    return res.status(400).json({
+      ok: false,
+      motivo: "Falta `activa` (true o false)."
+    });
+  }
+
+  try {
+    const r = await cambiarActividad({
+      projectId: String(req.params.proyectoId || "").trim(),
+      mediaEntityId: String(req.params.mediaEntityId || "").trim(),
+      activa: req.body.activa,
+      por: req.body?.por || null,
+      motivo: req.body?.motivo || null
+    });
+
+    res.status(r.ok ? 200 : 422).json(r);
+  } catch (error) {
+    res.status(500).json({ ok: false, motivo: error?.message || "error desconocido" });
   }
 });
 
