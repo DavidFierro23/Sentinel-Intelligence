@@ -549,8 +549,14 @@ t("T15 · un proveedor sin credencial se declara NO_CONFIGURADO", () => {
 t("T13 · cada adapter declara su presupuesto por pasada y el motivo", () => {
   const e = estadoAdapters();
 
+  /*
+    El numero de adapters CRECE cuando se conecta uno nuevo:
+    TERRITORIAL-CREDENTIAL-ACTIVATION-01 añadio `x_api`. Fijarlo
+    en 3 acoplaba la prueba al inventario en lugar de a lo que
+    comprueba, que es que TODOS declaren su presupuesto.
+  */
   return (
-    e.length === 3 &&
+    e.length >= 3 &&
     e.every((x) => typeof x.presupuestoPorPasada === "number") &&
     PRESUPUESTO_POR_PASADA.youtube_data === 1
   );

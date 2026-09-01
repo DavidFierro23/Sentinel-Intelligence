@@ -537,9 +537,32 @@ export async function buscarMenciones(consulta, opciones = {}) {
 
   const cuantos = Math.min(Math.max(10, opciones.maximo || 10), 100);
 
+  /*
+    AUTOR DE CADA RESULTADO — TERRITORIAL-CREDENTIAL-ACTIVATION-01
+
+    `tweet.fields` ya traia `author_id`, que es un numero: sirve
+    para deduplicar y no para saber quien publica. Sin el handle,
+    el descubrimiento territorial encontraria conversacion sin
+    emisor, que es exactamente el problema que ya tenemos con
+    Google News.
+
+    La expansion es OPT-IN a proposito. Este adapter lo comparte
+    Candidate, y alli `buscarMenciones` se usa sobre cuentas ya
+    conocidas donde el autor no hace falta: cambiar el
+    comportamiento por defecto le añadiria un coste sin darle
+    nada.
+
+    Se piden `username` y `name` de cuentas PUBLICAS: lo minimo
+    para procedencia, dedup y alta de actor. Nada de metricas de
+    seguidores, biografia ni ubicacion declarada.
+  */
+  const conAutores = opciones.expandirAutores === true;
+
+  const expansiones = conAutores ? "&expansions=author_id&user.fields=username,name" : "";
+
   const r = await pedir(
     `${ENDPOINT_BUSQUEDA_RECIENTE}?query=${encodeURIComponent(consulta)}` +
-      `&max_results=${cuantos}&tweet.fields=${CAMPOS_POST}`,
+      `&max_results=${cuantos}&tweet.fields=${CAMPOS_POST}${expansiones}`,
     { ...opciones, etiqueta: "X busqueda" }
   ).catch((e) => ({ ok: false, estado: "ERROR", motivo: e?.message }));
 
@@ -547,12 +570,37 @@ export async function buscarMenciones(consulta, opciones = {}) {
     return { estado: r.estado, evidencias: [], llamadas: 1, motivo: r.motivo };
   }
 
+  /* author_id -> handle, solo si se pidio la expansion. */
+  const usuarios = new Map(
+    ((conAutores && r.datos?.includes?.users) || []).map((u) => [u.id, u])
+  );
+
   return {
     estado: "OK",
+
     evidencias: (r.datos?.data || [])
-      .map((it) => normalizarPost(it, { observedAt: opciones.observedAt || null }))
+      .map((it) => {
+        const u = usuarios.get(it.author_id) || null;
+
+        return normalizarPost(it, {
+          observedAt: opciones.observedAt || null,
+
+          /*
+            `userId` es lo que hace que `normalizarPost` emita
+            `sourceId: x:<id>` en lugar de `x.com`. Con el, cada
+            post queda atribuido a SU cuenta y no a la
+            plataforma entera.
+          */
+          userId: u ? u.id : undefined,
+          handle: u ? u.username : undefined,
+          nombre: u ? u.name : undefined
+        });
+      })
       .filter(Boolean),
+
     llamadas: 1,
+
+    autoresExpandidos: conAutores,
 
     ventana: "7 dias",
     limitacion:
