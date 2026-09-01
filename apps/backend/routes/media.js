@@ -18,6 +18,20 @@ import { matrizCompleta, matrizDePieza } from "../services/media/pieceFieldMatri
 
 import { fichaCompleta } from "../services/media/commercialProviderBenchmark.js";
 
+import { homeDeProyecto } from "../services/media/mediaHome.js";
+
+import {
+  CONTRATO_MEDIA_HOME,
+  SECCIONES,
+  DIMENSIONES,
+  ESTADOS_DATO,
+  EXPLICACION_ESTADOS,
+  VENTANAS_HOME,
+  TERMINOS_PROHIBIDOS,
+  REGLA_CORRESPONDENCIA,
+  preguntasRespondibles
+} from "../services/media/mediaVocabulary.js";
+
 const router = express.Router();
 
 /*
@@ -237,6 +251,94 @@ router.get("/pieza/historial", async (req, res) => {
     res.status(500).json({
       ok: false,
       motivo: `No se pudo leer el historial: ${error?.message || "error desconocido"}.`
+    });
+  }
+});
+
+
+/*
+===========================================================
+MEDIA-UX-HOME-01 — MODULO Y HOME DEL PROYECTO
+===========================================================
+
+Se anaden al MISMO router. No hay una segunda API de Media:
+`/api/media` sigue siendo el unico prefijo, y «Analizar
+publicacion» pasa a ser una de sus herramientas en lugar de
+ser todo el modulo.
+
+    GET /modulo            vocabulario, secciones y contrato
+    GET /:proyectoId/home  la vista principal de un proyecto
+
+POR QUE LA HOME ES project-scoped EN LA RUTA
+-----------------------------------------------------------
+
+Porque el aislamiento tiene que ser imposible de olvidar. Con
+`?projectId=` opcional, una llamada sin el parametro devolveria
+el corpus de todos los proyectos —incluidos los dos de prueba
+que hay en el Lake real— y nadie lo notaria hasta verlo en una
+presentacion. En la ruta, la peticion sin proyecto no existe.
+===========================================================
+*/
+
+router.get("/modulo", (req, res) => {
+  res.json({
+    modulo: "media_intelligence",
+    gate: "MEDIA-UX-HOME-01",
+
+    /*
+      La frase que este gate existe para poder afirmar.
+    */
+    declaracion:
+      "Media Intelligence NO es «Analizar publicacion». Analizar una publicacion es una herramienta interna del modulo.",
+
+    contrato: CONTRATO_MEDIA_HOME,
+    secciones: SECCIONES,
+    dimensiones: DIMENSIONES,
+    ventanas: VENTANAS_HOME,
+
+    estados: {
+      valores: ESTADOS_DATO,
+      explicacion: EXPLICACION_ESTADOS
+    },
+
+    terminosProhibidos: TERMINOS_PROHIBIDOS,
+    reglaCorrespondencia: REGLA_CORRESPONDENCIA,
+
+    sentinelAI: {
+      implementado: false,
+      preguntas: preguntasRespondibles()
+    }
+  });
+});
+
+
+router.get("/:proyectoId/home", async (req, res) => {
+  const proyectoId = String(req.params.proyectoId || "").trim();
+
+  if (!proyectoId) {
+    return res.status(400).json({
+      ok: false,
+      motivo: "Falta el proyecto en la ruta."
+    });
+  }
+
+  const ventana = req.query.ventana ? String(req.query.ventana) : undefined;
+
+  try {
+    const home = await homeDeProyecto({
+      projectId: proyectoId,
+      ventana,
+      tenantId: req.query.tenantId ? String(req.query.tenantId) : undefined
+    });
+
+    if (!home.ok) return res.status(422).json(home);
+
+    res.json(home);
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      motivo: `La vista de Media Intelligence fallo: ${error?.message || "error desconocido"}.`,
+      stack: process.env.NODE_ENV === "production" ? undefined : error?.stack
     });
   }
 });

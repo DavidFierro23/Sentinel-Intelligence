@@ -1,0 +1,1622 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+import {
+  Newspaper,
+  Radio,
+  UserSquare2,
+  Sparkles,
+  Tag,
+  Network,
+  BarChart3,
+  ShieldCheck,
+  Link2,
+  AlertTriangle,
+  Ban,
+  RefreshCw,
+  Filter
+} from "lucide-react";
+
+import MediaPieceModule from "./MediaPieceModule";
+
+const BACKEND = "http://localhost:3001";
+
+/*
+===========================================================
+MEDIA INTELLIGENCE — VISTA PRINCIPAL (MEDIA-UX-HOME-01)
+===========================================================
+
+Antes de este gate, «Analizar publicacion» ERA todo el modulo.
+Ahora es una de sus nueve secciones, y la que el menu abre por
+defecto es el RESUMEN del corpus del proyecto.
+
+CUATRO DECISIONES DE INTERFAZ QUE NO SON ESTETICAS
+-----------------------------------------------------------
+
+1. Una cifra ausente NO se pinta como 0 ni se oculta: se pinta
+   su ESTADO —COBERTURA_INSUFICIENTE, SIN_EVIDENCIA,
+   NO_DISPONIBLE— y el motivo debajo. Un 0 afirmaria que se
+   midio; ocultarla haria creer que la pregunta no existe.
+
+2. El ranking muestra DOS columnas de recuento: la de la
+   ventana y la del corpus. Con una sola, «El Mercurio · 0» en
+   la ventana HOY se lee como «no publica», cuando tiene ocho
+   piezas observadas y ninguna con fecha utilizable.
+
+3. Las tres cifras de amplificacion —piezas, fuentes,
+   contenidos— van juntas y con la frase que las separa.
+   Ponerlas en tarjetas distintas invitaria a sumarlas.
+
+4. Los artefactos de recoleccion (google.com y compañia) se
+   muestran en su propia lista, fuera del ranking. Ni se
+   rankean —no son medios— ni se esconden: el analista tiene
+   derecho a saber que parte de su corpus es residuo del
+   metodo.
+
+LO QUE ESTA VISTA NO HACE
+-----------------------------------------------------------
+
+No ejecuta proveedores y no consume cuota: solo lee lo que el
+Knowledge Lake ya guardo. La unica pantalla que gasta cuota
+sigue siendo «Analizar publicacion», y lo declara ella misma.
+===========================================================
+*/
+
+const CAJA = {
+  background: "var(--sentinel-surface)",
+  border: "1px solid var(--sentinel-borde)",
+  borderRadius: "var(--radio-m)",
+  padding: "16px 18px"
+};
+
+const TITULO = {
+  display: "flex",
+  alignItems: "center",
+  gap: "8px",
+  fontSize: "0.72rem",
+  letterSpacing: "0.12em",
+  textTransform: "uppercase",
+  color: "var(--sentinel-cyan)",
+  marginBottom: "12px",
+  fontWeight: 600
+};
+
+const ETIQUETA = {
+  fontSize: "0.6rem",
+  letterSpacing: "0.09em",
+  textTransform: "uppercase",
+  color: "var(--sentinel-texto-tenue)"
+};
+
+const TH = {
+  ...ETIQUETA,
+  textAlign: "left",
+  padding: "7px 10px",
+  borderBottom: "1px solid var(--sentinel-borde)",
+  whiteSpace: "nowrap"
+};
+
+const TD = {
+  padding: "8px 10px",
+  fontSize: "0.78rem",
+  color: "var(--sentinel-texto)",
+  borderBottom: "1px solid rgba(20,41,94,.5)",
+  verticalAlign: "top"
+};
+
+
+/* Las nueve secciones. El orden es el del contrato del modulo. */
+const SECCIONES = [
+  { id: "resumen", texto: "Resumen", icono: BarChart3 },
+  { id: "medios", texto: "Medios", icono: Newspaper },
+  { id: "periodistas", texto: "Periodistas", icono: UserSquare2 },
+  { id: "creadores", texto: "Creadores", icono: Sparkles },
+  { id: "historias", texto: "Historias / temas", icono: Tag },
+  { id: "amplificacion", texto: "Amplificación", icono: Network },
+  { id: "presencia", texto: "Ranking / presencia", icono: Radio },
+  { id: "fuentes", texto: "Fuentes / evidencias", icono: ShieldCheck },
+  { id: "analizar", texto: "Analizar publicación", icono: Link2 }
+];
+
+
+const VENTANAS = [
+  { id: "hoy", texto: "Hoy" },
+  { id: "7d", texto: "7 días" },
+  { id: "15d", texto: "15 días" },
+  { id: "30d", texto: "30 días" },
+  { id: "90d", texto: "90 días" }
+];
+
+
+/*
+  Color por estado. El amarillo es para «no lo sabemos» y el
+  rojo NO se usa: un dato que falta no es un error.
+*/
+const COLOR_ESTADO = {
+  COBERTURA_INSUFICIENTE: "#eda100",
+  NO_DISPONIBLE: "var(--sentinel-texto-tenue)",
+  SIN_EVIDENCIA: "var(--sentinel-texto-tenue)",
+  NO_CLASIFICADO: "#eda100",
+  METODOLOGIA_EN_CONSTRUCCION: "#eda100",
+  FECHA_NO_NORMALIZADA: "#eda100"
+};
+
+
+function Seccion({ icono: Icono, titulo, nota, children, acento }) {
+  return (
+    <section style={{ ...CAJA, marginBottom: "14px" }}>
+      <div style={{ ...TITULO, color: acento || "var(--sentinel-cyan)" }}>
+        {Icono ? <Icono size={14} /> : null}
+        {titulo}
+      </div>
+
+      {nota ? (
+        <p
+          style={{
+            margin: "0 0 12px",
+            fontSize: "0.74rem",
+            color: "var(--sentinel-texto-suave)",
+            lineHeight: 1.55
+          }}
+        >
+          {nota}
+        </p>
+      ) : null}
+
+      {children}
+    </section>
+  );
+}
+
+
+/*
+  Una cifra del contrato `medida()`. Es el componente central de
+  toda la vista: si `valor` es null pinta el estado, nunca un
+  cero, y el motivo queda visible sin desplegar nada.
+*/
+function Cifra({ etiqueta, m, ancho = "auto" }) {
+  if (!m) return null;
+
+  const ausente = m.valor === null || m.valor === undefined;
+
+  const color = ausente
+    ? COLOR_ESTADO[m.estado] || "var(--sentinel-texto-tenue)"
+    : "var(--sentinel-texto)";
+
+  const texto = ausente
+    ? (m.estado || "NO_DISPONIBLE").replace(/_/g, " ")
+    : Array.isArray(m.valor)
+      ? m.valor.join(", ")
+      : String(m.valor);
+
+  return (
+    <div
+      style={{
+        minWidth: ancho,
+        background: "var(--sentinel-surface-alta)",
+        border: "1px solid var(--sentinel-borde)",
+        borderRadius: "var(--radio-s, 8px)",
+        padding: "11px 13px"
+      }}
+    >
+      <div style={ETIQUETA}>{etiqueta}</div>
+
+      <div
+        style={{
+          marginTop: "5px",
+          fontSize: ausente ? "0.68rem" : "1.35rem",
+          fontWeight: ausente ? 600 : 700,
+          color,
+          lineHeight: 1.25,
+          letterSpacing: ausente ? "0.06em" : 0
+        }}
+      >
+        {texto}
+      </div>
+
+      {m.motivo ? (
+        <div
+          style={{
+            marginTop: "6px",
+            fontSize: "0.66rem",
+            color: "var(--sentinel-texto-tenue)",
+            lineHeight: 1.5
+          }}
+        >
+          {m.motivo}
+        </div>
+      ) : null}
+
+      {m.nota ? (
+        <div
+          style={{
+            marginTop: "5px",
+            fontSize: "0.66rem",
+            color: "var(--sentinel-texto-suave)",
+            lineHeight: 1.5
+          }}
+        >
+          {m.nota}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+
+/* Cifra en una celda de tabla: compacta, misma regla. */
+function CeldaCifra({ m }) {
+  if (!m) return <span style={{ color: "var(--sentinel-texto-tenue)" }}>—</span>;
+
+  const ausente = m.valor === null || m.valor === undefined;
+
+  if (!ausente) {
+    return (
+      <span style={{ fontWeight: 650 }}>
+        {Array.isArray(m.valor) ? m.valor.join(", ") : String(m.valor)}
+      </span>
+    );
+  }
+
+  return (
+    <span
+      title={m.motivo || ""}
+      style={{
+        fontSize: "0.62rem",
+        letterSpacing: "0.05em",
+        color: COLOR_ESTADO[m.estado] || "var(--sentinel-texto-tenue)",
+        fontWeight: 600
+      }}
+    >
+      {(m.estado || "NO_DISPONIBLE").replace(/_/g, " ")}
+    </span>
+  );
+}
+
+
+function Chip({ texto, color }) {
+  if (!texto) return null;
+
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        padding: "2px 7px",
+        borderRadius: "var(--radio-pill)",
+        border: `1px solid ${color || "var(--sentinel-borde-vivo)"}`,
+        color: color || "var(--sentinel-texto-suave)",
+        fontSize: "0.6rem",
+        letterSpacing: "0.06em",
+        fontWeight: 600,
+        whiteSpace: "nowrap"
+      }}
+    >
+      {texto}
+    </span>
+  );
+}
+
+
+function Aviso({ children, icono: Icono = AlertTriangle, color = "#eda100" }) {
+  if (!children) return null;
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: "9px",
+        alignItems: "flex-start",
+        background: "rgba(237,161,0,.07)",
+        border: `1px solid ${color}33`,
+        borderRadius: "var(--radio-s, 8px)",
+        padding: "10px 12px",
+        marginBottom: "12px"
+      }}
+    >
+      <Icono size={13} style={{ color, flexShrink: 0, marginTop: "2px" }} />
+
+      <div style={{ fontSize: "0.72rem", color: "var(--sentinel-texto-suave)", lineHeight: 1.55 }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+
+function Lista({ items }) {
+  if (!items?.length) return null;
+
+  return (
+    <ul
+      style={{
+        margin: "8px 0 0",
+        paddingLeft: "17px",
+        fontSize: "0.71rem",
+        color: "var(--sentinel-texto-tenue)",
+        lineHeight: 1.65
+      }}
+    >
+      {items.filter(Boolean).map((x, i) => (
+        <li key={i}>{x}</li>
+      ))}
+    </ul>
+  );
+}
+
+
+function fechaCorta(iso) {
+  if (!iso) return "—";
+
+  try {
+    return new Date(iso).toLocaleString("es-EC", {
+      timeZone: "America/Guayaquil",
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  } catch {
+    return iso;
+  }
+}
+
+
+/*
+===========================================================
+TABLA DE PRESENCIA
+===========================================================
+
+Se reutiliza en «Ranking / presencia», «Medios» y «Creadores»:
+las tres son la misma tabla con un filtro distinto, y duplicarla
+habria hecho que un cambio de columna se aplicara a una sola.
+===========================================================
+*/
+function TablaPresencia({ filas, ventanaTexto }) {
+  if (!filas?.length) {
+    return (
+      <p style={{ fontSize: "0.75rem", color: "var(--sentinel-texto-tenue)", margin: 0 }}>
+        Ninguna fuente de esta clase en el corpus del proyecto. No es un cero de
+        actividad: es que el corpus no contiene ninguna todavía.
+      </p>
+    );
+  }
+
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "880px" }}>
+        <thead>
+          <tr>
+            <th style={TH}>#</th>
+            <th style={TH}>Fuente / medio</th>
+            <th style={TH}>Clase</th>
+            <th style={TH}>Piezas · {ventanaTexto}</th>
+            <th style={TH}>Piezas · corpus</th>
+            <th style={TH}>Candidatos</th>
+            <th style={TH}>Temas</th>
+            <th style={TH}>Cobertura declarada</th>
+            <th style={TH}>Última observación</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {filas.map((f) => (
+            <tr key={f.dominio}>
+              <td style={{ ...TD, color: "var(--sentinel-texto-tenue)" }}>
+                {f.rank}
+                {f.empatadoConAnterior ? (
+                  <span title="Empatado con la fila anterior" style={{ marginLeft: 3 }}>
+                    =
+                  </span>
+                ) : null}
+              </td>
+
+              <td style={TD}>
+                <div style={{ fontWeight: 650 }}>{f.nombre}</div>
+
+                <div
+                  style={{
+                    fontSize: "0.65rem",
+                    color: "var(--sentinel-texto-tenue)",
+                    marginTop: "2px"
+                  }}
+                >
+                  {f.dominio}
+                </div>
+
+                {f.correspondencias?.length ? (
+                  <div style={{ marginTop: "5px" }}>
+                    <Chip
+                      texto={`~ ${f.correspondencias[0].nombre} · ${f.correspondencias[0].estado}`}
+                      color="#eda100"
+                    />
+
+                    <div
+                      style={{
+                        fontSize: "0.62rem",
+                        color: "var(--sentinel-texto-tenue)",
+                        marginTop: "4px",
+                        lineHeight: 1.5,
+                        maxWidth: "260px"
+                      }}
+                    >
+                      Correspondencia observada, no verificada. La clase no cambia
+                      hasta que un analista la confirme.
+                    </div>
+                  </div>
+                ) : null}
+              </td>
+
+              <td style={TD}>
+                <Chip
+                  texto={f.clase}
+                  color={
+                    f.clase === "MEDIO"
+                      ? "var(--sentinel-cyan)"
+                      : f.clase === "NO_CLASIFICADO" || f.clase === "NO_DETERMINADO"
+                        ? "#eda100"
+                        : undefined
+                  }
+                />
+
+                {f.conflictoDeClase ? (
+                  <div style={{ marginTop: "4px" }}>
+                    <Chip texto="CLASES EN CONFLICTO" color="#eda100" />
+                  </div>
+                ) : null}
+
+                {f.tipoEnCatalogo ? (
+                  <div
+                    style={{
+                      fontSize: "0.62rem",
+                      color: "var(--sentinel-texto-tenue)",
+                      marginTop: "4px"
+                    }}
+                  >
+                    catálogo: {f.tipoEnCatalogo}
+                  </div>
+                ) : null}
+              </td>
+
+              <td style={TD}>
+                <CeldaCifra m={f.piezasObservadas} />
+              </td>
+
+              <td style={TD}>
+                <CeldaCifra m={f.piezasEnCorpus} />
+
+                {f.piezasSinFechaUtilizable?.valor > 0 ? (
+                  <div
+                    style={{
+                      fontSize: "0.62rem",
+                      color: "#eda100",
+                      marginTop: "3px"
+                    }}
+                  >
+                    {f.piezasSinFechaUtilizable.valor} sin fecha utilizable
+                  </div>
+                ) : null}
+              </td>
+
+              <td style={TD}>
+                <CeldaCifra m={f.candidatosMencionados} />
+
+                {f.candidatos?.length ? (
+                  <div
+                    style={{
+                      fontSize: "0.62rem",
+                      color: "var(--sentinel-texto-tenue)",
+                      marginTop: "3px",
+                      maxWidth: "180px"
+                    }}
+                  >
+                    {f.candidatos.join(", ")}
+                  </div>
+                ) : null}
+              </td>
+
+              <td style={TD}>
+                <CeldaCifra m={f.temas} />
+              </td>
+
+              <td style={TD}>
+                <CeldaCifra m={f.territorios} />
+
+                {f.territorios?.nota ? (
+                  <div
+                    style={{
+                      fontSize: "0.6rem",
+                      color: "var(--sentinel-texto-tenue)",
+                      marginTop: "3px",
+                      maxWidth: "190px",
+                      lineHeight: 1.45
+                    }}
+                  >
+                    {f.territorios.nota}
+                  </div>
+                ) : null}
+              </td>
+
+              <td style={{ ...TD, color: "var(--sentinel-texto-suave)", whiteSpace: "nowrap" }}>
+                {fechaCorta(f.ultimaObservacion)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+
+/*
+===========================================================
+MODULO
+===========================================================
+*/
+export default function MediaIntelligenceModule() {
+  const [proyectos, setProyectos] = useState([]);
+  const [projectId, setProjectId] = useState("");
+  const [ventana, setVentana] = useState("90d");
+  const [seccion, setSeccion] = useState("resumen");
+
+  const [home, setHome] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState(null);
+
+  /* Proyectos activos. Media Intelligence no existe sin uno. */
+  useEffect(() => {
+    let vivo = true;
+
+    (async () => {
+      try {
+        const r = await fetch(`${BACKEND}/api/projects/`);
+
+        const j = await r.json();
+
+        if (!vivo) return;
+
+        const lista = j?.proyectos || [];
+
+        setProyectos(lista);
+
+        /*
+          No se elige por nombre ni se codifica ningun proyecto:
+          se toma el primero de la lista si el analista no ha
+          elegido. Con otro proyecto sale otro corpus.
+        */
+        setProjectId((actual) => actual || lista[0]?.id || "");
+      } catch (e) {
+        if (vivo) setError(`No se pudieron listar los proyectos: ${e.message}`);
+      }
+    })();
+
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  const cargar = useCallback(async () => {
+    if (!projectId) return;
+
+    setCargando(true);
+    setError(null);
+
+    try {
+      const r = await fetch(
+        `${BACKEND}/api/media/${encodeURIComponent(projectId)}/home?ventana=${encodeURIComponent(ventana)}`
+      );
+
+      const j = await r.json();
+
+      if (!r.ok || j?.ok === false) {
+        setHome(null);
+
+        setError(j?.motivo || `El backend respondió ${r.status}.`);
+
+        return;
+      }
+
+      setHome(j);
+    } catch (e) {
+      setHome(null);
+
+      setError(`No se pudo leer Media Intelligence: ${e.message}`);
+    } finally {
+      setCargando(false);
+    }
+  }, [projectId, ventana]);
+
+  useEffect(() => {
+    /* La sección «analizar» no necesita la HOME. */
+    if (seccion === "analizar") return undefined;
+
+    /*
+      La carga se AGENDA en lugar de lanzarse dentro del efecto.
+
+      Dos razones, y ninguna es cosmética: llamar a `cargar()`
+      aquí pone `setCargando(true)` en el cuerpo sincrónico del
+      efecto y provoca un render en cascada, y además cambiar de
+      proyecto y de ventana seguido disparaba dos lecturas del
+      Lake de las que solo la última importa. Con el temporizador,
+      el `clearTimeout` del cleanup cancela la primera.
+    */
+    const temporizador = setTimeout(cargar, 0);
+
+    return () => clearTimeout(temporizador);
+  }, [cargar, seccion]);
+
+  const proyecto = useMemo(
+    () => proyectos.find((p) => p.id === projectId) || null,
+    [proyectos, projectId]
+  );
+
+  const ventanaTexto =
+    VENTANAS.find((v) => v.id === ventana)?.texto || ventana;
+
+  const ranking = home?.presencia?.ranking || [];
+
+  return (
+    <div className="sentinel-fade" style={{ maxWidth: "1240px" }}>
+      {/*
+        ---------------------------------------------------------
+        CABECERA
+        ---------------------------------------------------------
+      */}
+      <header style={{ marginBottom: "18px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <Newspaper size={20} style={{ color: "var(--sentinel-cyan)" }} />
+
+          <h1
+            style={{
+              margin: 0,
+              fontSize: "1.32rem",
+              letterSpacing: "0.02em",
+              color: "var(--sentinel-texto)"
+            }}
+          >
+            Media Intelligence
+          </h1>
+        </div>
+
+        <p
+          style={{
+            margin: "8px 0 0",
+            fontSize: "0.82rem",
+            color: "var(--sentinel-texto-suave)",
+            maxWidth: "800px",
+            lineHeight: 1.6
+          }}
+        >
+          Quién publica, quién aparece, qué temas circulan y cómo se amplifica la
+          conversación pública observable.
+        </p>
+
+        {/*
+          La frase que este gate existe para poder afirmar. Va en
+          la cabecera y no en un pie: es un cambio de modelo
+          mental, no una nota.
+        */}
+        <p
+          style={{
+            margin: "6px 0 0",
+            fontSize: "0.7rem",
+            color: "var(--sentinel-texto-tenue)"
+          }}
+        >
+          Media Intelligence no es «Analizar publicación»: analizar una
+          publicación es una de sus herramientas.
+        </p>
+      </header>
+
+      {/*
+        ---------------------------------------------------------
+        CONTEXTO: PROYECTO + VENTANA
+        ---------------------------------------------------------
+      */}
+      <div
+        style={{
+          ...CAJA,
+          marginBottom: "14px",
+          display: "flex",
+          gap: "22px",
+          flexWrap: "wrap",
+          alignItems: "flex-end"
+        }}
+      >
+        <div style={{ minWidth: "280px" }}>
+          <div style={ETIQUETA}>Proyecto</div>
+
+          <select
+            value={projectId}
+            onChange={(e) => setProjectId(e.target.value)}
+            style={{
+              marginTop: "6px",
+              width: "100%",
+              padding: "8px 10px",
+              background: "var(--sentinel-surface-alta)",
+              border: "1px solid var(--sentinel-borde)",
+              borderRadius: "var(--radio-s, 8px)",
+              color: "var(--sentinel-texto)",
+              fontSize: "0.8rem"
+            }}
+          >
+            {proyectos.length === 0 ? <option value="">—</option> : null}
+
+            {proyectos.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.nombre}
+              </option>
+            ))}
+          </select>
+
+          {proyecto ? (
+            <div
+              style={{
+                marginTop: "6px",
+                fontSize: "0.65rem",
+                color: "var(--sentinel-texto-tenue)"
+              }}
+            >
+              {[proyecto.canton, proyecto.provincia, proyecto.pais]
+                .filter(Boolean)
+                .join(" · ")}
+              {" · "}
+              <code style={{ fontSize: "0.62rem" }}>{proyecto.id}</code>
+            </div>
+          ) : null}
+        </div>
+
+        <div>
+          <div style={ETIQUETA}>Ventana observada</div>
+
+          <div style={{ display: "flex", gap: "6px", marginTop: "6px" }}>
+            {VENTANAS.map((v) => {
+              const activo = v.id === ventana;
+
+              return (
+                <button
+                  key={v.id}
+                  onClick={() => setVentana(v.id)}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: "var(--radio-pill)",
+                    border: `1px solid ${
+                      activo ? "var(--sentinel-cyan)" : "var(--sentinel-borde)"
+                    }`,
+                    background: activo ? "rgba(11,95,255,.18)" : "transparent",
+                    color: activo ? "#FFFFFF" : "var(--sentinel-texto-suave)",
+                    fontSize: "0.72rem",
+                    fontWeight: activo ? 650 : 500,
+                    cursor: "pointer"
+                  }}
+                >
+                  {v.texto}
+                </button>
+              );
+            })}
+          </div>
+
+          {home?.ventana ? (
+            <div
+              style={{
+                marginTop: "6px",
+                fontSize: "0.65rem",
+                color: "var(--sentinel-texto-tenue)"
+              }}
+            >
+              {home.ventana.zona} · {home.ventana.fechaLocalDesde || home.ventana.fechaLocal} →{" "}
+              {home.ventana.fechaLocal}
+            </div>
+          ) : null}
+        </div>
+
+        <button
+          onClick={cargar}
+          disabled={cargando || !projectId}
+          style={{
+            padding: "8px 14px",
+            borderRadius: "var(--radio-s, 8px)",
+            border: "1px solid var(--sentinel-borde-vivo)",
+            background: "transparent",
+            color: "var(--sentinel-texto-suave)",
+            fontSize: "0.72rem",
+            cursor: cargando ? "default" : "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "6px"
+          }}
+        >
+          <RefreshCw size={12} />
+          {cargando ? "Leyendo…" : "Recargar"}
+        </button>
+
+        <div
+          style={{
+            fontSize: "0.65rem",
+            color: "var(--sentinel-texto-tenue)",
+            maxWidth: "260px",
+            lineHeight: 1.5
+          }}
+        >
+          Esta vista solo lee el Knowledge Lake. No ejecuta proveedores y no
+          consume cuota.
+        </div>
+      </div>
+
+      {/*
+        ---------------------------------------------------------
+        NAVEGACION DE LAS NUEVE SECCIONES
+        ---------------------------------------------------------
+      */}
+      <nav
+        style={{
+          display: "flex",
+          gap: "6px",
+          flexWrap: "wrap",
+          marginBottom: "16px",
+          borderBottom: "1px solid var(--sentinel-borde)",
+          paddingBottom: "10px"
+        }}
+      >
+        {SECCIONES.map((s) => {
+          const activo = s.id === seccion;
+
+          const Icono = s.icono;
+
+          return (
+            <button
+              key={s.id}
+              onClick={() => setSeccion(s.id)}
+              style={{
+                padding: "7px 13px",
+                borderRadius: "var(--radio-pill)",
+                border: `1px solid ${
+                  activo ? "var(--sentinel-cyan)" : "transparent"
+                }`,
+                background: activo ? "rgba(0,212,255,.10)" : "transparent",
+                color: activo ? "#FFFFFF" : "var(--sentinel-texto-suave)",
+                fontSize: "0.74rem",
+                fontWeight: activo ? 650 : 500,
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px"
+              }}
+            >
+              <Icono size={13} />
+              {s.texto}
+
+              {/*
+                «Analizar publicacion» se marca como herramienta:
+                es la unica seccion que ejecuta algo.
+              */}
+              {s.id === "analizar" ? (
+                <span
+                  style={{
+                    fontSize: "0.55rem",
+                    letterSpacing: "0.08em",
+                    color: "var(--sentinel-texto-tenue)",
+                    border: "1px solid var(--sentinel-borde)",
+                    borderRadius: "var(--radio-pill)",
+                    padding: "1px 5px"
+                  }}
+                >
+                  HERRAMIENTA
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </nav>
+
+      {/*
+        ---------------------------------------------------------
+        ANALIZAR PUBLICACION — intacta, como subvista
+        ---------------------------------------------------------
+      */}
+      {seccion === "analizar" ? (
+        <>
+          <Aviso icono={Link2} color="var(--sentinel-cyan)">
+            Herramienta interna de Media Intelligence. Es la única sección que
+            ejecuta proveedores y consume cuota; declara el plan de peticiones
+            antes de gastarla.
+          </Aviso>
+
+          <MediaPieceModule />
+        </>
+      ) : null}
+
+      {seccion !== "analizar" ? (
+        <>
+          {error ? (
+            <Aviso icono={Ban} color="#ff6b6b">
+              {error}
+            </Aviso>
+          ) : null}
+
+          {!home && !error ? (
+            <p style={{ fontSize: "0.8rem", color: "var(--sentinel-texto-tenue)" }}>
+              {cargando ? "Leyendo el corpus del proyecto…" : "Sin datos."}
+            </p>
+          ) : null}
+        </>
+      ) : null}
+
+      {home && seccion !== "analizar" ? (
+        <>
+          {/*
+            -----------------------------------------------------
+            RESUMEN
+            -----------------------------------------------------
+          */}
+          {seccion === "resumen" ? (
+            <>
+              <Seccion
+                icono={BarChart3}
+                titulo={`Resumen ejecutivo · ${ventanaTexto}`}
+                nota="Todas las cifras proceden del corpus de este proyecto. Una cifra ausente muestra su estado y su motivo: sin observación no es cero."
+              >
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(215px, 1fr))",
+                    gap: "10px"
+                  }}
+                >
+                  <Cifra etiqueta="Piezas observadas" m={home.resumen.piezasObservadas} />
+                  <Cifra etiqueta="Piezas en el corpus" m={home.resumen.piezasEnCorpus} />
+                  <Cifra etiqueta="Piezas analizadas" m={home.resumen.piezasAnalizadas} />
+                  <Cifra etiqueta="Piezas relacionadas" m={home.resumen.piezasRelacionadas} />
+                  <Cifra etiqueta="Contenidos observados" m={home.resumen.contenidosObservados} />
+                  <Cifra etiqueta="Fuentes distintas" m={home.resumen.fuentesDistintas} />
+                  <Cifra etiqueta="Medios" m={home.resumen.medios} />
+                  <Cifra etiqueta="Periodistas" m={home.resumen.periodistas} />
+                  <Cifra etiqueta="Creadores" m={home.resumen.creadores} />
+                  <Cifra etiqueta="Instituciones" m={home.resumen.instituciones} />
+                  <Cifra etiqueta="Cuentas" m={home.resumen.cuentas} />
+                  <Cifra etiqueta="No clasificados" m={home.resumen.noClasificados} />
+                  <Cifra etiqueta="Candidatos relacionados" m={home.resumen.candidatosRelacionados} />
+                  <Cifra etiqueta="Temas observados" m={home.resumen.temasObservados} />
+                  <Cifra etiqueta="Territorios observados" m={home.resumen.territoriosObservados} />
+                  <Cifra etiqueta="Evidencias disponibles" m={home.resumen.evidenciasDisponibles} />
+                </div>
+              </Seccion>
+
+              <Seccion
+                icono={Filter}
+                titulo="Cobertura de las cinco ventanas"
+                nota="Cuántas piezas puede situar cada ventana. Una ventana que no puede situar ninguna se declara, en lugar de mostrar un panel vacío sin explicación."
+              >
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "620px" }}>
+                    <thead>
+                      <tr>
+                        <th style={TH}>Ventana</th>
+                        <th style={TH}>Dentro</th>
+                        <th style={TH}>Fuera</th>
+                        <th style={TH}>Sin fecha utilizable</th>
+                        <th style={TH}>Estado</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {(home.ventanas || []).map((v) => (
+                        <tr key={v.id}>
+                          <td style={{ ...TD, fontWeight: v.id === ventana ? 700 : 500 }}>
+                            {v.etiqueta}
+                          </td>
+                          <td style={TD}>{v.dentroDeVentana}</td>
+                          <td style={TD}>{v.fueraDeVentana}</td>
+                          <td style={{ ...TD, color: v.sinFechaUtilizable ? "#eda100" : undefined }}>
+                            {v.sinFechaUtilizable}
+                          </td>
+                          <td style={TD}>
+                            {v.estado ? (
+                              <Chip texto={v.estado.replace(/_/g, " ")} color="#eda100" />
+                            ) : (
+                              <Chip texto="MEDIBLE" color="var(--sentinel-live)" />
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Seccion>
+
+              <Seccion
+                icono={AlertTriangle}
+                titulo="Lo que esta vista no sabe"
+                acento="#eda100"
+              >
+                <Lista items={home.cobertura?.loQueNoSabemos} />
+              </Seccion>
+
+              <Seccion icono={Ban} titulo="Lecturas prohibidas" acento="#eda100">
+                <Lista items={home.declaraciones?.equivalenciasProhibidas} />
+              </Seccion>
+            </>
+          ) : null}
+
+          {/*
+            -----------------------------------------------------
+            RANKING DE PRESENCIA
+            -----------------------------------------------------
+          */}
+          {seccion === "presencia" ? (
+            <>
+              <Seccion
+                icono={Radio}
+                titulo={`Presencia observada · ${ventanaTexto}`}
+                nota={home.presencia.dimension?.definicion}
+              >
+                <Aviso>
+                  <strong>{home.presencia.sinScore}</strong>
+                  <br />
+                  {home.presencia.noEsRankingDeInfluencia}
+                </Aviso>
+
+                {home.presencia.ordenDegradado ? (
+                  <Aviso>{home.presencia.motivoOrdenDegradado}</Aviso>
+                ) : null}
+
+                <TablaPresencia filas={ranking} ventanaTexto={ventanaTexto} />
+
+                <Lista items={home.presencia.dimension?.noSignifica} />
+
+                <p
+                  style={{
+                    marginTop: "10px",
+                    fontSize: "0.68rem",
+                    color: "var(--sentinel-texto-tenue)",
+                    lineHeight: 1.55
+                  }}
+                >
+                  {home.presencia.dimension?.sesgoDeclarado}
+                </p>
+              </Seccion>
+
+              {home.presencia.artefactosDeRecoleccion?.length ? (
+                <Seccion
+                  icono={Filter}
+                  titulo="Artefactos de recolección — fuera del ranking"
+                  acento="#eda100"
+                  nota="Dominios que aparecen en el corpus y no son fuentes que publiquen. Se muestran a propósito: son residuo de nuestro método de recolección, no medios."
+                >
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr>
+                        <th style={TH}>Dominio</th>
+                        <th style={TH}>Tipo</th>
+                        <th style={TH}>Piezas</th>
+                        <th style={TH}>Motivo de exclusión</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {home.presencia.artefactosDeRecoleccion.map((a) => (
+                        <tr key={a.dominio}>
+                          <td style={TD}>{a.dominio}</td>
+                          <td style={TD}>
+                            <Chip texto={a.tipoEnCatalogo} color="#eda100" />
+                          </td>
+                          <td style={TD}>{a.piezasObservadas}</td>
+                          <td style={{ ...TD, fontSize: "0.7rem", color: "var(--sentinel-texto-suave)" }}>
+                            {a.motivoDeExclusion}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </Seccion>
+              ) : null}
+
+              <Seccion
+                icono={Ban}
+                titulo="Incidencia"
+                acento="#eda100"
+                nota={home.incidencia.definicion}
+              >
+                <Chip
+                  texto={home.incidencia.estado?.replace(/_/g, " ")}
+                  color="#eda100"
+                />
+
+                <p
+                  style={{
+                    margin: "10px 0 0",
+                    fontSize: "0.74rem",
+                    color: "var(--sentinel-texto-suave)",
+                    lineHeight: 1.6
+                  }}
+                >
+                  {home.incidencia.motivo}
+                </p>
+
+                <p
+                  style={{
+                    margin: "8px 0 0",
+                    fontSize: "0.72rem",
+                    color: "var(--sentinel-texto-tenue)",
+                    lineHeight: 1.6
+                  }}
+                >
+                  {home.incidencia.porQueNoHoy}
+                </p>
+
+                <div style={{ marginTop: "10px", ...ETIQUETA }}>
+                  Requisitos para poder calcularla
+                </div>
+
+                <Lista items={home.incidencia.requisitos} />
+
+                <Lista items={home.incidencia.prohibido} />
+              </Seccion>
+            </>
+          ) : null}
+
+          {/*
+            -----------------------------------------------------
+            MEDIOS
+            -----------------------------------------------------
+          */}
+          {seccion === "medios" ? (
+            <Seccion
+              icono={Newspaper}
+              titulo={`Medios · ${ventanaTexto}`}
+              nota="Fuentes clasificadas como MEDIO por el catálogo de medios. La clasificación sale del catálogo, nunca del volumen de publicación: haber publicado sobre el territorio no convierte a un medio en local."
+            >
+              <TablaPresencia
+                filas={ranking.filter((f) => f.grupo === "MEDIO")}
+                ventanaTexto={ventanaTexto}
+              />
+            </Seccion>
+          ) : null}
+
+          {/*
+            -----------------------------------------------------
+            PERIODISTAS
+            -----------------------------------------------------
+          */}
+          {seccion === "periodistas" ? (
+            <Seccion
+              icono={UserSquare2}
+              titulo={`Periodistas · ${ventanaTexto}`}
+              nota="Firmas que las piezas publican en metadata legible. Ninguna se deduce del texto."
+            >
+              <Cifra etiqueta="Periodistas identificados" m={home.resumen.periodistas} />
+
+              <div style={{ marginTop: "14px" }}>
+                {ranking.some((f) => f.autores?.length) ? (
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr>
+                        <th style={TH}>Firma</th>
+                        <th style={TH}>Fuente</th>
+                        <th style={TH}>Clase de la fuente</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {ranking.flatMap((f) =>
+                        (f.autores || []).map((a) => (
+                          <tr key={`${f.dominio}-${a}`}>
+                            <td style={{ ...TD, fontWeight: 650 }}>{a}</td>
+                            <td style={TD}>{f.nombre}</td>
+                            <td style={TD}>
+                              <Chip texto={f.clase} />
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p style={{ fontSize: "0.76rem", color: "var(--sentinel-texto-tenue)" }}>
+                    Ninguna pieza del corpus trae autoría en metadata legible.
+                  </p>
+                )}
+              </div>
+            </Seccion>
+          ) : null}
+
+          {/*
+            -----------------------------------------------------
+            CREADORES
+            -----------------------------------------------------
+          */}
+          {seccion === "creadores" ? (
+            <>
+              <Seccion
+                icono={Sparkles}
+                titulo={`Creadores · ${ventanaTexto}`}
+                nota="Cuentas con evidencia de ser creador. Una cuenta identificada sin esa evidencia NO se asciende por volumen ni por número de seguidores."
+              >
+                <TablaPresencia
+                  filas={ranking.filter((f) => f.grupo === "CREADOR")}
+                  ventanaTexto={ventanaTexto}
+                />
+              </Seccion>
+
+              <Seccion
+                icono={AlertTriangle}
+                titulo="Fuentes sin clasificar"
+                acento="#eda100"
+                nota="La fuente está identificada y ninguna evidencia dice QUÉ es. Es un resultado, no un fallo, y alguna de estas podría ser un creador."
+              >
+                <TablaPresencia
+                  filas={ranking.filter(
+                    (f) => f.grupo === "NO_CLASIFICADO" || f.grupo === "CUENTA"
+                  )}
+                  ventanaTexto={ventanaTexto}
+                />
+              </Seccion>
+            </>
+          ) : null}
+
+          {/*
+            -----------------------------------------------------
+            HISTORIAS / TEMAS
+            -----------------------------------------------------
+          */}
+          {seccion === "historias" ? (
+            <Seccion
+              icono={Tag}
+              titulo={`Historias y temas · ${ventanaTexto}`}
+              nota="Los temas se derivan de los titulares persistidos con el mismo Topic Engine que usa la línea territorial. No hay motor de temas propio."
+            >
+              {home.historias.estado ? (
+                <Aviso>
+                  <Chip texto={home.historias.estado.replace(/_/g, " ")} color="#eda100" />
+                  <div style={{ marginTop: "8px" }}>{home.historias.motivo}</div>
+                </Aviso>
+              ) : null}
+
+              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginBottom: "12px" }}>
+                <Cifra
+                  etiqueta="Piezas con titular"
+                  m={{ valor: home.historias.piezasConTitular, estado: null }}
+                />
+
+                <Cifra
+                  etiqueta="Amplificación sin titular"
+                  m={{
+                    valor: home.historias.piezasDeAmplificacionSinTitular,
+                    estado: null,
+                    nota: "Una pieza sin titular no aporta tema: el motor agrupa por coocurrencia de términos."
+                  }}
+                />
+              </div>
+
+              {home.historias.temas?.length ? (
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr>
+                      <th style={TH}>Tema</th>
+                      <th style={TH}>Piezas</th>
+                      <th style={TH}>Fuentes</th>
+                      <th style={TH}>Términos</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {home.historias.temas.map((t) => (
+                      <tr key={t.topicId}>
+                        <td style={{ ...TD, fontWeight: 650 }}>{t.nombre || t.topicId}</td>
+                        <td style={TD}>{t.piezas}</td>
+                        <td style={TD}>{t.fuentes ?? "—"}</td>
+                        <td style={{ ...TD, fontSize: "0.7rem" }}>
+                          {(t.terminos || []).join(", ")}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : null}
+
+              <div style={{ marginTop: "16px" }}>
+                <div style={ETIQUETA}>
+                  Entidades nombradas — no son temas
+                </div>
+
+                <p
+                  style={{
+                    margin: "6px 0 10px",
+                    fontSize: "0.72rem",
+                    color: "var(--sentinel-texto-tenue)",
+                    lineHeight: 1.55
+                  }}
+                >
+                  {home.historias.entidadesNoSonTemas}
+                </p>
+
+                {home.historias.entidades?.length ? (
+                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                    {home.historias.entidades.map((e) => (
+                      <Chip key={e.entidad} texto={`${e.entidad} · ${e.piezas}`} />
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ fontSize: "0.74rem", color: "var(--sentinel-texto-tenue)" }}>
+                    Ninguna entidad extraíble del corpus actual.
+                  </p>
+                )}
+              </div>
+
+              <Lista items={home.historias.prohibido} />
+            </Seccion>
+          ) : null}
+
+          {/*
+            -----------------------------------------------------
+            AMPLIFICACION
+            -----------------------------------------------------
+          */}
+          {seccion === "amplificacion" ? (
+            <Seccion
+              icono={Network}
+              titulo={`Amplificación observada · ${ventanaTexto}`}
+              nota={home.amplificacion.dimension?.definicion}
+            >
+              <Aviso>{home.amplificacion.noSeSuman}</Aviso>
+
+              {/*
+                Las tres magnitudes en la MISMA fila y con la frase
+                que las separa arriba. Separarlas en tarjetas
+                distantes invitaria a sumarlas.
+              */}
+              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                <Cifra etiqueta="Piezas relacionadas" m={home.amplificacion.piezasRelacionadas} />
+                <Cifra etiqueta="Piezas · corpus" m={home.amplificacion.piezasRelacionadasEnCorpus} />
+                <Cifra etiqueta="Fuentes distintas" m={home.amplificacion.fuentesDistintas} />
+                <Cifra etiqueta="Contenidos relacionados" m={home.amplificacion.contenidosRelacionados} />
+              </div>
+
+              <div style={{ marginTop: "16px" }}>
+                <div style={ETIQUETA}>Rol de cada pieza frente a la analizada</div>
+
+                <table style={{ width: "100%", borderCollapse: "collapse", marginTop: "8px" }}>
+                  <thead>
+                    <tr>
+                      <th style={TH}>Rol</th>
+                      <th style={TH}>Piezas</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {(home.amplificacion.porRol || []).map((r) => (
+                      <tr key={r.rol}>
+                        <td style={TD}>
+                          <Chip
+                            texto={r.rol}
+                            color={
+                              r.rol === "COBERTURA_RELACIONADA"
+                                ? "var(--sentinel-texto-suave)"
+                                : undefined
+                            }
+                          />
+                        </td>
+                        <td style={TD}>{r.piezas}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <p
+                  style={{
+                    margin: "10px 0 0",
+                    fontSize: "0.72rem",
+                    color: "var(--sentinel-texto-suave)",
+                    lineHeight: 1.6
+                  }}
+                >
+                  {home.amplificacion.porQueRolPorDefecto}
+                </p>
+              </div>
+
+              <Lista items={home.amplificacion.noAfirma} />
+
+              <div style={{ marginTop: "16px" }}>
+                <div style={ETIQUETA}>Fuentes en la amplificación</div>
+
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "8px" }}>
+                  {(home.amplificacion.fuentes || []).map((f) => (
+                    <Chip key={f} texto={f} />
+                  ))}
+                </div>
+              </div>
+            </Seccion>
+          ) : null}
+
+          {/*
+            -----------------------------------------------------
+            CANDIDATOS x MEDIOS — visible en resumen y presencia
+            -----------------------------------------------------
+          */}
+          {["resumen", "presencia", "medios"].includes(seccion) ? (
+            <Seccion
+              icono={UserSquare2}
+              titulo="Candidatos × medios"
+              nota={home.candidatosPorFuente.esPresenciaMediatica}
+            >
+              <Aviso>
+                {home.candidatosPorFuente.noSignifica.join(" ")}
+                {home.candidatosPorFuente.advertenciaDeArista ? (
+                  <div style={{ marginTop: "8px" }}>
+                    {home.candidatosPorFuente.advertenciaDeArista}
+                  </div>
+                ) : null}
+              </Aviso>
+
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "760px" }}>
+                  <thead>
+                    <tr>
+                      <th style={TH}>Candidato</th>
+                      <th style={TH}>Fuentes distintas</th>
+                      <th style={TH}>Piezas</th>
+                      <th style={TH}>Evidencias directas</th>
+                      <th style={TH}>Temas asociados</th>
+                      <th style={TH}>Principales fuentes observadas</th>
+                      <th style={TH}>Última observación</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {(home.candidatosPorFuente.filas || []).map((c) => (
+                      <tr key={c.candidateId}>
+                        <td style={{ ...TD, fontWeight: 650 }}>{c.candidateId}</td>
+                        <td style={TD}>
+                          <CeldaCifra m={c.fuentesDistintas} />
+                        </td>
+                        <td style={TD}>
+                          <CeldaCifra m={c.piezasObservadas} />
+                        </td>
+                        <td style={TD}>
+                          <CeldaCifra m={c.evidenciasDirectas} />
+                        </td>
+                        <td style={TD}>
+                          <CeldaCifra m={c.temasAsociados} />
+                        </td>
+                        <td style={{ ...TD, fontSize: "0.7rem", maxWidth: "300px" }}>
+                          {c.principalesFuentes.join(", ")}
+                        </td>
+                        <td style={{ ...TD, whiteSpace: "nowrap", color: "var(--sentinel-texto-suave)" }}>
+                          {fechaCorta(c.ultimaObservacion)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Seccion>
+          ) : null}
+
+          {/*
+            -----------------------------------------------------
+            FUENTES / EVIDENCIAS
+            -----------------------------------------------------
+          */}
+          {seccion === "fuentes" ? (
+            <>
+              <Seccion
+                icono={ShieldCheck}
+                titulo="Fuentes y evidencias"
+                nota={home.fuentes.declaracion}
+              >
+                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                  <Cifra etiqueta="Evidencias distintas" m={home.fuentes.evidenciasDistintas} />
+                  <Cifra etiqueta="Snapshots guardados" m={home.fuentes.snapshots} />
+
+                  <Cifra
+                    etiqueta="Consultas web declaradas"
+                    m={{
+                      valor: home.fuentes.consumoAcumuladoDeclarado.consultasWeb,
+                      estado: null,
+                      nota: home.fuentes.consumoAcumuladoDeclarado.nota
+                    }}
+                  />
+                </div>
+
+                <div style={{ marginTop: "16px" }}>
+                  <div style={ETIQUETA}>Proveedores que sostienen estas cifras</div>
+
+                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "8px" }}>
+                    {(home.fuentes.proveedores || []).map((p) => (
+                      <Chip
+                        key={p.proveedor}
+                        texto={`${p.proveedor} · ${p.apariciones}`}
+                        color="var(--sentinel-cyan)"
+                      />
+                    ))}
+                  </div>
+                </div>
+              </Seccion>
+
+              <Seccion
+                icono={Link2}
+                titulo="Trazabilidad de las piezas analizadas"
+                nota="De dónde salió cada dato: pieza, fuente, evidencia, fecha y procedencia del emisor."
+              >
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "900px" }}>
+                    <thead>
+                      <tr>
+                        <th style={TH}>Fuente</th>
+                        <th style={TH}>URL canónica</th>
+                        <th style={TH}>Plataforma</th>
+                        <th style={TH}>Publicada</th>
+                        <th style={TH}>Observada</th>
+                        <th style={TH}>evidenceId</th>
+                        <th style={TH}>Procedencia del emisor</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {(home.fuentes.trazabilidad || []).map((t) => (
+                        <tr key={t.evidenceId || t.canonicalUrl}>
+                          <td style={TD}>{t.fuente}</td>
+
+                          <td style={{ ...TD, fontSize: "0.68rem", maxWidth: "300px", wordBreak: "break-all" }}>
+                            <a
+                              href={/^https?:\/\//i.test(t.canonicalUrl) ? t.canonicalUrl : `https://${t.canonicalUrl}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ color: "var(--sentinel-cyan)" }}
+                            >
+                              {t.canonicalUrl}
+                            </a>
+                          </td>
+
+                          <td style={TD}>{t.plataforma || "—"}</td>
+
+                          <td style={TD}>
+                            {t.fechaPublicacion ? (
+                              fechaCorta(t.fechaPublicacion)
+                            ) : (
+                              <span title={`Valor en la fila: ${t.fechaPublicacionBruta || "ninguno"}`}>
+                                <Chip
+                                  texto={(t.fechaPublicacionEstado || "SIN EVIDENCIA").replace(/_/g, " ")}
+                                  color="#eda100"
+                                />
+                              </span>
+                            )}
+                          </td>
+
+                          <td style={{ ...TD, whiteSpace: "nowrap" }}>{fechaCorta(t.observadaEn)}</td>
+
+                          <td style={{ ...TD, fontSize: "0.66rem", color: "var(--sentinel-texto-tenue)" }}>
+                            {t.evidenceId}
+                          </td>
+
+                          <td style={{ ...TD, fontSize: "0.68rem" }}>
+                            {t.procedenciaDelEmisor || "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Seccion>
+
+              <Seccion
+                icono={ShieldCheck}
+                titulo="Aislamiento del proyecto"
+                nota={home.aislamiento.declaracion}
+              >
+                <div style={{ fontSize: "0.73rem", color: "var(--sentinel-texto-suave)", lineHeight: 1.6 }}>
+                  Proyectos con datos de Media en el Lake:{" "}
+                  {home.aislamiento.proyectosDeMediaEnLake.join(", ")}
+                  <br />
+                  Filas de otros proyectos excluidas:{" "}
+                  <strong>{home.aislamiento.filasDeOtrosProyectosExcluidas}</strong>
+                  <br />
+                  {home.cobertura?.declaracion}
+                </div>
+              </Seccion>
+            </>
+          ) : null}
+        </>
+      ) : null}
+    </div>
+  );
+}

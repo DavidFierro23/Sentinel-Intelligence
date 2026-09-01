@@ -77,15 +77,21 @@ const MODULOS = [
   },
   {
     /*
-      MEDIA-PIECE-01. No es "Media Intelligence" completo: es el
-      analisis de UNA publicacion. El menu dice lo que hace para
-      no prometer un modulo que aun no existe.
+      MEDIA-UX-HOME-01. Hasta este gate la entrada se llamaba
+      "Analizar publicación" porque eso era literalmente todo el
+      modulo, y prometer "Media Intelligence" habria sido falso.
+
+      Ahora el modulo existe: tiene home del proyecto, ranking de
+      presencia observada, candidatos x medios, amplificacion y
+      trazabilidad. "Analizar publicación" pasa a ser una de sus
+      nueve secciones, y la nota lo dice para que nadie la busque
+      donde estaba.
     */
     id: "media_pieza",
-    texto: "Analizar publicación",
+    texto: "Medios",
     icono: Newspaper,
     estado: "operativo",
-    nota: "Media Intelligence · análisis de una pieza con evidencias y límites declarados."
+    nota: "Media Intelligence · presencia observada, amplificación y evidencias del proyecto. «Analizar publicación» es una herramienta interna del módulo."
   },
   {
     id: "configuracion",

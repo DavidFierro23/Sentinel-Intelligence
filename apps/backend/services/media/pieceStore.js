@@ -1,6 +1,7 @@
 // apps/backend/services/media/pieceStore.js
 
 import {
+  abrirLake,
   escribirEnLake,
   escribirLoteEnLake,
   obtenerHistorialEntidad
@@ -341,24 +342,74 @@ export async function historialDePieza(canonicalUrl, opciones = {}) {
       tipoEntidad: TIPOS_ENTIDAD.PUBLICACION
     });
 
-    const delLake = (h?.versiones || h?.registros || [])
-      .map((v) => v?.datos || v)
+    /*
+      -------------------------------------------------------
+      MEDIA-UX-HOME-01 — los snapshots se leen del INDICE
+
+      `obtenerHistorialEntidad` devuelve el historial de
+      VERSIONES: version, hash, fechas, motivo del cambio e
+      integridad. Es lo que necesita una auditoria de cadena, y
+      NO incluye `datos`.
+
+      Asi que el filtro `clase === "snapshot"` no encontraba
+      nunca nada y el historico volvia vacio aunque el Lake
+      tuviera los snapshots guardados. El fallo era invisible
+      porque el respaldo en memoria si los tenia: dentro de una
+      misma sesion el panel se veia correcto, y solo al
+      reiniciar el backend aparecia el hueco.
+
+      Se leen los registros completos del indice por su entidad.
+      Se conserva la llamada anterior porque su `cobertura` sigue
+      siendo la que se declara al consumidor.
+
+      Se consulta ademas la clave con esquema: la misma pieza se
+      guardo bajo `https://x.com/...` antes de que
+      MEDIA-REAL-DEMO-01 estabilizara la canonica, y esas filas
+      no se borran porque el Lake es append-only.
+      -------------------------------------------------------
+    */
+    const lake = await abrirLake(opciones.lake || {});
+
+    const crudos = [
+      ...lake.indice.buscar("entidad", clave),
+      ...lake.indice.buscar("entidad", `https://${clave}`)
+    ];
+
+    const delProyecto = opciones.proyectoId
+      ? crudos.filter((r) => r.proyectoId === opciones.proyectoId)
+      : crudos;
+
+    const delLake = delProyecto
+      .map((r) => r?.datos)
       .filter((d) => d && d.clase === "snapshot");
 
     /*
       Union por snapshotId: si el Lake ya lo tiene, no se cuenta
       dos veces por estar tambien en memoria.
     */
-    const vistos = new Set(delLake.map((s) => s.snapshotId));
+    /*
+      Deduplicado por `snapshotId`: leer las dos claves puede
+      traer la misma observacion dos veces, y un snapshot
+      repetido inventaria un punto en la serie.
+    */
+    const porId = new Map();
+
+    delLake.forEach((s) => {
+      if (s?.snapshotId && !porId.has(s.snapshotId)) porId.set(s.snapshotId, s);
+    });
+
+    const unicos = [...porId.values()];
+
+    const vistos = new Set(unicos.map((s) => s.snapshotId));
 
     const union = [
-      ...delLake,
+      ...unicos,
       ...enMemoria.filter((s) => !vistos.has(s.snapshotId))
     ];
 
     return {
       encontrado: union.length > 0,
-      origen: delLake.length ? "knowledge_lake" : "memoria_del_proceso",
+      origen: unicos.length ? "knowledge_lake" : "memoria_del_proceso",
       snapshots: union.sort(
         (a, b) => new Date(a.observedAt) - new Date(b.observedAt)
       ),

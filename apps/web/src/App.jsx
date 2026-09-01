@@ -10,7 +10,7 @@ import AIRouter from "./components/AIRouter";
 import Dashboard from "./components/Dashboard";
 import ProjectsModule from "./components/ProjectsModule";
 import TerritorialModule from "./territorio/TerritorialModule";
-import MediaPieceModule from "./media/MediaPieceModule";
+import MediaIntelligenceModule from "./media/MediaIntelligenceModule";
 
 /*
 ===========================================================
@@ -368,8 +368,16 @@ export default function App() {
           */}
           {modulo === "mapa" && <TerritorialModule />}
 
-          {/* MEDIA-PIECE-01 — análisis de una publicación concreta. */}
-          {modulo === "media_pieza" && <MediaPieceModule />}
+          {/*
+            MEDIA-UX-HOME-01. La entrada de menú deja de abrir el
+            análisis de una publicación y abre el MÓDULO: su home
+            del proyecto, con «Analizar publicación» dentro como
+            herramienta interna.
+
+            El id del módulo no cambia para no romper el menú
+            definitivo ni el estado guardado de nadie.
+          */}
+          {modulo === "media_pieza" && <MediaIntelligenceModule />}
 
           {modulo === "configuracion" && (
             <div
