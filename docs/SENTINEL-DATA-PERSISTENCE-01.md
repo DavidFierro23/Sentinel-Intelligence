@@ -817,3 +817,409 @@ desde el primer día de campaña, no después:
 Ninguna de las dos limitaciones bloquea empezar hoy; ambas deben tratarse
 como trabajo de la primera semana de operación real, no como deuda técnica
 diferible indefinidamente.
+
+---
+
+# ADDENDUM — DISASTER RECOVERY PLAN
+
+Añadido en un segundo gate, con rol de Senior Staff Data Platform Engineer +
+SRE + arquitecto PostgreSQL. Principio de negocio: se debe poder perder por
+completo el equipo de desarrollo y reconstruir Sentinel en otra máquina sin
+perder código, proyectos, candidatos, assets, observaciones, snapshots,
+métricas, medios, territorio, temas, evidencias, histórico ni reportes.
+
+Todo lo que sigue es **diseño y verificación de estado actual**. No se ha
+contratado Supabase, no se ha contratado Cloudflare R2, no se ha movido
+ningún dato real, no se ha hecho push. Coste: $0. Requests externas:
+únicamente lecturas de documentación pública de Supabase y Cloudflare para
+no asumir capacidades de memoria (política explícita de este gate).
+
+## A.1 Auditoría de git remoto (solo lectura, sin credenciales impresas)
+
+```
+git remote -v
+  origin  https://github.com/DavidFierro23/Sentinel-Intelligence.git (fetch)
+  origin  https://github.com/DavidFierro23/Sentinel-Intelligence.git (push)
+
+git branch -vv
+  * dev   [origin/dev: ahead 77]  feat(territorial): expand Cuenca local source universe
+    main  [origin/main]           feat: Sentinel Intelligence Platform foundation (Milestone 1)
+
+git status
+  On branch dev, ahead of 'origin/dev' by 77 commits.
+```
+
+**CODE_OFFSITE_BACKUP: PARCIAL.**
+
+Existe un remoto real en GitHub y `main`/`dev` tienen historia empujada en
+algún punto pasado. Pero la rama de trabajo actual, `dev`, tiene **77
+commits que existen únicamente en este equipo** — incluida toda la auditoría
+de persistencia de este mismo gate y, previsiblemente, trabajo reciente de
+las otras tres terminales activas (Candidate, Territorial, Media). Si este
+equipo se pierde hoy, esos 77 commits desaparecen con él: el código en
+GitHub queda 77 commits desactualizado respecto al último estado de trabajo.
+
+**Esto se clasifica como RIESGO CRÍTICO**, no menor: no es un backup de datos
+lo que falta aquí, es la mitad del "no depender de la laptop" — el código
+mismo. La mitigación es mecánica y de bajo riesgo (`git push origin dev`),
+pero **no se ejecuta en este gate**: un push no fue solicitado explícitamente
+y esta auditoría se limita a leer y reportar, tal como exige la directiva
+original ("NO hacer push automáticamente").
+
+## A.2 Backup offsite de `apps/backend/data` (mientras JSONL sea la fuente de verdad)
+
+`apps/backend/data/` está en `.gitignore` a propósito (correcto: un backup de
+datos no debe vivir en el historial de git, que es público/compartido y no
+está pensado para binarios de gran tamaño creciente). Eso significa que hoy
+**no existe ninguna copia offsite de los datos**, solo la copia local en este
+equipo — confirmado por la ausencia total de credenciales de backup en
+`.env.example` (§9 del cuerpo principal) y de cualquier script de backup
+antes de este gate.
+
+**Preparado en este gate** (no ejecutado, requiere configuración externa
+explícita antes de poder correr):
+
+- `apps/backend/scripts/backup/backup-data-offsite.sh` — empaqueta
+  `apps/backend/data` en un `.tar.gz` con fecha, calcula SHA-256, y lo sube
+  vía `rclone` a cualquier remoto S3-compatible (R2, S3, B2, MinIO — sin
+  atarse a uno). No incluye ningún secreto: las credenciales del remoto
+  viven en la configuración propia de `rclone`, fuera del repo.
+- `apps/backend/scripts/backup/restore-data-offsite.sh` — contraparte:
+  descarga el paquete más reciente (o uno específico), **verifica el
+  checksum antes de extraer**, y nunca sobrescribe un directorio destino que
+  ya tenga contenido.
+
+Por qué `rclone` y no un SDK: evita añadir una dependencia npm nueva a
+`apps/backend/package.json`, que en este gate está fuera de alcance (cambios
+mezclados de otra terminal), y habla el mismo protocolo con cualquier
+proveedor S3-compatible — exactamente el requisito de "no vendor lock-in".
+
+**DATA_OFFSITE: NO** (script listo, remoto sin configurar todavía — esto es
+lo primero a resolver, antes que la migración a Postgres, porque cubre el
+riesgo de pérdida total mientras JSONL siga siendo la fuente de verdad).
+
+## A.3 Política de backup de PostgreSQL — Supabase (verificado en documentación oficial, no de memoria)
+
+Fuente: `supabase.com/docs/guides/platform/backups`, `supabase.com/pricing`,
+consultadas en este gate.
+
+| Capacidad | Free | Pro ($25/mes) | Team ($599/mes) | Enterprise |
+|---|---|---|---|---|
+| Backups automáticos diarios | **No** | Sí | Sí | Sí |
+| Retención de backup diario | — | 7 días | 14 días | 30 días (negociable) |
+| Point-in-Time Recovery (PITR) | No disponible | Add-on de pago | Add-on de pago | Add-on de pago |
+| Coste de PITR | — | ~$100/mes por cada ventana de 7 días (7/14/28 días = $100/$200/$400) | igual | negociable |
+
+Detalles que cambian el diseño:
+
+- **PITR sustituye al backup diario**, no lo complementa — al activarlo,
+  Supabase deja de correr el backup diario clásico porque PITR (WAL
+  continuo) ya es un superconjunto. Requiere además un add-on de cómputo
+  mínimo ("Small"), coste adicional.
+- **Restore es self-service** desde el Dashboard, sin ticket de soporte —
+  pero el proyecto queda **inaccesible durante el restore**, y la duración
+  del downtime depende del tamaño de la base. Esto debe planearse como una
+  ventana de mantenimiento, no como una operación instantánea.
+- **Los objetos de Storage API (buckets/archivos) NO están incluidos en el
+  backup de la base de datos** — solo sus metadatos. Esto confirma que la
+  estrategia de object storage (R2, §A.4) necesita su propio backup
+  independiente del backup de Postgres; no se puede asumir que "hacer backup
+  de la DB" cubre también los archivos.
+- **Free tier no tiene backups automáticos en absoluto** y los proyectos
+  gratuitos se pausan por inactividad (con aviso previo, recuperables hasta
+  un año vía dashboard). Para Sentinel esto descarta el tier Free como
+  opción seria desde el primer día de campaña real, más allá de una prueba.
+- **Exportación independiente disponible siempre**, incluso sin backups
+  gestionados: `supabase db dump --db-url <conexión> -f schema.sql` (y
+  variantes `--data-only`, `--role-only`), o `pg_dump` directo contra el
+  connection string. Esto es lo que permite una copia offsite VERDADERAMENTE
+  independiente del propio backup de Supabase — no depender de un solo
+  proveedor para tener un solo backup es el punto central del 3-2-1 (§A.6).
+- **No confirmado en la documentación oficial**: si el almacenamiento de los
+  backups de Supabase es multi-región o solo redundante dentro de una
+  región. No se asume ninguna de las dos cosas.
+
+**Recomendación de tier si Supabase se aprueba**: Pro como mínimo (no Free),
+con PITR activado antes de considerar la migración "en producción" — sin
+PITR, el RPO real de Supabase por sí solo sería de hasta 24h (backup diario),
+que es peor que el RPO propuesto en §A.7.
+
+`DB_BACKUP` y `DB_PITR` se marcan **PENDIENTE** más abajo porque hoy no
+existe ningún proyecto Postgres desplegado — esto es la política verificada
+para cuando se decida desplegarlo, no una capacidad actual.
+
+## A.4 Cloudflare R2 — durabilidad, protección y backup (verificado, no de memoria)
+
+Fuente: `developers.cloudflare.com/r2/*`, consultadas en este gate.
+
+- **Durabilidad publicada: 99.999999999% (once nueves) anual**, por erasure
+  coding + replicación **dentro de una región** (múltiples datacenters, no
+  múltiples regiones geográficas). Es una cifra única, no escalonada por
+  plan.
+- **Hallazgo importante — R2 NO tiene versionado nativo de objetos hoy.**
+  `GetBucketVersioning`/`PutBucketVersioning` figuran como no soportados en
+  la API S3-compatible de R2, y existe una petición de la comunidad pidiendo
+  esta característica, todavía sin resolver. **Esto es distinto de lo que
+  suele asumirse de un almacenamiento S3-compatible por comparación con AWS
+  S3**, y cambia el diseño: no se puede confiar en "activar versionado" como
+  protección contra sobrescritura accidental o bug de aplicación.
+- **Mitigación real disponible: Bucket Locks (WORM)** — impiden borrar o
+  sobrescribir objetos durante un periodo (o indefinidamente), por bucket o
+  por prefijo, hasta 1000 reglas, la más estricta gana. Limitación
+  relevante: **un bucket no puede vaciarse mientras tenga reglas de lock
+  activas**, así que hay que dimensionar la duración del lock con cuidado.
+  No es modo "compliance" al estilo AWS (sin legal hold verdadero) — es
+  gobernanza, no inmutabilidad regulatoria.
+- **Reglas de ciclo de vida** existen (expiración, transición a Infrequent
+  Access, limpieza de multipart incompletos) — útiles para `retention` de
+  `RAW_PROVIDER_RESPONSE`/`TEMPORARY_ARTIFACT` (§16 del cuerpo principal),
+  no para backup.
+- **No existe replicación ni backup cruzado nativo entre proveedores.**
+  Super Slurper y Sippy son herramientas de migración de ENTRADA hacia R2,
+  no de respaldo de SALIDA — replicar R2 hacia un segundo bucket/proveedor
+  requiere un script propio (el mismo patrón `rclone` de §A.2 sirve aquí
+  también, porque R2 habla S3).
+- **Egreso gratuito confirmado, sin excepción documentada por destino** — un
+  script de backup que saque datos de R2 hacia otro proveedor no paga
+  egreso por el lado de Cloudflare.
+- **Control de acceso:** tokens de API con 4 niveles; los de nivel Objeto
+  (no Admin) pueden acotarse a un bucket específico — recomendación directa
+  de esta auditoría: usar SIEMPRE tokens de objeto acotados a un bucket, no
+  tokens Admin de cuenta completa, para limitar el radio de daño de una
+  credencial comprometida.
+- **Precio orientativo:** almacenamiento estándar $0.015/GB-mes; 10 GB +
+  1M operaciones Clase A + 10M operaciones Clase B gratis al mes.
+
+**Consecuencia de diseño directa del hallazgo de versionado ausente:** dado
+que Sentinel ya diseña su Lake como append-only con claves de contenido
+(`lakeHash.js`, `evidenceId` por hash), la misma disciplina debe aplicarse a
+los objetos en R2: **nunca reescribir la misma clave de objeto**. Cada
+versión de un artefacto (captura, documento, export) debe escribirse con una
+clave nueva derivada de su hash de contenido, igual que ya hace el Lake con
+sus entidades. Esto convierte la ausencia de versionado nativo de R2 en un
+no-problema para Sentinel específicamente, porque el patrón de escritura ya
+iba a ser inmutable por diseño — pero es una regla que hay que imponer
+explícitamente en el futuro adaptador de object storage, no algo que R2 dé
+gratis.
+
+**Recordatorio explícito del gate, confirmado por lo anterior: DURABILIDAD
+≠ BACKUP.** Once nueves de durabilidad protege contra fallo de hardware de
+Cloudflare. No protege contra: borrado accidental por un humano con
+permisos, un despliegue con bug que sobrescribe/borra por clave equivocada,
+o una credencial comprometida que borra el bucket — para eso hacen falta
+Bucket Locks + tokens acotados + una copia independiente fuera de R2 (§A.6).
+
+## A.5 ¿Supabase + R2 satisfacen los requisitos reales? — evaluación, no asunción
+
+| Requisito de este gate | Supabase | Cloudflare R2 |
+|---|---|---|
+| Contrato estándar (Postgres / S3 API) | Sí, Postgres real, sin extensiones propietarias obligatorias | Sí, API S3-compatible |
+| Backup gestionado | Sí, desde Pro ($25/mes) | No aplica (es object storage, no DB) |
+| PITR | Sí, add-on de pago, ~$100–400/mes según ventana | No aplica |
+| Restore self-service | Sí, con downtime proporcional al tamaño | No aplica directamente; restaurar un objeto es una operación de copia normal |
+| Durabilidad | Estándar de Postgres gestionado (no auditado en detalle en este gate: fuera de alcance, es responsabilidad de Supabase/su proveedor cloud subyacente) | 11 nueves publicados |
+| Protección contra sobrescritura/borrado accidental | Backups + PITR cubren la DB | **No hay versionado nativo — mitigar con Bucket Locks + claves inmutables por hash** |
+| Egreso/coste para operar desde Ecuador/LATAM | Sin datacenter en la región; latencia no medida en este gate | Egreso gratuito, pero latencia tampoco medida en este gate |
+| No vendor lock-in | Alto: Postgres estándar, `pg_dump` funciona siempre | Alto: API S3 estándar, migrable a AWS S3/otros con el mismo `rclone` |
+| Coste para el tamaño actual de Sentinel (~6 MB) | Insignificante a este volumen; el coste real vendrá de cómputo/PITR, no de almacenamiento | Insignificante; probablemente dentro del tier gratuito por meses |
+
+**Conclusión de esta evaluación: Supabase + Cloudflare R2 SÍ satisfacen los
+requisitos reales encontrados** (contratos estándar, backup gestionado,
+coste bajo al volumen actual, sin lock-in duro), **con dos condiciones que
+deben cumplirse antes de declarar esto "listo para producción"**: (1) activar
+el add-on de PITR en Supabase antes de confiar en él como única fuente de
+recuperación de la DB, y (2) compensar la ausencia de versionado nativo de
+R2 con Bucket Locks + disciplina de claves inmutables por hash. Ninguna de
+las dos es una razón para descartar la combinación; ambas son configuración
+pendiente, no defectos que obliguen a buscar otro proveedor. La decisión
+final de contratar sigue siendo **DECISIÓN PENDIENTE** del usuario (§20 del
+cuerpo principal).
+
+## A.6 Estrategia 3-2-1 lógica para Sentinel
+
+No se diseña una arquitectura enterprise innecesaria — tres copias reales,
+razonables para una campaña activa:
+
+1. **Producción**: PostgreSQL en Supabase (entidades/relaciones/versiones) +
+   Cloudflare R2 (evidencia bruta, artefactos, reportes). Esta es la copia
+   "caliente", la que sirve tráfico.
+2. **Backup del propio servicio**: backups diarios + PITR de Supabase
+   (dentro de la infraestructura de Supabase, gestionados por ellos); para
+   R2, Bucket Locks sobre los prefijos de evidencia como protección contra
+   borrado, más lifecycle rules para lo temporal.
+3. **Copia/export independiente, fuera de ambos proveedores**: un `pg_dump`
+   periódico (vía `supabase db dump` o directo) subido a un bucket
+   S3-compatible DISTINTO del que sirve producción (puede ser otro bucket en
+   otra cuenta de R2, o incluso otro proveedor como Backblaze B2, usando el
+   mismo `rclone`), más el mismo mecanismo para un export de los objetos
+   críticos de R2. Esta es la copia que sobrevive aunque Supabase Y
+   Cloudflare tengan un incidente simultáneo o una cuenta se vea
+   comprometida — el escenario que un backup "dentro del mismo proveedor"
+   nunca cubre.
+
+Mientras no exista Postgres (hoy), el punto 1 es el Lake de fichero local, el
+punto 2 no existe todavía (§A.2, pendiente de configurar remoto), y el punto
+3 tampoco. Es decir: **hoy Sentinel tiene 1 de 3 copias.** Pasar de 1 a 2
+copias (configurar el remoto de `backup-data-offsite.sh`) es la acción de
+mayor impacto por menor esfuerzo de todo este addendum.
+
+## A.7 RPO / RTO propuestos (propuesta, no promesa)
+
+| | Objetivo propuesto | Justificación |
+|---|---|---|
+| **RPO** (cuánto histórico se puede permitir perder) | **≤ 24 horas mientras el Lake siga siendo JSONL en disco local** (un backup diario offsite cubre esto una vez configurado); **≤ 15 minutos una vez exista Supabase con PITR activado** | Sentinel opera con datos observables públicos que se re-observan por diseño (`evidenceLedger`, `sourceUniverseStore` vuelven a comprobar), así que perder unas horas de la ÚLTIMA observación es recuperable re-ingresando; perder DÍAS de expedientes de candidato acumulados (cuentas declaradas por analista, ejecuciones históricas) no lo es, porque esas decisiones humanas no se vuelven a generar solas. |
+| **RTO** (cuánto tiempo para recuperar servicio) | **≤ 4 horas para un equipo de desarrollo nuevo con el código ya en GitHub** (clonar, instalar, restaurar el backup de datos más reciente, levantar); **el downtime del restore de Supabase mismo queda fuera de este número** porque lo determina el tamaño de la base en el momento y Supabase no lo garantiza | No se promete un SLA comercial. 4 horas es razonable para un equipo pequeño sin guardia 24/7, asumiendo que el código YA está en GitHub (lo cual hoy NO es cierto del todo, §A.1) y que existe un backup de datos offsite reciente (lo cual hoy tampoco es cierto, §A.2). |
+
+Estos números son alcanzables **una vez** se resuelvan los dos huecos
+marcados PENDIENTE/NO en el estado final (§A.9) — no son una descripción de
+la capacidad de recuperación actual, que hoy es peor que esto.
+
+## A.8 Secretos — qué necesita recuperación, sin leer ni imprimir ninguno
+
+Inventario conceptual, por nombre de variable únicamente, tomado de
+`apps/backend/.env.example` (plantilla pública, sin valores):
+
+- `SERPAPI_KEY`, `BRAVE_API_KEY`, `YOUTUBE_API_KEY` — proveedores de
+  búsqueda/plataforma.
+- `INSTAGRAM_ACCESS_TOKEN`, `FACEBOOK_USER_ACCESS_TOKEN`, `META_APP_ID`,
+  `META_APP_SECRET` — familia Meta, dos tokens NO intercambiables (ver
+  comentarios del propio `.env.example`).
+- Futuras, comentadas y no activas: `BRIGHTDATA_API_KEY`, `DATA365_API_KEY`.
+- Futuras, no existentes todavía pero necesarias tras este addendum: la
+  cadena de conexión de Postgres (Supabase) y las credenciales de R2 (Access
+  Key ID + Secret, o el token de R2 acotado a bucket recomendado en §A.4),
+  más la configuración de `rclone` (`rclone.conf`) que usan los scripts de
+  §A.2.
+
+**Hallazgo de esta auditoría, sin leer su contenido:** existe un
+`apps/backend/.env.bak` en disco (visible en el listado de archivos, no
+abierto ni leído para esta auditoría). Es una copia sin cifrar de secretos,
+en `.gitignore` (correcto, no está en git), pero **es exactamente el tipo de
+archivo que desaparece si se pierde la laptop** — un backup de secretos que
+solo existe en el mismo disco que se supone que estamos protegiendo contra
+pérdida no cumple ninguna función de disaster recovery.
+
+**Recomendación** (no implementada, requiere decisión y acceso del usuario):
+mover la fuente de verdad de secretos a un gestor dedicado con backup propio
+— opciones razonables para el tamaño de Sentinel: 1Password/Bitwarden con
+un "vault" de equipo (bajo coste, ya resuelve compartir credenciales entre
+terminales/personas), o variables de entorno gestionadas del propio
+proveedor de despliegue si Sentinel llega a desplegarse en un servicio
+gestionado (Railway/Render/Fly.io u otro) en vez de en la laptop. Lo mínimo
+no negociable: que las credenciales necesarias para reconstruir Sentinel NO
+vivan exclusivamente en `C:\Users\David\...`.
+
+## A.9 Runbook — "laptop completamente perdida/robada/destruida"
+
+Procedimiento exacto, con los comandos reales del repo (`package.json` raíz
+y de `apps/web`), asumiendo que para cuando esto se necesite ya se resolvió
+§A.1 (push pendiente) y §A.2 (backup offsite configurado):
+
+1. **Adquirir/nuevo equipo** con Node.js instalado (versión compatible con
+   `apps/web` — React 19 / Vite; no se fija aquí una versión exacta porque
+   ninguno de los `package.json` del repo declara `engines`, hallazgo en sí
+   mismo a corregir en un gate de tooling).
+2. **Clonar repo remoto**: `git clone https://github.com/DavidFierro23/Sentinel-Intelligence.git`
+   → esto solo recupera el código si §A.1 se resolvió (push hecho) antes de
+   la pérdida. Verificar con `git log -1` que el commit más reciente
+   coincide con lo esperado.
+3. **Instalar dependencias**: `npm install` en la raíz (workspaces),
+   confirmando que `apps/backend/package.json` y `apps/web/package.json` se
+   resuelven sin error.
+4. **Recuperar secretos de forma segura**: desde el gestor de secretos
+   propuesto en §A.8 (NO desde ningún `.env.bak` de la laptop perdida, que
+   por definición ya no existe) — reconstruir `apps/backend/.env` a partir
+   de `apps/backend/.env.example` con los valores reales.
+5. **Conectar DB**: configurar la cadena de conexión de Supabase recuperada
+   en el paso 4. Confirmar conectividad con una consulta trivial antes de
+   continuar.
+6. **Conectar object storage**: configurar credenciales de R2 recuperadas en
+   el paso 4, y la configuración de `rclone` para los scripts de §A.2.
+7. **Restaurar backup si producción también sufrió pérdida/corrupción**:
+   - Datos JSONL (mientras sigan siendo la fuente de verdad):
+     `apps/backend/scripts/backup/restore-data-offsite.sh apps/backend/data`
+   - Postgres (una vez migrado): restore de Supabase vía Dashboard (con
+     downtime esperado, §A.3) o `pg_restore` desde el `pg_dump` más reciente
+     de la copia independiente (§A.6, punto 3) si el incidente afectó a
+     Supabase mismo.
+   - R2: copiar de vuelta desde la copia independiente (§A.6, punto 3) los
+     prefijos afectados.
+8. **Validar checksums/counts**: comparar `sha256sum` del paquete restaurado
+   contra el `.sha256` subido junto a él (automático dentro de
+   `restore-data-offsite.sh`), y contar líneas JSONL por almacén
+   (`find data -name "*.jsonl" -exec wc -l {} +`) contra el conteo esperado
+   antes de la pérdida (documentado en el último backup exitoso, §A.2). No
+   se declara un restore exitoso solo porque "no dio error".
+9. **Levantar backend**: `npm run dev:backend` desde la raíz (equivalente a
+   `node server.js` dentro de `apps/backend`).
+10. **Levantar frontend**: `npm run dev:web` desde la raíz (Vite).
+11. **Comprobar proyectos e histórico**: abrir la interfaz, listar proyectos
+    (`listarProyectos()`), abrir el contenido de al menos un proyecto
+    conocido (`contenidoDeProyecto()`) y confirmar que candidatos,
+    expedientes y ejecuciones coinciden con lo esperado antes del incidente
+    — el mismo tipo de verificación que ya hace
+    `tests/persistencia.test.mjs`, pero contra el dato real restaurado, no
+    contra un fixture.
+
+**Objetivo futuro explícito, aún no alcanzado**: que ningún paso de este
+runbook dependa de un fichero exclusivo de `C:\Users\David\...`. Hoy el paso
+4 (secretos) y, mientras no se configure §A.2, el paso 7 (backup de datos),
+SÍ dependen de esta máquina. Ese es precisamente el hueco que este addendum
+existe para cerrar.
+
+## A.10 Escenarios de recuperación adicionales (más allá de "laptop perdida")
+
+- **Pérdida/corrupción de la DB (una vez exista Postgres)**: restore vía
+  PITR de Supabase al segundo anterior al incidente (si el add-on está
+  activo) o al backup diario más reciente (si no). Downtime esperado según
+  §A.3. Verificar con `lakeReader.verificarTodo()`-equivalente sobre
+  Postgres (a diseñar en el siguiente gate) antes de reabrir tráfico.
+- **Borrado accidental** (de un objeto en R2, o de una fila en Postgres):
+  para R2, un objeto protegido por Bucket Lock no puede haberse borrado
+  mientras la regla estuviera activa — si se borró, es que no había regla
+  cubriéndolo, lo cual es en sí mismo un hallazgo de configuración a
+  corregir. Para Postgres, el append-only del modelo del Lake (§14 del
+  cuerpo principal) significa que un "borrado" de negocio ya es lógico
+  (marcar `estado: eliminado`), no físico — un DELETE físico accidental
+  sobre `lake_records` sería un incidente de operación, cubierto por PITR.
+- **Pérdida de object storage completo (bucket eliminado)**: cubierto
+  únicamente por la copia independiente de §A.6 punto 3 — ni la durabilidad
+  de 11 nueves ni los Bucket Locks protegen contra el borrado del bucket
+  entero por quien tiene permisos de administrador de cuenta, que es
+  exactamente por qué el punto 3 debe vivir en una cuenta/proveedor distinto.
+- **Credencial comprometida**: mitigado por el uso de tokens R2 acotados a
+  un bucket (§A.4) en vez de tokens Admin — limita qué puede hacer un
+  atacante con una sola credencial filtrada. Para Postgres, credenciales de
+  aplicación con privilegios mínimos (no el rol de superusuario de Supabase)
+  para el uso cotidiano del backend.
+- **Corrupción del Lake de fichero (mientras siga en uso)**: ya cubierto en
+  el cuerpo principal (§8 original): las líneas corruptas se descartan en
+  lectura, no se reparan. La única recuperación real es el backup offsite
+  de §A.2 — no existe reparación en el propio formato JSONL.
+- **Rollback de una migración** (Fase F/G de §18 del cuerpo principal): el
+  adaptador de fichero permanece disponible y con los datos intactos durante
+  el periodo de gracia — volver a `SENTINEL_LAKE_ADAPTER=fichero` es
+  reversible mientras esa fase no se cierre formalmente.
+
+## A.11 Estado de Disaster Recovery — no se declara nada "protegido" sin prueba
+
+| Estado | Valor | Motivo |
+|---|---|---|
+| `CODE_OFFSITE` | **PARCIAL** | remoto existe, pero 77 commits de `dev` solo están en este equipo (§A.1) |
+| `DATA_OFFSITE` | **NO** | script listo (§A.2), remoto sin configurar |
+| `DB_BACKUP` | **PENDIENTE** | Supabase no contratado todavía; política verificada (§A.3), no activa |
+| `DB_PITR` | **PENDIENTE** | depende de `DB_BACKUP`; es un add-on de pago, no incluido por defecto |
+| `OBJECT_DURABILITY` | **PENDIENTE** | R2 no contratado todavía; la cifra de 11 nueves es de Cloudflare, no de una cuenta operativa de Sentinel |
+| `OBJECT_BACKUP` | **PENDIENTE** | depende de `OBJECT_DURABILITY`; requiere Bucket Locks + copia independiente, ninguno configurado |
+| `RESTORE_TESTED` | **NO** | no se ha ejecutado ningún restore real, ni siquiera del fixture de fichero, contra un backup subido a un remoto real (§11 del cuerpo principal probó reinicio de proceso, que es distinto de restore desde backup offsite) |
+| `DISASTER_RECOVERY_READY` | **NO** | por regla explícita de este gate: no se declara Sentinel protegido hasta que `RESTORE_TESTED = SI`, y ni siquiera existe hoy un backup real que probar |
+
+**Esto no es un fallo de este gate — es exactamente lo que una auditoría
+honesta debe decir en el punto en que Sentinel está hoy: el diseño y las
+herramientas están listas (scripts, política verificada, arquitectura
+evaluada), pero nada de la protección real existe todavía porque nada de la
+infraestructura offsite se ha contratado ni configurado.** El siguiente gate
+debe cerrar, en este orden de prioridad por impacto/esfuerzo: (1) `git push`
+del código pendiente, (2) configurar el remoto de `backup-data-offsite.sh` y
+correrlo una vez, (3) decidir y contratar Supabase + R2, (4) ejecutar un
+restore real de prueba y solo entonces recalificar `RESTORE_TESTED`.
