@@ -9,10 +9,10 @@
 
 | Campo | Valor comprobado |
 |---|---|
-| Fecha de actualización | **2026-09-01** (última sección territorial: §13-sexdecies) |
+| Fecha de actualización | **2026-09-01** (última sección territorial: §13-septdecies) |
 | Rama | `dev` |
 | Último commit **base** de esta actualización | `a369ed2` — *feat(candidate): close Facebook coverage assessment* (Terminal 1 comiteó 4 veces mientras se cerraba este gate) |
-| Último commit **territorial** | `4e4c6ef` — *feat(territorial): audit open listening source coverage* → le sigue el de §13-sexdecies |
+| Último commit **territorial** | `6ba1d7c` — *feat(territorial): expand Cuenca local source universe* → le siguen los de §13-septdecies |
 | Versión monorepo | `sentinel-intelligence-platform` 0.1.0 |
 | Versión backend | `sentinel-backend` 1.0.0 |
 | Versión frontend | `web` 0.0.0 (sin versionar) |
@@ -2480,6 +2480,127 @@ por agregador, 3 fallidas al registro oficial, 18 lecturas de feed. Nada de pago
 
 ---
 
+## 13-septdecies. TERRITORIAL-OPEN-LISTENING-EXPANSION-01 — escucha abierta (2026-09-01)
+
+✅ Dos vías de escucha nuevas a coste cero, más una dimensión de actor que se estaba
+tirando. Documento: **`docs/TERRITORIAL-OPEN-LISTENING-EXPANSION-01.md`**.
+
+### La distinción que decide todo: DISCOVERY ≠ OBSERVATION
+
+Candidate parte de un nombre y observa su cuenta. **Territorial no sabe a quién
+buscar.** Auditados los ocho motores del repositorio con esa lente:
+
+| motor | credencial | discovery |
+|---|---|---|
+| `youtubeAdapter` | **SIN_CREDENCIAL** | **`buscar()` existe y funciona** |
+| `xAdapter` | **SIN_CREDENCIAL** | **`search/recent` existe**, ventana 7 días |
+| `duckProvider` | **no requiere · OK** | **la única ruta web operativa hoy** |
+| `braveProvider` · `serpapiProvider` | sin configurar | web abierta |
+| `tiktokAdapter` | no requiere | **oEmbed: solo confirma una URL que ya tienes** |
+| `instagramAdapter` | SIN_CREDENCIAL | activos conocidos |
+| ScrapeCreators (`socialProviderClient`) | bandera **apagada** | — |
+
+> **El código de discovery para YouTube y X ya existe.** Falta la llave, no el conector.
+> Eso cambia el orden de prioridades: no hay que construir, hay que habilitar.
+
+Y sobre ScrapeCreators, auditado su mapper: `perfilDe*`, `publicacionesDe*`,
+`comentariosDe*`. **Todo es observación de activos conocidos; no hay una sola función de
+búsqueda.** Es excelente para lo que hace y no responde a *¿quién importa en Cuenca?*
+**0 créditos gastados**: la auditoría del código resolvió la pregunta.
+
+### Las firmas: se perdía el 100 %
+
+`rssAdapter` extraía el autor desde INGEST-REAL-01 y el libro lo descartaba al
+persistir. Medido sobre cuatro feeds locales: **40 de 40 items lo declaran**.
+
+Ahora se persiste: **208 de 353 evidencias con firma, 63 firmas en 16 medios**, 54
+clasificadas como persona.
+
+**Firma no es periodista.** Los feeds devuelven personas —«Andrés Mazza»—, secciones
+—«Redes Sociales»— y etiquetas de sistema. La promoción a PERSONA exige respaldo del
+clasificador y su confianza viaja con el veredicto, porque falla de forma visible.
+
+**Privacidad — un problema que el gate creó y corrigió.** La primera pasada persistió
+un correo en el campo de autor. Se minimiza al persistir: usuario sí, dominio no. Una
+firma guarda nombre publicado, medio y piezas, y nada más.
+
+### Descubrimiento por búsqueda web: lo que el RSS no podía encontrar
+
+Tres consultas a DuckDuckGo, sin credencial, **coste 0** → 17 dominios nuevos. Cuatro
+comprobados por HTTP y con feed:
+
+| fuente | hueco que cierra |
+|---|---|
+| **Club Deportivo Cuenca** | **deporte local** |
+| **Dirección General de Cultura de Cuenca** | **cultura y agenda de eventos** |
+| **Casa de la Cultura · Núcleo del Azuay** | **cultura** |
+| **Agencia Universitaria de Noticias** | **universidad** |
+
+Aparecieron además **activos sociales públicos** de actores locales —Deportivo Cuenca en
+FB/YouTube/IG, UCuenca en X—. Ese es el patrón viable: **Duck descubre la cuenta,
+ScrapeCreators la observa.**
+
+> **La trampa propia de la búsqueda por texto:** las mismas consultas devolvieron
+> `ociocuenca.es` y `agendacultural.castillalamancha.es`, que son **Cuenca de ESPAÑA**.
+> Un descubridor por texto no distingue cantones homónimos. Ninguna fuente entra sin
+> comprobación ni sin que un analista declare su ámbito.
+
+### Expansión por enlaces: hipótesis descartada con medición
+
+319 evidencias, **2 URLs sociales** en `canonicalUrl` y **0** en los resúmenes. Los
+extractos de RSS no llevan enlaces. Barato de comprobar, barato de descartar.
+
+### Antes / después
+
+| | antes | después |
+|---|---|---|
+| Evidencias | 319 | **353** |
+| Observaciones | 922 | **1.154** |
+| Dominios · actores | 14 · 14 | **18 · 18** |
+| **Firmas** | **0** | **63** en 16 medios |
+| Fuentes locales con feed | 9 | **12** |
+| Feeds elegibles | 15 | **19** |
+| **A · territorio explícito** | 127 | **155** |
+| C · nacional | 180 | 186 |
+| D · no resoluble | 0 | **0** |
+| Plataformas | web | **web** |
+
+Las 34 evidencias nuevas vinieron **íntegras** de las cuatro fuentes descubiertas. Las
+pasadas siguientes: 0 nuevas y 198 duplicadas.
+
+**SOURCE_DOMINANCE_RISK: no.** La fuente principal bajó al 22 % —estaba en 27 %—: la
+diversificación reduce la dominancia.
+
+### Matriz: 20 dimensiones
+
+**4 OPERATIVO · 6 PARCIAL · 6 NO_PROBADO · 3 NO_DISPONIBLE · 1 REQUIERE_PROVEEDOR.**
+«Periodistas» pasa de `NO_PROBADO` a **`PARCIAL`** —y no a OPERATIVO: la promoción es
+heurística y hay 145 piezas sin firma—.
+
+### Proveedores
+
+**GDELT: su argumento se debilita más.** El geo ya no es el cuello de botella —A pasó
+de 107 a 155 en dos gates sin proveedor—. Queda el histórico, por BigQuery.
+
+**Data365: sigue justificado, sin cambios.** El gate **confirmó que no hay
+alternativa**: ninguna plataforma del stack permite descubrimiento por territorio.
+
+**No se investigaron proveedores adicionales**: los gaps restantes se cubren con
+credenciales de YouTube y X, cuyo código ya existe.
+
+### Escalabilidad
+
+RSS 24/7: **0 USD**. YouTube: 100 de 10.000 unidades por búsqueda. X: **DESCONOCIDO**,
+depende del nivel. Brave y Data365: **REQUIEREN COTIZACIÓN**. Las cifras desconocidas
+**no se inventan**.
+
+### Pruebas y coste
+
+`territorial-listening` **31** nuevo · territorial **802** en 13 suites · SSR 127.
+**Coste 0 USD**, 0 créditos, ~160 peticiones HTTP públicas.
+
+---
+
 ## 13-decies. Roadmap territorial
 
 Orden oficial:
@@ -2500,6 +2621,7 @@ Orden oficial:
 🟡 TERRITORIAL-ACCELERATION-02      RSS al ledger · proyecto · proveedores · UX — PARCIAL: sin certificación visual
 ✅ TERRITORIAL-SOURCE-COVERAGE-01  Radiografía de la escucha · 20 dimensiones resueltas
 ✅ TERRITORIAL-LOCAL-SOURCE-EXPANSION-01  Universo local 6→9 fuentes con feed
+✅ TERRITORIAL-OPEN-LISTENING-EXPANSION-01  Discovery web · firmas · deporte y cultura
 →  1.  Primera prueba real multifuente        ← siguiente, EXIGE CREDENCIALES
    2.  DATA-PROVIDER-EVAL real
    3.  Ampliar providers donde el benchmark demuestre valor
@@ -2582,7 +2704,7 @@ Evaluaciones registradas: **`DATA-PROVIDER-EVAL-01`** (estructura definida, ning
 
 | 54 | **Fuentes locales con feed: 9** | que la señal territorial sea local | 🟡 **MEJORADO** (§13-sexdecies): de 6 a 9, y territorio explícito de 107 a 127. Lo que queda ya **no se cierra sin proveedor**: 9 sitios comprobados no publican feed —incluido `cuenca.gob.ec`— y el registro oficial de medios es inalcanzable desde esta máquina |
 | 55 | **Cero creadores, comunidades y comentarios** | escucha no mediática | 🔴 tres dimensiones en `NO_DISPONIBLE`. No hay descubrimiento social por territorio: no se puede preguntar «qué se publica en Cuenca» a ninguna plataforma. Requiere proveedor |
-| 56 | **Periodistas sin extraer del campo autor** | actores individuales | 🟡 los feeds declaran autor a veces y **no se procesa**. La señal ya está en los datos: es trabajo propio, no un proveedor |
+| 56 | ~~Periodistas sin extraer del campo autor~~ | — | ✅ **RESUELTO** (§13-septdecies): 40 de 40 items de feeds locales declaran autor y se estaba tirando el 100 %. Ahora **63 firmas en 16 medios**, con minimización de correos y sin construir perfiles |
 | 57 | **La clasificación de entidades es heurística y falla visiblemente** | separar quién de qué | 🟡 tipa «Barcelona SC» como PERSON por ser dos palabras capitalizadas. Se expone con su confianza en lugar de ocultarse, pero no está verificada |
 | 58 | **`territorial-coverage` fuera de `test:territorial`** | ejecución automática | 🟡 `package.json` tenía cambios sin commitear de otra línea y el gate prohíbe tocarlo mezclado. Registrarla cuando el fichero esté limpio |
 
@@ -2591,6 +2713,13 @@ Evaluaciones registradas: **`DATA-PROVIDER-EVAL-01`** (estructura definida, ning
 | 61 | **Registro oficial de medios del Ecuador inalcanzable** | contrastar el catálogo contra una fuente autoritativa | 🔴 el Consejo de Comunicación publica el listado en PDF y da `UND_ERR_CONNECT_TIMEOUT` en tres URLs. **Accionable por el usuario**: descargarlo y pasarlo |
 | 62 | **403 señales para 319 evidencias** | que la agenda sea legible | 🔴 el cuello de botella se ha movido de las fuentes a la señal. Mitigado clasificando `GENERICO`, pero persisten residuos verbales que **exigen diseño del motor**: `TERRITORIAL-TOPIC-NORMALIZATION-01` |
 | 63 | **`territorial-coverage` y `territorial-expansion` fuera de `test:territorial`** | ejecución automática | 🟡 `package.json` sigue con cambios sin commitear de otra línea. Se ejecutan a mano |
+
+| 64 | **YouTube y X tienen discovery en el código y NO tienen llave** | dos dimensiones enteras | 🔴 `youtubeAdapter.buscar()` y `xAdapter.buscarMenciones()` existen y están probados en Candidate. **No hay que construir nada**: falta `YOUTUBE_API_KEY` y la credencial de X. Es el gate de mayor valor por unidad de esfuerzo |
+| 65 | **ScrapeCreators no puede descubrir, solo observar** | creadores y comunidades | 🟡 auditado su mapper: perfil, publicaciones y comentarios de activos CONOCIDOS. Cero funciones de búsqueda. Encaja **después** de que la búsqueda web descubra la cuenta |
+| 66 | **La búsqueda por texto no distingue cantón homónimo** | fiabilidad del descubrimiento | 🟡 medido: `ociocuenca.es` y `agendacultural.castillalamancha.es` son Cuenca de España. Mitigado exigiendo comprobación HTTP y declaración de ámbito por analista |
+| 67 | **La clasificación de firma a persona es heurística** | fiabilidad de la dimensión periodistas | 🟡 tipa «Publicacion Noticias» como PERSONA. Se expone con su confianza; verificar contra los propios medios queda pendiente |
+| 68 | **452 señales para 353 evidencias** | legibilidad de la agenda | 🔴 la fragmentación empeora cada vez que crece el corpus. Sigue exigiendo diseño del motor: `TERRITORIAL-TOPIC-NORMALIZATION-01` |
+| 69 | **`SENTINEL_PROJECT_STATE.md` se está reescribiendo desde copias obsoletas** | integridad del documento maestro | 🔴 dos veces en dos gates el árbol de trabajo apareció con cientos de líneas borradas de secciones **ya commiteadas** —de Media y de Territorial—. Los commits territoriales se hacen por hunk desde HEAD para no propagarlo, pero **conviene revisar qué proceso lo reescribe** |
 
 `POST /api/territorio/recargar` integra 1–4 **sin reiniciar el backend y sin
 cambiar arquitectura**.
