@@ -8154,6 +8154,140 @@ y no un hueco.
 
 ---
 
+## 18-quadriquadragies. SOCIAL-PROVIDER-REAL-02 (2026-08-31)
+
+**1311 comprobaciones, 32 suites, 0 fallos.** **8 requests · 8 creditos · 86
+restantes · 0 USD.** Bright Data no se toco.
+
+Entregable: `docs/SOCIAL-PROVIDER-REAL-02-SCRAPECREATORS.md`.
+
+### Lo que cierra
+
+Los tres huecos que Candidate Intelligence arrastraba desde P-CAND-FACEBOOK-01
+y P-CAND-TIKTOK-01 quedan **medidos con datos reales**, sobre activos del
+proyecto piloto, por el adapter generico y persistidos en el Lake:
+
+    Facebook de terceros    MEDIDO_PROVEEDOR
+    TikTok con metricas     MEDIDO_PROVEEDOR
+    Texto de comentarios    MEDIDO_PROVEEDOR   en las DOS plataformas
+
+**Es la primera vez que Sentinel tiene texto de comentarios de alguna
+plataforma.** Instagram lo niega con 400 code 100, Facebook oficial lo bloquea
+por permisos y TikTok no tiene via publica. Comments Intelligence pasa de «sin
+fuente» a «con fuente».
+
+### Facebook — Pedro Palacios, 3 llamadas
+
+Perfil: id estable `100044226859609`, **57.000 seguidores** y **57.624 likes**,
+que son cifras distintas y no se funden. Tres publicaciones con reacciones y
+comentarios reales.
+
+**El desglose de reacciones por tipo llega, y no es adorno.** En una
+publicacion: `like 173` frente a **`haha 325`**. Mas «haha» que «me gusta», y
+un `reactionCount: 508` agregado lo habria escondido entero.
+
+Comentarios: **10 observados de 122 declarados**, 8 con texto, cobertura
+`MUESTRA`. Los otros 2 llegaron sin texto y **no se determino** si son
+comentarios de solo imagen o un limite del proveedor, asi que se cuentan
+aparte en lugar de darlos por buenos.
+
+### TikTok — Yaku Perez, 3 llamadas
+
+Perfil: id estable, **519.300 seguidores**, 58 siguiendo, 5,2 M de likes, 357
+videos. Exactamente lo que oEmbed no daba: P-CAND-TIKTOK-01 cerro con
+«identidad si, metricas no», y esto cierra la otra mitad.
+
+Diez videos con las cuatro metricas —views, likes, comentarios y shares—.
+Comentarios: **20 observados de 110**, los 20 con texto.
+
+**TikTok si entrega shares; Facebook no.**
+
+### Rerun — 2 llamadas
+
+    publicaciones        3 -> 3    SIN DUPLICAR
+    publicationId        estables
+    firstObservedAt      ESTABLE
+    lastObservedAt       AVANZA
+    observationCount     1 -> 2
+    commentId TikTok     20 de 20 comunes
+
+**Los IDs del proveedor son estables.** Unos IDs inestables convertirian cada
+ejecucion en datos nuevos y el historico se volveria basura sin avisar.
+
+### Tres ausencias que NO son la misma
+
+Es lo que mas facil se colapsa, y colapsarlo haria creer que Facebook «no da»
+lo mismo en tres casos distintos:
+
+    shares         UNSUPPORTED   el endpoint no tiene el campo
+    video_views    NO_DATA       se pidio sobre TRES videos reales
+                                 y volvio null las tres veces
+    historical     UNVERIFIED    no se pagino: no se sabe
+
+### Capacidades promovidas, una a una
+
+ScrapeCreators pasa a **SUPPORTED** en 6 capacidades de Facebook y 10 de
+TikTok. Instagram entero sigue `UNVERIFIED_PROVIDER` porque **no se probo**, y
+`historical` sigue sin verificar en las dos.
+
+Aprobar y verificar a ScrapeCreators **no movio a nadie mas**: Bright Data,
+SocialCrawl y Data365 siguen sin aprobar y con cero capacidades medidas, con
+test que lo comprueba.
+
+### Lo que esto NO demuestra
+
+- **No es cobertura de los 7 candidatos.** Se midieron **dos activos**; el
+  resto sigue `REQUIERE_PROVEEDOR` hasta ser observado.
+- **No es cobertura historica.**
+- **No es el corpus completo de comentarios**: 10 de 122 y 20 de 110 son
+  muestras, y el contrato lo dice en el propio dato.
+- **No cubre Instagram** ni perfiles personales de Facebook.
+
+### El proveedor no bajo al dominio
+
+    socialProviderClient (generico)
+      -> scrapeCreatorsMapper (capa de proveedor)
+      -> externalSocialProvider (normalizador)
+      -> contratos de publicacion / comentario / snapshot
+      -> Knowledge Lake
+
+`candidateObservation` y la matriz social **no saben que ScrapeCreators
+existe**. El unico archivo con conocimiento del proveedor es el mapper, que es
+su sitio.
+
+Dos cosas que la documentacion no decia y costaron una llamada: con
+`trim=true` los videos traen `url` y **no** `share_url`, y las fechas vienen en
+tres formatos —unix en posts de Facebook y en TikTok, ISO en comentarios de
+Facebook—. Las dos quedan resueltas en el mapper y escritas para que no cuesten
+otra.
+
+### Aprobacion y seguridad
+
+La aprobacion es un **cambio de codigo con fecha y gate**, no una variable de
+entorno, para que quede en el historial. Alcanza solo a ScrapeCreators.
+
+La clave se lee del entorno y **no aparece** en la URL, el resultado, la traza,
+el error, lo persistido ni la documentacion. Verificado sobre el volcado crudo
+y sobre lo escrito en el Lake.
+
+Aislamiento de proyecto comprobado: el dato real de Cuenca no aparece en
+ninguno de los otros 5 proyectos del Lake.
+
+### Riesgos
+
+- ScrapeCreators **raspa web publica y no es proveedor licenciado**. Va contra
+  los ToS aunque el dato sea publico. La citabilidad si se conserva: los
+  permalinks son canonicos.
+- **Un proveedor puede desaparecer sin aviso**, como acaba de hacer Bright
+  Data. Por eso el cliente es generico y el mapper es reemplazable.
+- Al escalar, el comentario mandara el coste: 1 credito devuelve 10-20
+  comentarios, asi que un corpus completo exige paginar.
+- `apps/backend/package.json` sigue mezclando lineas de T1 y T3, asi que se
+  dejo **sin commitear**. Las suites nuevas estan registradas en disco y
+  corren.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -8661,6 +8795,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-31 | SOCIAL-PROVIDER-REAL-02 | ScrapeCreators validado con datos reales desde Sentinel: 8 requests, 8 creditos, 86 restantes y 0 USD, sin tocar Bright Data. Cierra los tres huecos que Candidate arrastraba: Facebook de terceros, TikTok con metricas y —por primera vez en cualquier plataforma— TEXTO DE COMENTARIOS, con lo que Comments Intelligence pasa de «sin fuente» a «con fuente». Facebook Pedro Palacios en 3 llamadas: perfil con id estable, 57.000 seguidores y 57.624 likes que son cifras distintas y no se funden, tres publicaciones con reacciones y comentarios reales, y un desglose de reacciones por tipo que no es adorno —en una publicacion haha 325 supera a like 173, y un reactionCount agregado de 508 lo habria escondido entero—; comentarios 10 observados de 122 declarados, 8 con texto, y los 2 restantes contados aparte porque no se determino si son de solo imagen o un limite del proveedor. TikTok Yaku Perez en 3 llamadas: id estable, 519.300 seguidores, 5,2 M de likes y 357 videos —exactamente lo que oEmbed no daba, cerrando la otra mitad de P-CAND-TIKTOK-01—, diez videos con views, likes, comentarios y shares, y 20 comentarios de 110 todos con texto; TikTok si entrega shares y Facebook no. Rerun de 2 llamadas: sin duplicar, publicationId y commentId estables, firstObservedAt inmovil, lastObservedAt avanzando y observationCount subiendo, que es lo que de verdad decide porque unos IDs inestables convertirian cada ejecucion en datos nuevos. Tres ausencias que NO son la misma y que colapsadas harian creer que Facebook no da lo mismo en tres casos distintos: shares UNSUPPORTED porque el endpoint no tiene el campo, video_views NO_DATA porque se pidio sobre tres publicaciones que SI eran video y volvio null las tres veces, e historical UNVERIFIED porque no se pagino. Capacidades promovidas una a una: 6 de Facebook y 10 de TikTok a SUPPORTED, Instagram entero sigue sin verificar porque no se probo, y aprobar a ScrapeCreators no movio a Bright Data, SocialCrawl ni Data365, con test que lo comprueba. Lo que NO demuestra, dicho explicitamente: no es cobertura de los 7 candidatos —se midieron dos activos—, no es historico, y los corpus de comentarios son muestras y no el universo. El proveedor no bajo al dominio: candidateObservation y la matriz social no saben que existe, y el unico archivo con conocimiento especifico es el mapper. Dos cosas que la documentacion no decia y costaron una llamada: con trim=true los videos traen url y no share_url, y las fechas vienen en tres formatos distintos segun endpoint. La aprobacion del proveedor es un cambio de codigo con fecha y gate y no una variable de entorno, para que quede en el historial. La clave no aparece en URL, resultado, traza, error, persistencia ni documentacion, verificado sobre el volcado crudo y sobre el Lake, y el aislamiento de proyecto se comprobo contra los otros 5 proyectos. Riesgo declarado: raspa web publica, no es proveedor licenciado, y un proveedor puede desaparecer sin aviso como acaba de hacer Bright Data. package.json quedo sin commitear por seguir mezclando lineas de T1 y T3. 1311 pruebas, 0 fallos. Nueva §18-quadriquadragies y docs/SOCIAL-PROVIDER-REAL-02-SCRAPECREATORS.md. |
 | 2026-08-31 | SOCIAL-PROVIDER-ALTERNATIVE-01 | Bright Data deja de ser camino critico: la cuenta sigue suspendida pese a la verificacion enviada y queda registrada en el codigo como BLOQUEADO_POR_PROVEEDOR, con 0 requests y 0 USD; no es un fallo de Sentinel ni del adapter ni del activo de Pedro Palacios, porque nunca se llego a hacer una llamada. El criterio que ordeno la busqueda dejo de ser quien tiene mejor cobertura y paso a ser a quien puedo probar hoy, y ese corte —alta autoservicio frente a llamada comercial previa— decide mas que cualquier tabla de features. Tres evaluados: ScrapeCreators queda #1 porque cubre los cuatro huecos con endpoints verificados uno a uno en documentacion publica con OpenAPI —Facebook profile, posts, comments y comment replies; TikTok profile, videos, comments y replies—, con 100 creditos gratis y sin tarjeta; SocialCrawl queda #2 con 24 endpoints de Facebook y 33 de TikTok, tambien 100 creditos sin tarjeta, y detalla menos los campos; Data365 queda fuera de la via rapida no por ser peor sino porque su documentacion de creditos llega despues de una llamada introductoria. Nada de esto es cobertura: los tres siguen UNVERIFIED_PROVIDER y ninguno documenta historico de comentarios, hueco que tendra que cubrir el Lake. La prueba real NO se ejecuto y se dice por que: los tres exigen API key y ningun endpoint funciona sin ella, y Sentinel no crea cuentas externas en nombre del usuario, asi que el gate entrega instrucciones en lugar de resultados; los activos que se usarian estan leidos del Lake y no inventados —facebook:pedropalaciosu y tiktok:yaku.perez—, descartando @lafondadecarrasco porque su atribucion quedo COMPATIBLE_NO_CONFIRMADA y probar con ella mezclaria si el proveedor sirve con si la cuenta es del candidato. Lo que si se construyo es la pieza que faltaba desde el PREP: socialProviderClient.js, generico a proposito porque un cliente escrito para Bright Data habria que tirarlo hoy, leyendo base, cabecera y endpoints del registro. Cuatro cosas fijadas por test: la guarda va antes de la red —hoy los cuatro proveedores devuelven llamadas 0 aunque se les pase bandera y clave—, no se inventan URLs, la clave viaja en cabecera y se redacta del resultado, la traza y el error incluido el caso en que el proveedor hace eco de ella, y los bloqueos no se confunden entre credencial, facturacion y cuota. Extraer armarPeticion y clasificarRespuestaHttp como piezas puras resolvio un problema real: la guarda exige proveedor aprobado, asi que sin separarlas no se podian probar sin aprobar a alguien de verdad o sin abrir un agujero en la guarda. Ejecutar la prueba ya no depende de escribir codigo sino de que exista una clave. Y una decision explicita: Candidate Intelligence NO espera al proveedor —X, YouTube e Instagram profesional siguen generando snapshots y las celdas pendientes quedan como REQUIERE_PROVEEDOR, que es un resultado y no un hueco—. 1272 pruebas, 0 fallos. Nueva §18-triquadragies y docs/SOCIAL-PROVIDER-ALTERNATIVE-01.md. |
 | 2026-08-31 | SOCIAL-PROVIDER-REAL-01-PREP | Preparacion del limite de proveedor social externo mientras Bright Data sigue en revision: 0 requests externos y 0 USD. Al auditar los contratos antes de escribir nada aparecio que publicacion y metrica ya estaban resueltas desde P-CAND-03, asi que no habia que crear nada; lo que no existia era el contrato de COMENTARIO, y no existia porque hasta hoy ninguna via entregaba texto —Instagram lo niega con 400 code 100, Facebook cayo con /posts y TikTok no tiene via publica—. Se escribe ahora, antes de tener el dato, para que el dia que llegue no se invente una forma nueva bajo la presion de que ya hay payloads esperando. Nuevo commentObservation.js con commentId estable, relacion con el post, parentCommentId, y firstObservedAt que no se reescribe nunca; el autor se guarda sin perfilado —nombre visible e id de plataforma, lo minimo para deduplicar y contar participantes, sin cruzar con identidad real ni enriquecer ni puntuar, con la lista noSeHace en el propio objeto—; y el corpus separa siempre los comentarios que la plataforma DECLARA de los que se OBSERVARON, con la obligacion de lenguaje COMENTARIOS OBSERVADOS != TODOS LOS COMENTARIOS viajando en el dato y tres estados que se confunden facil: OBSERVADO, SOLO_RECUENTO y SIN_COMENTARIOS, que es un cero medido y no una ausencia. Nuevo externalSocialProvider.js como limite y no como motor: no hay ni un if sobre el nombre del proveedor, sino un registro y un normalizador que traduce cualquier payload al contrato existente con el mapa de campos pasado desde fuera; probado con dos formas distintas —Facebook plano y TikTok con stats.play_count anidado— produciendo el mismo contrato, y con un test que recorre el objeto entero comprobando que el nombre del proveedor solo aparece en campos de procedencia y nunca en la identidad, el contenido o el valor de una metrica. Nada de BrightDataFacebookEngine: un proveedor es una fuente, no un modelo. El estado UNVERIFIED_PROVIDER impide la mentira mas facil —las 27 capacidades declaradas de Bright Data estan sin verificar y estadoDeProveedores devuelve ningunoVerificado true—, porque que la documentacion diga que cubre Facebook no es cobertura y las celdas se moveran una a una tras medir. La bandera SOCIAL_EXTERNAL_PROVIDER_ENABLED queda documentada en .env.example y apagada, sin tocar .env, y encenderla no basta: hay test que la pone en true con clave ficticia y comprueba que Bright Data sigue deshabilitado por estar EN_REVISION, porque aprobar un proveedor es un cambio de codigo y no de configuracion para que quede en el historial de git. Tres fixtures sinteticos marcados TEST_FIXTURE y NO_REAL_DATA, uno de ellos con un comentario sin texto a proposito. 48 comprobaciones nuevas sobre lo que puede romperse en silencio: ausencia distinta de cero, 0 real conservado, IDs estables entre ejecuciones, firstObservedAt inmutable, texto anterior conservado si cambia, multi-activo, aislamiento de proyecto, proveedor desconocido rechazado y ninguna credencial persistida. Falta una sola pieza, el cliente HTTP; todo lo posterior ya esta probado. Nada de esto es cobertura: la decide SOCIAL-PROVIDER-REAL-01. 1248 pruebas, 0 fallos. Nueva §18-duoquadragies y docs/SOCIAL-PROVIDER-REAL-01-RUNBOOK.md. |
 | 2026-08-31 | SOCIAL-PROVIDER-EVAL-01 | Evaluacion de proveedores para cerrar la cobertura social, 0 USD y 0 requests pagas: las unicas dos llamadas fueron a oEmbed de TikTok, gratuitas, para la auditoria de atribucion incluida en el gate. Cuatro proveedores evaluados contra los huecos reales y no contra su folleto —Facebook de terceros, metricas de TikTok, Instagram personal y texto de comentarios en las tres—: Bright Data cubre los tres huecos a la vez y es el unico con comment_text documentado en las tres plataformas, con precio publico ($1,50/1K y 5.000 registros al mes sin tarjeta), entrada por URL de Page de tercero y ventana historica por fechas en Facebook; Data365 tiene el desglose de reacciones mas rico —love, haha, wow, sad, angry, support, que para lectura politica es senal y no adorno— pero su precio NO es publico y exige llamada comercial antes de dar acceso; Apify es plan B barato con la cobertura sostenida por cada Actor y no por la plataforma, lo que con fecha de campana encima es un riesgo operativo real; y EnsembleData queda NO_APTO porque no cubre Facebook, que es la prioridad mas alta, asi que comprarlo dejaria abierto el hueco mas caro. Se registra ademas Meta Content Library, la via licenciada y de mejor defensa legal, para que la comparacion sea honesta: existe y su elegibilidad academica no nos admite. Comentarios como criterio de corte: solo Bright Data documenta comment_text en las tres plataformas, ninguno documenta historico de comentarios —hueco que tendra que cubrir el Lake— y un proveedor que solo entrega el conteo no es una solucion de Comments Intelligence. Lo legal se dice sin suavizar: los tres candidatos raspan web publica y ninguno es proveedor licenciado por Meta o TikTok, va contra los ToS aunque el dato sea publico y la continuidad no esta garantizada; lo que si se conserva es la citabilidad, porque los permalinks son canonicos. Es una decision de negocio y de riesgo que le corresponde al responsable del proyecto y no al gate. Arquitectura recomendada hibrida y no proveedor unico: X, YouTube e Instagram profesional por API oficial, identidad de TikTok por oEmbed gratis, proveedor solo para los huecos, e historico propio en el Knowledge Lake porque ninguna plataforma ni proveedor entrega serie temporal. El proveedor entraria como detalle de un adapter sobre el puerto que ya existe, sin ProviderFacebookEngine. Coste estimado del piloto, declarado como estimacion y no medicion, ~$39/mes con ronda semanal sobre 7 candidatos y tres plataformas, con el aviso de que el comentario es lo que manda el coste. Auditoria de atribucion TikTok resuelta dentro del gate: @lafondadecarrasco y @leomoralesordo existen las dos y ninguna queda confirmada —la primera es «La Fonda de Carrasco», un negocio de hosteleria, y medirla como cuenta del candidato le atribuiria actividad que no es suya—, y no se degrada ninguna porque la decision sobre un activo declarado es del analista. PPCA sigue en paralelo y no bloquea el MVP, con un hecho nuevo comprobado a mano: agregado el caso de uso de administrar la pagina, pages_read_user_content sigue sin aparecer como permiso seleccionable y no se regenero token a ciegas. Estado maximo alcanzado PROVEEDOR_CANDIDATO: que la documentacion diga que cubre Facebook no declara Facebook resuelto, y toda la comparativa se apoya en documentacion del proveedor, que es justo el tipo de afirmacion que este proyecto no acepta hasta medirla. Sin cambios de codigo. Nueva §18-unquadragies y docs/SOCIAL-PROVIDER-EVAL-01.md. |

@@ -119,7 +119,21 @@ await t("Bright Data existe y NO esta aprobado para operar", () => {
 });
 
 await t("y su bloqueo no ascendio a ningun otro proveedor", () => {
-  return esp.estadoDeProveedores().ningunoVerificado === true;
+  /*
+    Que Bright Data caiga no puede promover a nadie. Lo que
+    promovio a ScrapeCreators en SOCIAL-PROVIDER-REAL-02 fue una
+    medicion real, no la caida del otro: SocialCrawl y Data365
+    siguen exactamente donde estaban.
+  */
+  return ["socialcrawl", "data365"].every((id) => {
+    const p = esp.proveedor(id);
+
+    const medidas = Object.values(p.capacidades).flatMap((c) =>
+      Object.values(c).filter((e) => ["SUPPORTED", "PARTIAL"].includes(e))
+    );
+
+    return p.aprobadoParaOperar === false && medidas.length === 0;
+  });
 });
 
 await t("todas sus capacidades son UNVERIFIED_PROVIDER", () => {
@@ -142,10 +156,29 @@ await t("UNVERIFIED_PROVIDER NO cuenta como verificado", () => {
   );
 });
 
-await t("ningun proveedor tiene una sola capacidad medida", () => {
+/*
+  ACTUALIZADO EN SOCIAL-PROVIDER-REAL-02: ScrapeCreators ya tiene
+  capacidades medidas contra activos reales, asi que
+  `ningunoVerificado` dejo de ser true. Lo que la prueba defiende
+  no cambia y se vuelve mas preciso: nadie mas se movio, y
+  ScrapeCreators solo subio donde hubo medicion.
+*/
+await t("solo ScrapeCreators tiene capacidades medidas", () => {
   const e = esp.estadoDeProveedores();
 
-  return e.ningunoVerificado === true;
+  const conMedidas = e.proveedores
+    .filter((p) => p.capacidadesMedidas > 0)
+    .map((p) => p.id);
+
+  return conMedidas.length === 1 && conMedidas[0] === "scrapecreators";
+});
+
+await t("los demas proveedores siguen en cero", () => {
+  const e = esp.estadoDeProveedores();
+
+  return e.proveedores
+    .filter((p) => p.id !== "scrapecreators")
+    .every((p) => p.capacidadesMedidas === 0);
 });
 
 await t("EnsembleData queda UNSUPPORTED en Facebook, no sin declarar", () => {

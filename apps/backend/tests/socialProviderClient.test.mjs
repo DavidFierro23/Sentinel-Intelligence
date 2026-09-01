@@ -118,18 +118,31 @@ await t("Data365 queda marcado como llamada comercial", () => {
   );
 });
 
-await t("NINGUN proveedor tiene una capacidad medida", () => {
-  return esp.estadoDeProveedores().ningunoVerificado === true;
+/*
+  ACTUALIZADO EN SOCIAL-PROVIDER-REAL-02. ScrapeCreators paso la
+  prueba real, asi que ya no es cierto que nadie tenga
+  capacidades medidas. Lo que hay que defender ahora es mas fino:
+  que solo el las tenga.
+*/
+await t("solo ScrapeCreators tiene capacidades medidas", () => {
+  const conMedidas = esp
+    .estadoDeProveedores()
+    .proveedores.filter((p) => p.capacidadesMedidas > 0)
+    .map((p) => p.id);
+
+  return conMedidas.length === 1 && conMedidas[0] === "scrapecreators";
 });
 
 await t("el bloqueo de Bright Data no promueve a nadie", () => {
   /*
-    Que un proveedor caiga no puede ascender a los demas: los
-    nuevos siguen sin verificar.
+    ScrapeCreators subio por una medicion real, no porque el otro
+    cayera. SocialCrawl, que no se ha probado, sigue igual: es la
+    comparacion que lo demuestra.
   */
-  return ["scrapecreators", "socialcrawl"].every(
-    (id) =>
-      esp.capacidadDeProveedor(id, "facebook", "comment_text").estado ===
+  return (
+    esp.capacidadDeProveedor("socialcrawl", "facebook", "comment_text").estado ===
+      esp.ESTADOS_CAPACIDAD_PROVEEDOR.UNVERIFIED_PROVIDER &&
+    esp.capacidadDeProveedor("brightdata", "facebook", "comment_text").estado ===
       esp.ESTADOS_CAPACIDAD_PROVEEDOR.UNVERIFIED_PROVIDER
   );
 });
@@ -182,11 +195,40 @@ await t("un proveedor no aprobado no sale a la red aunque haya clave", async () 
 
 await t("la guarda se evalua ANTES de resolver el endpoint", async () => {
   /*
-    Con un proveedor sin aprobar da igual si el endpoint existe:
-    la guarda corta primero y no se gasta credito. Se comprueba
-    con un endpoint que NO existe para dejar claro el orden: si
-    la resolucion fuera antes, el estado seria
-    ENDPOINT_NO_DECLARADO en lugar de DESHABILITADO.
+    Con un proveedor SIN aprobar da igual si el endpoint existe:
+    la guarda corta primero. Se usa un endpoint que si existe
+    para dejar claro el orden —si la resolucion fuera antes, esto
+    habria salido a la red—.
+  */
+  let llamado = false;
+
+  const r = await cli.pedirAlProveedor({
+    providerId: "socialcrawl",
+    platformId: "facebook",
+    operacion: "perfil",
+    entorno: {
+      SOCIAL_EXTERNAL_PROVIDER_ENABLED: "true",
+      SOCIALCRAWL_API_KEY: CLAVE
+    },
+    fetchImpl: async () => {
+      llamado = true;
+
+      return json({});
+    }
+  });
+
+  return (
+    llamado === false &&
+    r.estado === cli.ESTADOS_CLIENTE.DESHABILITADO &&
+    r.llamadas === 0
+  );
+});
+
+await t("un proveedor APROBADO con endpoint no declarado no gasta credito", async () => {
+  /*
+    El otro lado, que solo se puede probar desde que hay un
+    proveedor aprobado: pasa la guarda y aun asi no sale a la red
+    porque Instagram no tiene endpoints declarados.
   */
   let llamado = false;
 
@@ -204,19 +246,39 @@ await t("la guarda se evalua ANTES de resolver el endpoint", async () => {
 
   return (
     llamado === false &&
-    r.estado === cli.ESTADOS_CLIENTE.DESHABILITADO &&
+    r.estado === cli.ESTADOS_CLIENTE.ENDPOINT_NO_DECLARADO &&
     r.llamadas === 0
   );
 });
 
-await t("hoy NINGUN proveedor puede salir a la red", async () => {
+await t("un proveedor aprobado SI llega a la red cuando todo encaja", async () => {
+  let llamado = false;
+
+  const r = await cli.pedirAlProveedor({
+    providerId: "scrapecreators",
+    platformId: "facebook",
+    operacion: "perfil",
+    params: { url: "https://www.facebook.com/sintetica" },
+    entorno: entornoListo,
+    fetchImpl: async () => {
+      llamado = true;
+
+      return json({ success: true, id: "1", name: "Sintetica" });
+    }
+  });
+
+  return llamado === true && r.estado === cli.ESTADOS_CLIENTE.OK && r.llamadas === 1;
+});
+
+await t("solo el proveedor aprobado puede salir a la red", async () => {
   /*
     El estado real del proyecto, fijado por test: Bright Data
-    bloqueado por su proveedor y los otros sin aprobar. Si algun
-    dia esto falla sera porque alguien aprobo a uno, y entonces
-    debe ser una decision consciente con su commit.
+    bloqueado por su proveedor, SocialCrawl y Data365 sin
+    aprobar. Si alguno de estos tres empieza a llamar sera porque
+    alguien lo aprobo, y eso debe ser una decision consciente con
+    su commit.
   */
-  const ids = ["brightdata", "scrapecreators", "socialcrawl", "data365"];
+  const ids = ["brightdata", "socialcrawl", "data365"];
 
   const resultados = await Promise.all(
     ids.map((id) =>

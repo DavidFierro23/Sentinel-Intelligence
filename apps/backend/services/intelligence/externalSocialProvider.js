@@ -135,6 +135,12 @@ const U = ESTADOS_CAPACIDAD_PROVEEDOR.UNVERIFIED_PROVIDER;
 
 const NO = ESTADOS_CAPACIDAD_PROVEEDOR.UNSUPPORTED;
 
+/* Medido de verdad contra un activo real del proyecto. */
+const SI = ESTADOS_CAPACIDAD_PROVEEDOR.SUPPORTED;
+
+/* Se pidio sobre un sujeto valido y el proveedor no lo devolvio. */
+const SIN_DATO = ESTADOS_CAPACIDAD_PROVEEDOR.NO_DATA;
+
 
 /*
   Todas las capacidades de una plataforma en el mismo estado.
@@ -224,8 +230,28 @@ export const PROVEEDORES = Object.freeze({
     nombre: "ScrapeCreators",
     tipo: "SCRAPING_WEB_PUBLICA",
 
-    estadoComercial: "AUTOSERVICIO_SIN_PROBAR",
-    aprobadoParaOperar: false,
+    /*
+      -------------------------------------------------------
+      APROBADO EN SOCIAL-PROVIDER-REAL-02 (2026-08-31)
+      -------------------------------------------------------
+
+      Aprobacion EXPLICITA y auditable: es un cambio de codigo
+      con su commit, no una variable de entorno. Alcanza solo a
+      este proveedor.
+
+      Bright Data, SocialCrawl y Data365 siguen sin aprobar, y
+      aprobar a uno no asciende a los demas.
+
+      Aprobado NO significa verificado. Las capacidades siguen
+      en UNVERIFIED_PROVIDER y solo suben una a una cuando esta
+      ejecucion las demuestre.
+      -------------------------------------------------------
+    */
+    estadoComercial: "APROBADO_PARA_PRUEBA_REAL",
+    aprobadoParaOperar: true,
+    aprobadoEn: "2026-08-31",
+    aprobadoEnGate: "SOCIAL-PROVIDER-REAL-02",
+
     datoLicenciadoPorLaPlataforma: false,
 
     altaAutoservicio: true,
@@ -233,10 +259,118 @@ export const PROVEEDORES = Object.freeze({
     requiereTarjeta: false,
     requiereLlamadaComercial: false,
 
+    /*
+      -------------------------------------------------------
+      MEDIDO EN SOCIAL-PROVIDER-REAL-02 (2026-08-31)
+      -------------------------------------------------------
+
+      Ocho llamadas reales desde Sentinel sobre dos activos del
+      proyecto piloto. Cada celda de abajo se movio por una
+      observacion concreta, no por la documentacion, y las que
+      no se probaron siguen donde estaban.
+
+      Las tres distinciones que hay que conservar al leer esto:
+
+        UNSUPPORTED  se pidio y el endpoint no lo tiene.
+                     `shares` en /facebook/profile/posts.
+
+        NO_DATA      se pidio sobre un sujeto valido y no vino.
+                     `video_views` sobre TRES publicaciones que
+                     SI eran video: llegaron las tres en null.
+
+        UNVERIFIED   no se probo. `historical` en las dos, e
+                     Instagram entero.
+      -------------------------------------------------------
+    */
     capacidades: {
-      facebook: todas("facebook", U),
-      tiktok: todas("tiktok", U),
+      facebook: {
+        ...todas("facebook", U),
+
+        account: SI,
+        followers: SI,
+        posts: SI,
+        reactions: SI,
+        comments_count: SI,
+        comment_text: SI,
+
+        /* El endpoint no trae el campo. Ausencia, no cero. */
+        shares: NO,
+
+        /* Tres videos reales, tres nulls. Se pidio y no vino. */
+        video_views: SIN_DATO
+
+        /* historical se queda en UNVERIFIED: no se pagino. */
+      },
+
+      tiktok: {
+        ...todas("tiktok", U),
+
+        account: SI,
+        followers: SI,
+        following: SI,
+        total_likes: SI,
+        posts: SI,
+        views: SI,
+        likes: SI,
+        comments_count: SI,
+        comment_text: SI,
+        shares: SI
+
+        /* historical se queda en UNVERIFIED: no se pagino. */
+      },
+
+      /* Instagram no se toco en este gate. */
       instagram: todas("instagram", U)
+    },
+
+    medicionReal: {
+      gate: "SOCIAL-PROVIDER-REAL-02",
+      fecha: "2026-08-31",
+      requests: 8,
+      creditos: 8,
+
+      facebook: {
+        activo: "facebook:pedropalaciosu",
+        perfil: { followers: 57000, likes: 57624 },
+        publicacionesObservadas: 3,
+        comentariosObservados: 10,
+        comentariosDeclarados: 122,
+
+        desgloseDeReacciones:
+          "llega por tipo —like, love, haha, wow, sad, anger, care, pride, confused—, y en una publicacion haha (325) supera a like (173). Para lectura politica eso es senal, no adorno.",
+
+        comentariosSinTexto:
+          "2 de 10 llegaron sin texto. No se determino si son comentarios de solo imagen o una limitacion del proveedor."
+      },
+
+      tiktok: {
+        activo: "tiktok:yaku.perez",
+        perfil: {
+          followers: 519300,
+          following: 58,
+          totalLikes: 5200000,
+          mediaCount: 357
+        },
+        publicacionesObservadas: 10,
+        comentariosObservados: 20,
+        comentariosDeclarados: 110
+      },
+
+      rerun: {
+        requests: 2,
+        publicacionesDuplicadas: 0,
+        idsEstables: true,
+        firstObservedAtEstable: true,
+        lastObservedAtAvanza: true,
+        comentariosComunes: "20 de 20"
+      },
+
+      noDemostrado: [
+        "cobertura historica: no se pagino en ninguna plataforma",
+        "Instagram: no se probo",
+        "otros activos y otros candidatos: solo se midieron dos",
+        "corpus completo de comentarios: se observo una muestra"
+      ]
     },
 
     /*
@@ -259,6 +393,26 @@ export const PROVEEDORES = Object.freeze({
         comentarios: "/v1/tiktok/video/comments",
         respuestas: "/v1/tiktok/video/comment/replies"
       }
+    },
+
+    /*
+      Como se identifica el sujeto en cada endpoint. No es igual
+      en los dos: Facebook pide una URL y TikTok un handle, y
+      equivocarse gasta un credito para nada.
+    */
+    parametroDeSujeto: {
+      facebook: { perfil: "url", publicaciones: "url", comentarios: "url" },
+      tiktok: { perfil: "handle", publicaciones: "handle", comentarios: "url" }
+    },
+
+    /*
+      Limites documentados por el propio proveedor, guardados
+      para no confundirlos despues con un fallo nuestro.
+    */
+    limitesDocumentados: {
+      facebookPublicacionesPorPagina: 3,
+      facebookShares:
+        "no existe campo de shares en la respuesta de /profile/posts. Es una ausencia del proveedor, no un cero."
     },
 
     base: "https://api.scrapecreators.com",
