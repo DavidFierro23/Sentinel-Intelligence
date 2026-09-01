@@ -215,6 +215,26 @@ export const TIPOS_SENAL = Object.freeze({
   LUGAR: "LUGAR",
 
   /*
+    Un TOKEN GENERICO tampoco es un tema.
+
+    Medido en TERRITORIAL-LOCAL-SOURCE-EXPANSION-01 sobre el
+    corpus real: «caso» 9 evidencias, «autoridades» 10, «pais» 9,
+    «cerca» 8. Son palabras que aparecen en cualquier noticia;
+    presentarlas como agenda del territorio es ruido con formato
+    de hallazgo.
+
+    La lista se declara aqui y NO en `stopConcepts.js`, que es un
+    modulo compartido: aquel ya cubre verbos de atribucion y
+    descriptores administrativos, y ampliarlo cambiaria el
+    comportamiento de otros gates sin haberlo medido.
+
+    Se aplica la misma regla que a LUGAR y TEMPORAL: TODOS los
+    tokens significativos tienen que ser genericos. «caso
+    Serrano» sigue siendo un tema.
+  */
+  GENERICO: "GENERICO",
+
+  /*
     Una FECHA tampoco es un tema.
 
     Medido en TERRITORIAL-ACCELERATION-02: al persistir los
@@ -227,6 +247,22 @@ export const TIPOS_SENAL = Object.freeze({
   */
   TEMPORAL: "TEMPORAL"
 });
+
+
+/*
+  Genericos observados en el corpus real. Sustantivos y adverbios
+  que no distinguen un tema de otro.
+*/
+const TOKENS_GENERICOS = new Set([
+  "caso", "casos", "autoridad", "autoridades", "pais", "cerca", "lejos",
+  "persona", "personas", "hombre", "mujer", "gente",
+  "nuevo", "nueva", "nuevos", "nuevas", "gran", "grande",
+  "primer", "primera", "ultimo", "ultima", "mayor", "menor",
+  "tema", "temas", "hecho", "hechos", "parte", "partes",
+  "forma", "manera", "vez", "veces", "momento", "situacion",
+  "punto", "cosa", "cosas", "tipo", "clase", "grupo",
+  "informacion", "detalles", "declaraciones"
+]);
 
 
 const TOKENS_TEMPORALES = new Set([
@@ -267,6 +303,9 @@ export function clasificarSenal(nombre, toponimos = null) {
   if (tokens.every((t) => TOKENS_TEMPORALES.has(t) || /^\d{1,4}$/.test(t))) {
     return TIPOS_SENAL.TEMPORAL;
   }
+
+  /* Y lo mismo con los genericos: «caso Serrano» no es generico. */
+  if (tokens.every((t) => TOKENS_GENERICOS.has(t))) return TIPOS_SENAL.GENERICO;
 
   /*
     TODOS los tokens significativos tienen que ser toponimos.
@@ -718,6 +757,10 @@ export function construirMatriz({
     filas.filter((f) => f.tipoSenal === TIPOS_SENAL.TEMPORAL).map((f) => f.temaId)
   );
 
+  const genericasComoSenal = new Set(
+    filas.filter((f) => f.tipoSenal === TIPOS_SENAL.GENERICO).map((f) => f.temaId)
+  );
+
   const territoriosVistos = new Set(
     filas.filter((f) => f.territorioId !== TERRITORIO_NO_RESUELTO).map((f) => f.territorioId)
   );
@@ -751,6 +794,9 @@ export function construirMatriz({
 
       /* Señales que son una fecha, no un asunto. */
       senalesQueSonFecha: temporalesComoSenal.size,
+
+      /* Señales que son una palabra genérica, no un asunto. */
+      senalesGenericas: genericasComoSenal.size,
       territorios: territoriosVistos.size,
 
       evidenciasEnVentana: enVentana.length,
@@ -781,6 +827,7 @@ export function construirMatriz({
       "Un mismo `evidenceId` no se cuenta dos veces en la misma celda. En dos temas distintos sí cuenta en los dos: habla de los dos.",
       "No se calculan porcentajes de población ni de electores: no hay denominador oficial con licencia. La métrica es CONTEO ABSOLUTO.",
       "Cero evidencias no se usa nunca para decir «desconocido»: para eso están SIN_EVIDENCIA e HISTORICO_INSUFICIENTE.",
+      "Un token genérico —«caso», «autoridades», «país»— tampoco es un tema: aparece en cualquier noticia y presentarlo como agenda es ruido con formato de hallazgo.",
       "Una fecha tampoco es un tema: «agosto · lunes» es cuándo se publicó, no de qué habla. Los nombres de mes y de día son una lista cerrada del idioma, comprobable.",
       "Un nombre propio de territorio NO es un tema. «cuenca» era la señal con más evidencias del corpus real; queda marcada como LUGAR y fuera del ranking, porque responder «¿de qué se habla en Cuenca?» con «de Cuenca» no informa.",
       "`coverageStatus` y `coberturaEvidencial` responden dos preguntas distintas: si hay suficiente evidencia, y si se estaba observando la ventana. La segunda pesa más, porque sin observación el conteo es incompleto.",

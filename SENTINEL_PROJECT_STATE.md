@@ -9,10 +9,10 @@
 
 | Campo | Valor comprobado |
 |---|---|
-| Fecha de actualización | **2026-09-01** (última sección añadida: §13-quindecies) |
+| Fecha de actualización | **2026-09-01** (última sección territorial: §13-sexdecies) |
 | Rama | `dev` |
 | Último commit **base** de esta actualización | `a369ed2` — *feat(candidate): close Facebook coverage assessment* (Terminal 1 comiteó 4 veces mientras se cerraba este gate) |
-| Último commit **territorial** | `7358a0f` — *feat(territorial): improve project territorial intelligence* → le sigue el de §13-quindecies |
+| Último commit **territorial** | `4e4c6ef` — *feat(territorial): audit open listening source coverage* → le sigue el de §13-sexdecies |
 | Versión monorepo | `sentinel-intelligence-platform` 0.1.0 |
 | Versión backend | `sentinel-backend` 1.0.0 |
 | Versión frontend | `web` 0.0.0 (sin versionar) |
@@ -2347,6 +2347,139 @@ GDELT 0 · SerpAPI 0 · Brave 0 · ScrapeCreators 0 créditos.
 
 ---
 
+## 13-sexdecies. TERRITORIAL-LOCAL-SOURCE-EXPANSION-01 — más Cuenca en el corpus (2026-09-01)
+
+✅ Fuentes locales con feed: **6 → 9**. Territorio explícito: **107 → 127**.
+
+Documento completo: **`docs/TERRITORIAL-LOCAL-SOURCE-EXPANSION-01.md`**.
+
+### El hallazgo contraintuitivo
+
+Se usó Google News como **descubridor de fuentes** —método (D), 3 consultas RSS
+gratuitas, 300 piezas, 40 publicadores— y el resultado fue el contrario del esperado:
+
+```
+74  elmercurio.com.ec     69  Primicias     34  El Universo     23  expreso.ec
+```
+
+> **El agregador no revela ni un medio local nuevo de Cuenca.** Su cobertura del cantón
+> la dominan El Mercurio y los nacionales. Y al revés: `eltiempo.com.ec`,
+> `lavozdeltomebamba.com` y `unsion.tv` **no aparecen** entre los 40 publicadores.
+
+Conclusión para la estrategia: **los feeds directos dan más cobertura local que el
+agregador**. El ecosistema local visible a agregadores es genuinamente delgado; no es
+que Sentinel lo estuviera pasando por alto.
+
+### El registro oficial existe y no es alcanzable
+
+El **Consejo de Comunicación del Ecuador** publica un listado oficial de medios: la
+fuente autoritativa que este proyecto llevaba declarando que nunca consultó. Medido en
+tres URLs, **`UND_ERR_CONNECT_TIMEOUT`** en fase de conexión —el mismo bloqueo de red
+que afecta a GDELT—. Queda como pendiente accionable: descarga manual del PDF.
+
+### Fuentes nuevas comprobadas
+
+| fuente | veredicto |
+|---|---|
+| **La Voz del Tomebamba** | `VERIFICADO_FEED` · **reclasificada a MEDIO_LOCAL** |
+| **Farmasol EP** | `VERIFICADO_FEED` · institución local |
+| **EMUVI EP** | `VERIFICADO_FEED` · institución local |
+| Cuerpo de Bomberos | `VERIFICADO_FEED` · **ámbito NO confirmado**, sin cobertura declarada |
+
+La reclasificación de La Voz del Tomebamba fue lo más barato y lo más rentable: ya
+aportaba 10 evidencias contadas como «nacional / sin declarar» **solo porque nadie la
+había clasificado**. Y de paso corrige el catálogo semilla:
+`radiotomebamba.com.ec` da **ENOTFOUND** y las guías de radio públicas apuntan a la
+misma emisora con el dominio correcto.
+
+Rechazadas con motivo: `ecuador221.com` ENOTFOUND · `eltiempo.com.ec` **ECONNRESET
+reproducible** —diario real de Cuenca desde 1955, el hueco más molesto— ·
+`ondacero.com.ec` ENOTFOUND.
+
+### Nueve sitios comprobados SIN feed, registrados y no inventados
+
+`cuenca.gob.ec` —**el GAD Municipal**— · `deportivocuenca.com` —el club existe, sin
+RSS— · `uazuay.edu.ec` · primicias, elcomercio, eltelegrafo, vistazo, laposta,
+ecuadorinmediato. No se les fabrica un feed. `ucuenca.edu.ec` declara feed y responde
+**vacío**, que no es lo mismo.
+
+### Antes / después
+
+| | antes | después |
+|---|---|---|
+| Fuentes locales con feed | 6 | **9** |
+| Medios locales con feed | 2 | **3** |
+| Instituciones locales con feed | 4 | **6** |
+| Feeds elegibles | 11 | **15** |
+| Dominios en el corpus | 11 | **14** |
+| Evidencias del proyecto | 284 | **319** |
+| Observaciones | 689 | **922** |
+| **Territorio explícito (A)** | 107 | **127** |
+| Fuente local sin topónimo (B) | 4 | 12 |
+| Nacional relacionado (C) | 173 | 180 |
+| No resoluble (D) | 0 | **0** |
+
+Ratio local/nacional en conteo absoluto: **111 vs 173 → 139 vs 180**. Sin inflar
+volumen: de las 35 evidencias nuevas, **28 vinieron de las tres fuentes nuevas** en su
+primera pasada.
+
+**La rotación se llenó de locales.** En la pasada 16 las 8 plazas fueron El Mercurio,
+Unsión TV, La Voz del Tomebamba, EMAC, Prefectura, EMOV, ETAPA y EMUVI: **8 de 8
+territoriales**. Antes los nacionales las ocupaban por falta de alternativas.
+
+### Temas nuevos, y los que siguen sin aparecer
+
+Aparecen **Agua y saneamiento** (10 ev, 7 fuentes) y **Ambiente y territorio** (9 ev),
+coherentes con ETAPA, EMAC, EMUVI y Farmasol.
+
+**No aparecen** —y se dice—: Deportivo Cuenca (su sitio no publica feed), cultura,
+universidad (feed vacío), comercio, turismo, clima, eventos, moda, marcas.
+
+### La regla no se aflojó
+
+B pasó de 4 a 12 —más fuentes locales, más piezas suyas sin topónimo— y **ninguna se
+atribuye al cantón**. Hay una prueba explícita de que ampliar el universo no convierte
+C en A.
+
+### Fragmentación: corrección pequeña aplicada
+
+**403 señales para 319 evidencias.** Nuevo tipo **`GENERICO`** para tokens que aparecen
+en cualquier noticia: medido en el corpus real, «caso» 9, «autoridades» 10, «país» 9,
+«cerca» 8. La lista vive en `topicTerritoryCrosstab.js` y **no** en `stopConcepts.js`,
+que es compartido.
+
+Misma regla que LUGAR y TEMPORAL: **todos** los tokens deben ser genéricos, así que
+«caso Serrano» sigue siendo un tema. Y hay prueba de que el descubrimiento **sigue
+siendo abierto**: «Deportivo Cuenca», «festival de artes escénicas» y «lluvias e
+inundaciones» se clasifican como TEMA sin estar en ninguna lista.
+
+Persisten residuos verbales —«deja», «después», «paso»— que **exigen diseño del
+motor**: queda para `TERRITORIAL-TOPIC-NORMALIZATION-01`.
+
+### Impacto en los proveedores
+
+**GDELT: sigue justificándose, con MENOS fuerza.** Su argumento geo **pesa menos**: el
+problema medido no era geocodificar sino tener fuentes locales, y eso se movió sin
+proveedor (A: 107→127). El histórico sigue intacto como argumento.
+
+**Data365: sigue justificándose, sin cambios.** Este gate **confirmó que no hay ruta
+alternativa** a su hueco: el agregador no revela actores locales y ninguna plataforma
+permite descubrimiento por territorio. Creadores, comunidades y comentarios siguen en
+`NO_DISPONIBLE`.
+
+**ScrapeCreators: 0 créditos.** Sirve para activos públicos conocidos, no para
+encontrarlos.
+
+### Pruebas y coste
+
+`territorial-expansion` **29** nuevo · territorial **742** en 12 suites · SSR 127 ·
+render real 15 = **884**. Cero regresiones.
+
+**Coste 0 USD.** 140 peticiones HTTP públicas: 119 de verificación, 3 de descubrimiento
+por agregador, 3 fallidas al registro oficial, 18 lecturas de feed. Nada de pago.
+
+---
+
 ## 13-decies. Roadmap territorial
 
 Orden oficial:
@@ -2366,6 +2499,7 @@ Orden oficial:
 ✅ TERRITORIAL-TOPIC-TERRITORY-01   Matriz tema × territorio · evidencia auditable
 🟡 TERRITORIAL-ACCELERATION-02      RSS al ledger · proyecto · proveedores · UX — PARCIAL: sin certificación visual
 ✅ TERRITORIAL-SOURCE-COVERAGE-01  Radiografía de la escucha · 20 dimensiones resueltas
+✅ TERRITORIAL-LOCAL-SOURCE-EXPANSION-01  Universo local 6→9 fuentes con feed
 →  1.  Primera prueba real multifuente        ← siguiente, EXIGE CREDENCIALES
    2.  DATA-PROVIDER-EVAL real
    3.  Ampliar providers donde el benchmark demuestre valor
@@ -2446,11 +2580,17 @@ Evaluaciones registradas: **`DATA-PROVIDER-EVAL-01`** (estructura definida, ning
 | 52 | **Prueba real de GDELT Cloud pendiente de una cuenta de Google** | decidir el proveedor #1 | 🔴 el sandbox de BigQuery no pide tarjeta, pero **exige un alta manual** que Sentinel no puede hacer. Pasos exactos en `docs/TERRITORIAL-PROVIDER-EVAL-01.md` §7 |
 | 53 | **Términos y licencias de los cuatro proveedores sin leer** | cualquier uso comercial | 🔴 incluido GDELT, que es condición previa a explotarlo comercialmente |
 
-| 54 | **Solo 6 medios locales con feed en todo el universo** | que la señal territorial sea local | 🔴 es la causa medida de que 173 de 284 piezas sean nacionales. **Es el único hueco que se cierra sin proveedor y sin credencial**: recorrer más sitios de Cuenca y registrar los que publiquen feed |
+| 54 | **Fuentes locales con feed: 9** | que la señal territorial sea local | 🟡 **MEJORADO** (§13-sexdecies): de 6 a 9, y territorio explícito de 107 a 127. Lo que queda ya **no se cierra sin proveedor**: 9 sitios comprobados no publican feed —incluido `cuenca.gob.ec`— y el registro oficial de medios es inalcanzable desde esta máquina |
 | 55 | **Cero creadores, comunidades y comentarios** | escucha no mediática | 🔴 tres dimensiones en `NO_DISPONIBLE`. No hay descubrimiento social por territorio: no se puede preguntar «qué se publica en Cuenca» a ninguna plataforma. Requiere proveedor |
 | 56 | **Periodistas sin extraer del campo autor** | actores individuales | 🟡 los feeds declaran autor a veces y **no se procesa**. La señal ya está en los datos: es trabajo propio, no un proveedor |
 | 57 | **La clasificación de entidades es heurística y falla visiblemente** | separar quién de qué | 🟡 tipa «Barcelona SC» como PERSON por ser dos palabras capitalizadas. Se expone con su confianza en lugar de ocultarse, pero no está verificada |
 | 58 | **`territorial-coverage` fuera de `test:territorial`** | ejecución automática | 🟡 `package.json` tenía cambios sin commitear de otra línea y el gate prohíbe tocarlo mezclado. Registrarla cuando el fichero esté limpio |
+
+| 59 | **`cuenca.gob.ec` responde y NO publica feed** | agenda del GAD Municipal | 🔴 la institución más relevante del cantón queda fuera de la escucha por esta vía. No se le fabrica un feed. Vía futura: web abierta o sitemap |
+| 60 | **`eltiempo.com.ec` da ECONNRESET reproducible** | segundo diario de Cuenca | 🔴 con y sin `www`, medido en dos gates. El dominio existe; el fallo puede ser nuestro o suyo, y sin diagnosticar |
+| 61 | **Registro oficial de medios del Ecuador inalcanzable** | contrastar el catálogo contra una fuente autoritativa | 🔴 el Consejo de Comunicación publica el listado en PDF y da `UND_ERR_CONNECT_TIMEOUT` en tres URLs. **Accionable por el usuario**: descargarlo y pasarlo |
+| 62 | **403 señales para 319 evidencias** | que la agenda sea legible | 🔴 el cuello de botella se ha movido de las fuentes a la señal. Mitigado clasificando `GENERICO`, pero persisten residuos verbales que **exigen diseño del motor**: `TERRITORIAL-TOPIC-NORMALIZATION-01` |
+| 63 | **`territorial-coverage` y `territorial-expansion` fuera de `test:territorial`** | ejecución automática | 🟡 `package.json` sigue con cambios sin commitear de otra línea. Se ejecutan a mano |
 
 `POST /api/territorio/recargar` integra 1–4 **sin reiniciar el backend y sin
 cambiar arquitectura**.

@@ -252,24 +252,108 @@ const CANDIDATOS_DECLARADOS = [
   },
 
   /*
-    --- Hipotesis abierta ---
+    --- CONFIRMADO en TERRITORIAL-LOCAL-SOURCE-EXPANSION-01 ---
 
-    Radio local citada en el trabajo territorial. El catalogo
-    semilla recoge `radiotomebamba.com.ec` como Radio Tomebamba;
-    NO se afirma que sean la misma casa ni que este dominio
-    exista. Entra como DOMINIO_PROPUESTO y la comprobacion
-    decide. Si no responde, queda NO_RESUELTO.
+    Entro como DOMINIO_PROPUESTO en §13-undecies y respondio. Ya
+    no es una hipotesis: hay evidencia publica de que
+    `lavozdeltomebamba.com` es el sitio oficial de La Voz del
+    Tomebamba, emisora de Cuenca en 1070 AM y 102.1 FM.
+
+    Se declara MEDIO_LOCAL con cobertura cantonal. Aportaba 10
+    evidencias contadas como «nacional / sin declarar» solo
+    porque nadie la habia clasificado.
+
+    Y de paso corrige el catalogo: `radiotomebamba.com.ec` da
+    ENOTFOUND y las guias de radio apuntan a la MISMA emisora en
+    102.1. El dominio del catalogo semilla esta equivocado; el
+    real es este.
   */
   {
     dominio: "lavozdeltomebamba.com",
-    nombre: "La Voz del Tomebamba (propuesto)",
+    nombre: "La Voz del Tomebamba",
+    tipo: TIPOS_FUENTE.MEDIO_LOCAL,
+    subtipo: "RADIO",
+    cobertura: { unidadId: "ec-azuay-cuenca", resolucion: "canton" },
+    prioridad: PRIORIDADES.MEDIO_LOCAL,
+    metodo: METODOS_DESCUBRIMIENTO.DECLARADO_POR_ANALISTA,
+    nota:
+      "Emisora de Cuenca (1070 AM / 102.1 FM). Sitio oficial confirmado contra evidencia publica. Sustituye a la entrada erronea `radiotomebamba.com.ec`, que no resuelve."
+  },
+
+  /*
+    --- Empresas publicas del canton no cubiertas todavia ---
+
+    Entran como DOMINIO_PROPUESTO: son empresas publicas
+    municipales de Cuenca cuya existencia es publica, pero el
+    dominio exacto NO esta confirmado. La comprobacion decide, y
+    si no responde queda NO_RESUELTO sin ascender.
+  */
+  {
+    dominio: "farmasol.gob.ec",
+    nombre: "Farmasol EP (propuesto)",
+    tipo: null,
+    subtipo: null,
+    cobertura: { unidadId: "ec-azuay-cuenca", resolucion: "canton" },
+    prioridad: PRIORIDADES.INSTITUCION_PUBLICA,
+    metodo: METODOS_DESCUBRIMIENTO.DOMINIO_PROPUESTO,
+    nota: "Empresa publica municipal de Cuenca. Dominio propuesto, sin confirmar."
+  },
+  {
+    dominio: "emuvi.gob.ec",
+    nombre: "EMUVI EP (propuesto)",
+    tipo: null,
+    subtipo: null,
+    cobertura: { unidadId: "ec-azuay-cuenca", resolucion: "canton" },
+    prioridad: PRIORIDADES.INSTITUCION_PUBLICA,
+    metodo: METODOS_DESCUBRIMIENTO.DOMINIO_PROPUESTO,
+    nota: "Empresa municipal de vivienda de Cuenca. Dominio propuesto, sin confirmar."
+  },
+  {
+    dominio: "bomberos.gob.ec",
+    nombre: "Cuerpo de Bomberos de Cuenca (propuesto)",
     tipo: null,
     subtipo: null,
     cobertura: null,
-    prioridad: PRIORIDADES.MEDIO_LOCAL,
+    prioridad: PRIORIDADES.INSTITUCION_PUBLICA,
     metodo: METODOS_DESCUBRIMIENTO.DOMINIO_PROPUESTO,
     nota:
-      "Dominio propuesto, sin confirmar. No se declara tipo: la clasificacion de medios sale del catalogo, no del nombre. Relacion con radiotomebamba.com.ec NO establecida."
+      "Dominio propuesto. Puede ser nacional en lugar de cantonal: por eso NO se declara cobertura."
+  },
+
+  /*
+    --- Observado en el agregador, ambito por confirmar ---
+
+    `Ecuador 221` aparecio seis veces en las consultas de Google
+    News sobre Cuenca. Que aparezca NO lo hace local —ese
+    criterio seria circular— asi que entra sin tipo ni cobertura.
+  */
+  {
+    dominio: "ecuador221.com",
+    nombre: "Ecuador 221 (propuesto)",
+    tipo: null,
+    subtipo: null,
+    cobertura: null,
+    prioridad: PRIORIDADES.MEDIO_REGIONAL_O_NACIONAL,
+    metodo: METODOS_DESCUBRIMIENTO.DOMINIO_PROPUESTO,
+    nota:
+      "Observado en el agregador cubriendo Cuenca. Ambito sin confirmar: aparecer en una consulta territorial no clasifica a un medio como local."
+  },
+
+  /*
+    --- Club deportivo del canton ---
+
+    El gate pregunta explicitamente por Deportivo Cuenca. Existe
+    como club; el dominio NO esta confirmado.
+  */
+  {
+    dominio: "deportivocuenca.com",
+    nombre: "Deportivo Cuenca (propuesto)",
+    tipo: null,
+    subtipo: "CLUB",
+    cobertura: { unidadId: "ec-azuay-cuenca", resolucion: "canton" },
+    prioridad: PRIORIDADES.OTRA_FUENTE_PUBLICA,
+    metodo: METODOS_DESCUBRIMIENTO.DOMINIO_PROPUESTO,
+    nota: "Club de futbol del canton. Dominio propuesto, sin confirmar."
   }
 ];
 
