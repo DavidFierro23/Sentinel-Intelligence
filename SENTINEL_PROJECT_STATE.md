@@ -9,10 +9,10 @@
 
 | Campo | Valor comprobado |
 |---|---|
-| Fecha de actualización | **2026-08-31** (última sección añadida: §13-quaterdecies) |
+| Fecha de actualización | **2026-09-01** (última sección añadida: §13-quindecies) |
 | Rama | `dev` |
 | Último commit **base** de esta actualización | `a369ed2` — *feat(candidate): close Facebook coverage assessment* (Terminal 1 comiteó 4 veces mientras se cerraba este gate) |
-| Último commit **territorial** | `f09481c` — *feat(territorial): add topic territory intelligence* → le siguen los de §13-quaterdecies |
+| Último commit **territorial** | `7358a0f` — *feat(territorial): improve project territorial intelligence* → le sigue el de §13-quindecies |
 | Versión monorepo | `sentinel-intelligence-platform` 0.1.0 |
 | Versión backend | `sentinel-backend` 1.0.0 |
 | Versión frontend | `web` 0.0.0 (sin versionar) |
@@ -2228,6 +2228,125 @@ Brave 0.
 
 ---
 
+## 13-quindecies. TERRITORIAL-SOURCE-COVERAGE-01 — radiografía de la escucha (2026-09-01)
+
+✅ Las **20 dimensiones** del espacio público de Cuenca quedan resueltas
+conceptualmente, con evidencia de cada estado.
+
+Documento completo: **`docs/TERRITORIAL-SOURCE-COVERAGE-01.md`**.
+
+### La pregunta del gate, contestada
+
+> Sin sembrarle temas, ¿qué descubre Sentinel por sí solo?
+
+**Sí descubre**, sin lista previa: política y actores políticos —José Serrano 53
+evidencias, Cristian Zamora 42, Aquiles Álvarez 31—, seguridad ciudadana 25, integridad
+pública 21, gestión y gobernanza 21, educación 19, salud 16, obra pública 13,
+movilización social 10, economía y empleo 10, movilidad 9 y **deporte** (Barcelona SC,
+Marcelo Gallardo).
+
+**No aparece nada** de Deportivo Cuenca, clima, turismo, comercio, conciertos, moda,
+marcas, influencers ni memes. No porque el motor no pueda: **porque el corpus es prensa
+e instituciones** y esos temas viven en plataformas que no observamos.
+
+### Observación longitudinal real
+
+```
+pasada 13 · 8 feeds    76 observadas   18 nuevas   58 duplicadas
+pasada 14 · 3 feeds   101 observadas   89 nuevas   12 duplicadas
+                       corpus del proyecto: 177 → 284
+```
+
+70 piezas del día anterior se reconocieron y no se duplicaron: **el histórico es real y
+crece**. 689 observaciones acumuladas, 284 evidencias, 283 con resumen, 284 con fecha,
+**100 % de emisores resueltos**.
+
+### Matriz de cobertura
+
+**4 OPERATIVO** (noticias, RSS, instituciones, enlaces) · **5 PARCIAL** (medios
+digitales, temas emergentes, territorio, histórico, tendencias) · **7 NO_PROBADO** ·
+**3 NO_DISPONIBLE** (creadores, comunidades, comentarios) · **1 REQUIERE_PROVEEDOR**
+(web abierta).
+
+`OPERATIVO` exige **evidencia real en el corpus**: un adapter configurado y nunca
+ejecutado no cuenta. Cada fila declara sus conectores, sus evidencias, su limitación,
+**por qué tiene ese estado** y qué falta para mejorarla.
+
+> No se declara ningún porcentaje de «cobertura de internet»: no existe el denominador
+> de esa fracción. Y lo fuera de alcance —rastreo individual, atributos sensibles,
+> perfiles privados— se declara como **decisión de producto**, no como carencia.
+
+### Geografía: el diagnóstico anterior estaba mal
+
+§13-quaterdecies reportó «98 de 177 sin territorio» y se leyó como fallo del resolutor.
+**No lo era.** Con cuatro estados en lugar de dos:
+
+| estado | n |
+|---|---|
+| **A · TERRITORIO_EXPLICITO** — la pieza lo sostiene, **el único que cuenta** | **107** |
+| B · FUENTE_LOCAL_SIN_TERRITORIO — medio local, pieza sin topónimo | **4** |
+| C · NACIONAL_RELACIONADO — medio nacional del universo | **173** |
+| D · TERRITORIO_NO_RESOLUBLE | **0** |
+
+El problema real no es de resolución: **el corpus es mayoritariamente nacional**. Solo 4
+piezas son de medio local sin topónimo. Los cuatro estados **suman el corpus**; si no
+sumaran, alguna pieza se habría descartado en silencio.
+
+B se muestra como «**Fuente local · territorio de la pieza no demostrado**»: pista sobre
+la fuente, no sobre el contenido. Ninguna de las tres últimas se atribuye al cantón.
+
+### Qué se puede afirmar
+
+Capa nueva que convierte una medida en una frase **y se niega a producirla cuando la
+medida no la sostiene**. Permitido: «mayor número de menciones observadas en la
+muestra», «dominio más recurrente del corpus observado». Prohibido con su motivo: «lo
+más visto en Cuenca», «lo que piensa Cuenca», cualquier porcentaje poblacional,
+«intención de voto».
+
+La respuesta de la API pasa por `revisarSalida` antes de enviarse. En la ejecución real:
+**ninguna cadena afirma más de lo que los datos sostienen**.
+
+### Actores
+
+11 derivados del corpus — 6 medios, 4 instituciones, 1 sin clasificar. Los 11
+`COMPROBADO` y **cero verificados por analista**: la cifra se cuenta para que la
+ausencia sea visible. `atributosSensibles` es null **por decisión, no por olvido**.
+
+De las señales descubiertas, **22 parecen un actor y no un asunto**. El clasificador
+falla de forma visible —tipa **«Barcelona SC» como PERSON**— y su confianza viaja con
+el veredicto en lugar de ocultarse.
+
+### La fragmentación empeora al crecer el corpus
+
+**377 señales para 284 evidencias**, frente a 185/177 del gate anterior. Subir
+`documentosMinimos` volvió a empeorarlo. Se clasifica la señal —TEMA / LUGAR /
+TEMPORAL / parece actor— para poder filtrarla, pero el motor sigue produciendo ruido:
+sobreviven tokens como «caso» y «autoridades».
+
+### Ficheros
+
+| Pieza | Fichero |
+|---|---|
+| Cuenca vs nacional (A/B/C/D) | `territorial/territorialScope.js` |
+| Qué se puede afirmar | `territorial/claimGuard.js` |
+| Matriz de 20 dimensiones | `territorial/listeningCoverage.js` |
+| Actores observados | `territorial/actorUniverse.js` |
+| Auditoría | `routes/territorio.js` → `POST /cobertura` |
+
+### Pruebas
+
+`territorial-coverage` **45** nuevo. Total territorial: **713** en backend (11 suites),
+más SSR 127 y render con datos reales 15 = **855**.
+
+> La suite NO se registró en `package.json`: el fichero tenía cambios sin commitear de
+> otra línea y el gate prohíbe tocarlo mezclado. Se ejecuta con
+> `node tests/territorial-coverage.test.mjs`.
+
+**Coste: 0 USD.** Solo RSS público (11 lecturas de feed). Google News 0 · YouTube 0 ·
+GDELT 0 · SerpAPI 0 · Brave 0 · ScrapeCreators 0 créditos.
+
+---
+
 ## 13-decies. Roadmap territorial
 
 Orden oficial:
@@ -2246,6 +2365,7 @@ Orden oficial:
 ✅ TERRITORIAL-RSS-ROTATION-01      Rotación del universo RSS · sin starvation
 ✅ TERRITORIAL-TOPIC-TERRITORY-01   Matriz tema × territorio · evidencia auditable
 🟡 TERRITORIAL-ACCELERATION-02      RSS al ledger · proyecto · proveedores · UX — PARCIAL: sin certificación visual
+✅ TERRITORIAL-SOURCE-COVERAGE-01  Radiografía de la escucha · 20 dimensiones resueltas
 →  1.  Primera prueba real multifuente        ← siguiente, EXIGE CREDENCIALES
    2.  DATA-PROVIDER-EVAL real
    3.  Ampliar providers donde el benchmark demuestre valor
@@ -2320,11 +2440,17 @@ Evaluaciones registradas: **`DATA-PROVIDER-EVAL-01`** (estructura definida, ning
 | 47 | **La matriz no se expone dentro de `/analisis`** | leer temas y recolección en una sola vista | 🟡 vive en `POST /tema-territorio` a propósito, para que abrir la vista no cueste una recolección. Integrarlas exigiría separar análisis de recolección en la propia ruta |
 
 | 48 | **El descubrimiento abierto se sobre-fragmenta con el texto completo** | que la agenda sea legible | 🔴 ~185 señales para 177 evidencias: una señal por evidencia no es una agenda. Subir `documentosMinimos` de 2 a 3 **empeoró** el número (175→185): el umbral gobierna clusters, no el ruido residual. Mitigado clasificando la señal (LUGAR, TEMPORAL) para poder filtrarla; exige trabajo en el motor |
-| 49 | **98 de 177 evidencias sin territorio resuelto** | lectura territorial del corpus RSS | 🔴 los medios nacionales del universo publican artículos sin topónimo cantonal y **no se fuerza** una parroquia. Es el hueco que atacaría un proveedor con extracción geográfica explícita —por eso GDELT Cloud es el #1 de la evaluación |
+| 49 | **El corpus es mayoritariamente nacional** | lectura territorial | 🟡 **DIAGNÓSTICO CORREGIDO** (§13-quindecies): no era fallo del resolutor. De 284 piezas, **173 son de medios nacionales** y solo **4** de medio local sin topónimo; 107 tienen territorio explícito. Lo que falta no es geocodificación: son **medios locales con feed** |
 | 50 | **La interfaz territorial no está certificada visualmente** | cerrar §13-quaterdecies como APROBADO | 🟡 no hay navegador en el entorno de trabajo. Vite sirve (200), los tres endpoints devuelven payloads reales y las nueve secciones renderizan con **contenido real** verificado (15 casos), pero **color, espaciado y jerarquía no se han mirado**. Requiere revisión humana en `localhost:5173` |
 | 51 | **234 observaciones de legado sin `projectId`** | cobertura histórica del proyecto | 🟡 anteriores a §13-quaterdecies. No se descartan ni se cuentan dentro de una campaña: quedan como legado, visibles solo con `incluirLegado`. Asignarlas exigiría decidir a qué proyecto perteneció cada una, y eso **no se inventa** |
 | 52 | **Prueba real de GDELT Cloud pendiente de una cuenta de Google** | decidir el proveedor #1 | 🔴 el sandbox de BigQuery no pide tarjeta, pero **exige un alta manual** que Sentinel no puede hacer. Pasos exactos en `docs/TERRITORIAL-PROVIDER-EVAL-01.md` §7 |
 | 53 | **Términos y licencias de los cuatro proveedores sin leer** | cualquier uso comercial | 🔴 incluido GDELT, que es condición previa a explotarlo comercialmente |
+
+| 54 | **Solo 6 medios locales con feed en todo el universo** | que la señal territorial sea local | 🔴 es la causa medida de que 173 de 284 piezas sean nacionales. **Es el único hueco que se cierra sin proveedor y sin credencial**: recorrer más sitios de Cuenca y registrar los que publiquen feed |
+| 55 | **Cero creadores, comunidades y comentarios** | escucha no mediática | 🔴 tres dimensiones en `NO_DISPONIBLE`. No hay descubrimiento social por territorio: no se puede preguntar «qué se publica en Cuenca» a ninguna plataforma. Requiere proveedor |
+| 56 | **Periodistas sin extraer del campo autor** | actores individuales | 🟡 los feeds declaran autor a veces y **no se procesa**. La señal ya está en los datos: es trabajo propio, no un proveedor |
+| 57 | **La clasificación de entidades es heurística y falla visiblemente** | separar quién de qué | 🟡 tipa «Barcelona SC» como PERSON por ser dos palabras capitalizadas. Se expone con su confianza en lugar de ocultarse, pero no está verificada |
+| 58 | **`territorial-coverage` fuera de `test:territorial`** | ejecución automática | 🟡 `package.json` tenía cambios sin commitear de otra línea y el gate prohíbe tocarlo mezclado. Registrarla cuando el fichero esté limpio |
 
 `POST /api/territorio/recargar` integra 1–4 **sin reiniciar el backend y sin
 cambiar arquitectura**.

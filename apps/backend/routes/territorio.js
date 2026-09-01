@@ -137,6 +137,21 @@ import {
 
 import { comprobarUniverso } from "../services/territorial/sourceVerifier.js";
 
+/* --- TERRITORIAL-SOURCE-COVERAGE-01 --- */
+
+import {
+  indiceDeAmbito,
+  clasificarAlcance,
+  resumirAlcance,
+  ALCANCES
+} from "../services/territorial/territorialScope.js";
+
+import { construirMatrizDeCobertura } from "../services/territorial/listeningCoverage.js";
+
+import { construirUniversoDeActores } from "../services/territorial/actorUniverse.js";
+
+import { revisarSalida, afirmar } from "../services/territorial/claimGuard.js";
+
 /* --- TERRITORIAL-ACCELERATION-02 --- */
 
 import {
@@ -422,6 +437,453 @@ router.post("/fuentes/verificar", async (req, res) => {
     });
   } catch (e) {
     res.status(500).json({ error: e?.message || "fallo la comprobacion de fuentes" });
+  }
+});
+
+
+/*
+===========================================================
+COBERTURA DE ESCUCHA — TERRITORIAL-SOURCE-COVERAGE-01
+===========================================================
+
+La radiografia: que dimensiones del espacio publico ve Sentinel
+en este territorio, quien publica, que temas descubre SIN que
+nadie se los siembre, y que no puede medir.
+
+Lee el corpus persistido. **Cero peticiones externas.**
+
+La respuesta pasa por `revisarSalida` antes de enviarse: si
+alguna cadena afirma mas de lo que los datos sostienen, se
+declara en lugar de dejarla pasar.
+===========================================================
+*/
+
+router.post("/cobertura", async (req, res) => {
+  try {
+    const cuerpo = req.body || {};
+
+    const projectId = cuerpo.proyectoId || null;
+
+    const ambitoId = cuerpo.territorio || "ec-azuay-cuenca";
+
+    const ventanaId = cuerpo.ventana || "7d";
+
+    const ahora = cuerpo.ahora || new Date().toISOString();
+
+    /* --- corpus del proyecto --- */
+    const ledger = crearLedgerFichero();
+
+    const observaciones = await ledger.leerTodos();
+
+    const estado = reconstruirEstado(observaciones, {
+      projectId,
+      incluirLegado: cuerpo.incluirLegado === true
+    });
+
+    const corpus = [...estado.values()];
+
+    /* --- universo de fuentes comprobado --- */
+    const universoFuentes = reconstruirUniverso(await almacenDeFuentes().leerTodos());
+
+    const fichas = [...universoFuentes.values()];
+
+    if (corpus.length === 0) {
+      return res.json({
+        gate: "TERRITORIAL-SOURCE-COVERAGE-01",
+        projectId,
+        territorioId: ambitoId,
+
+        corpus: { evidencias: 0 },
+
+        motivo:
+          "Sin corpus para este proyecto. Eso NO es «no pasa nada en el territorio»: es que no se ha observado todavía. Ejecutar POST /api/territorio/observar."
+      });
+    }
+
+    /* --- evidencias en la forma que esperan los motores --- */
+    const evidencias = corpus.map((e) => ({
+      titulo: e.title || null,
+      descripcion: e.summary || null,
+      url: e.canonicalUrl || null,
+      enlace: e.canonicalUrl || null,
+      dominio: e.sourceId || null,
+      sourceId: e.sourceId || null,
+      domain: e.domain || e.sourceId || null,
+      fecha: e.publishedAt || null,
+      publishedAt: e.publishedAt || null,
+      firstObservedAt: e.firstObservedAt || null,
+      lastObservedAt: e.lastObservedAt || null,
+      evidenceId: e.evidenceId,
+      publisher: e.publisher || null,
+      emitterId: e.emitterId || null,
+      providerId: (e.providers || [])[0] || null
+    }));
+
+    /*
+      ---------------------------------------------------------
+      DESCUBRIMIENTO SIN SEMBRAR TEMAS
+
+      No se le pasa ninguna lista de temas. Lo que salga, sale
+      del corpus: es justo la pregunta central de este gate.
+      ---------------------------------------------------------
+    */
+    const { extraerTemas } = await import("../services/conversation/topicExtractor.js");
+
+    const { descubrirTemas } = await import(
+      "../services/conversation/openTopicDiscovery.js"
+    );
+
+    const temas = extraerTemas(evidencias, { ambito: ambitoId });
+
+    const descubrimiento = descubrirTemas(evidencias, { ambito: ambitoId });
+
+    const listaTemas = temas?.temas || [];
+
+    const listaDescubiertos = descubrimiento?.temasDescubiertos || [];
+
+    /* --- territorio por evidencia --- */
+    const { resolverLote } = await import("../services/geo/geoResolver.js");
+
+    const resuelto = resolverLote(evidencias, {
+      ambitoId,
+      pistaPorEvidencia: (e) => pistaDeFuente(e)
+    });
+
+    const ubicaciones = [];
+
+    (resuelto?.ubicadas || []).forEach((r) => {
+      ubicaciones[r.indice] = {
+        unidadId: r.ubicacion.unidadId,
+        unidad: r.ubicacion.unidad,
+        nivel: r.ubicacion.resolucion,
+        procedencia: r.ubicacion.procedencia,
+        confianzaGeografica: r.ubicacion.confianza,
+        razones: r.ubicacion.razones || []
+      };
+    });
+
+    /*
+      ---------------------------------------------------------
+      CUENCA VS NACIONAL
+
+      Cuatro estados en lugar de dos. Ninguno salvo el primero
+      cuenta como territorio.
+      ---------------------------------------------------------
+    */
+    const indiceAmbito = indiceDeAmbito(fichas);
+
+    const alcances = evidencias.map((e, i) =>
+      clasificarAlcance({ evidencia: e, ubicacion: ubicaciones[i] || null, indice: indiceAmbito })
+    );
+
+    const alcance = resumirAlcance(alcances);
+
+    /* --- actores --- */
+    const universoActores = construirUniversoDeActores({ corpus, fichas, projectId });
+
+    /* --- señales con su estado --- */
+    const toponimos = toponimosDe(listarUnidades());
+
+    const matriz = construirMatriz({
+      evidencias,
+      temas: listaTemas,
+      descubiertos: listaDescubiertos,
+      ubicaciones,
+      ventanaId,
+      ahora,
+      toponimos
+    });
+
+    const comparacion = compararVentanas({
+      evidencias,
+      temas: listaTemas,
+      descubiertos: listaDescubiertos,
+      ventanaId,
+      ahora
+    });
+
+    /*
+      Estado de cada señal. EMERGENTE exige que su primera
+      observacion caiga dentro de la ventana; no basta con ser
+      nueva para nosotros.
+    */
+    const porSenal = new Map();
+
+    matriz.filas.forEach((f) => {
+      const s = porSenal.get(f.temaId) || {
+        senal: f.tema,
+        temaId: f.temaId,
+        tipoSenal: f.tipoSenal,
+        origen: f.origenTema,
+        evidencias: 0,
+        fuentes: new Set(),
+        emisores: new Set(),
+        territorios: new Set(),
+        primeraObservacion: null,
+        ultimaObservacion: null,
+        evidenceIds: []
+      };
+
+      s.evidencias += f.evidencias;
+
+      (f.listaFuentes || []).forEach((x) => s.fuentes.add(x));
+
+      (f.listaEmisores || []).forEach((x) => s.emisores.add(x));
+
+      if (f.territorioId !== TERRITORIO_NO_RESUELTO) s.territorios.add(f.territorioId);
+
+      (f.evidenceIds || []).forEach((id) => {
+        if (!s.evidenceIds.includes(id)) s.evidenceIds.push(id);
+      });
+
+      if (f.primeraObservacion && (!s.primeraObservacion || f.primeraObservacion < s.primeraObservacion)) {
+        s.primeraObservacion = f.primeraObservacion;
+      }
+
+      if (f.ultimaObservacion && (!s.ultimaObservacion || f.ultimaObservacion > s.ultimaObservacion)) {
+        s.ultimaObservacion = f.ultimaObservacion;
+      }
+
+      porSenal.set(f.temaId, s);
+    });
+
+    const tendenciaPorTema = new Map(comparacion.filas.map((f) => [f.temaId, f]));
+
+    /*
+      QUIEN vs QUE
+
+      El descubrimiento abierto devuelve «José Serrano» y
+      «Seguridad ciudadana» en la misma lista, y no son lo mismo:
+      uno es un actor y el otro un asunto.
+
+      `clasificarEntidad` los separa, y su veredicto viaja CON SU
+      CONFIANZA porque es heuristico y falla de forma visible:
+      medido en este gate, tipa «Barcelona SC» como PERSON por
+      ser dos palabras capitalizadas. Se expone en lugar de
+      ocultarse, y NO sobrescribe `tipoSenal`, que es el contrato
+      de la matriz.
+    */
+    const { clasificarEntidad, TIPOS_ENTIDAD } = await import(
+      "../services/conversation/entityTopicSeparation.js"
+    );
+
+    const UMBRAL_ENTIDAD = 0.5;
+
+    const clasificarSiEsActor = (nombre) => {
+      const r = clasificarEntidad(nombre, { contexto: "" });
+
+      const esActor =
+        r?.tipo === TIPOS_ENTIDAD.PERSON || r?.tipo === TIPOS_ENTIDAD.ORGANIZATION;
+
+      if (!esActor || (r.confianza ?? 0) < UMBRAL_ENTIDAD) return null;
+
+      return {
+        tipo: r.tipo,
+        confianza: r.confianza,
+        razon: (r.razones || [])[0] || null,
+
+        advertencia:
+          "Clasificación heurística SIN verificar. Un nombre de dos palabras capitalizadas se tipa como PERSON aunque sea un club."
+      };
+    };
+
+    const senales = [...porSenal.values()]
+      .map((s) => {
+        const tend = tendenciaPorTema.get(s.temaId);
+
+        const declarable =
+          tend &&
+          ["CRECIENDO", "DISMINUYENDO", "ESTABLE"].includes(tend.estado);
+
+        return {
+          senal: s.senal,
+          temaId: s.temaId,
+          tipoSenal: s.tipoSenal,
+          origen: s.origen,
+
+          evidencias: s.evidencias,
+          fuentes: s.fuentes.size,
+          emisores: s.emisores.size,
+          territorios: s.territorios.size,
+
+          primeraObservacion: s.primeraObservacion,
+          ultimaObservacion: s.ultimaObservacion,
+
+          /*
+            SIN_HISTORICO_SUFICIENTE no es un defecto de la señal:
+            es un hecho sobre nuestra observación.
+          */
+          estado: declarable
+            ? tend.estado === "CRECIENDO"
+              ? "EMERGENTE"
+              : "ACTIVO"
+            : "SIN_HISTORICO_SUFICIENTE",
+
+          /*
+            Presente solo cuando la señal parece un ACTOR. Null
+            significa «no parece»: no se fuerza una clase.
+          */
+          clasificacionDeEntidad: clasificarSiEsActor(s.senal),
+
+          tendencia: tend?.estado || null,
+          motivoTendencia: tend?.motivo || null,
+
+          evidenceIds: s.evidenceIds.slice(0, 12)
+        };
+      })
+      .sort((a, b) => b.evidencias - a.evidencias);
+
+    /* --- matriz de cobertura --- */
+    const adapters = estadoAdapters();
+
+    const porProveedorCorpus = {};
+
+    observaciones.forEach((o) => {
+      if (o.providerId) porProveedorCorpus[o.providerId] = (porProveedorCorpus[o.providerId] || 0) + 1;
+    });
+
+    const motores = [
+      ...adapters.map((a) => ({
+        ...a,
+        observacionesEnElCorpus: porProveedorCorpus[a.providerId] || 0
+      })),
+      ...Object.entries(porProveedorCorpus)
+        .filter(([id]) => !adapters.some((a) => a.providerId === id))
+        .map(([id, n]) => ({ providerId: id, nombre: id, observacionesEnElCorpus: n }))
+    ];
+
+    const cobertura = construirMatrizDeCobertura({
+      corpus,
+      fichas,
+      motores,
+      senales: { clasificadas: listaTemas.length, descubiertas: listaDescubiertos.length },
+      alcance,
+      tendencia: comparacion.metricas,
+      actores: universoActores.metricas
+    });
+
+    /* --- atencion observable, con la coletilla puesta --- */
+    const dominioTop = [...universoActores.actores].sort((a, b) => b.evidencias - a.evidencias)[0];
+
+    const senalTop = senales.filter((x) => x.tipoSenal === "TEMA")[0];
+
+    const atencionObservable = [
+      dominioTop
+        ? afirmar("DOMINIO_RECURRENTE", {
+            sujeto: dominioTop.nombre,
+            medidas: { evidencias: dominioTop.evidencias }
+          })
+        : null,
+
+      senalTop
+        ? afirmar("MAS_MENCIONES", {
+            sujeto: senalTop.senal,
+            medidas: { evidencias: senalTop.evidencias }
+          })
+        : null,
+
+      senalTop
+        ? afirmar("MAS_AMPLIFICADO", {
+            sujeto: senalTop.senal,
+            medidas: { fuentes: senalTop.fuentes }
+          })
+        : null
+    ].filter(Boolean);
+
+    const salida = {
+      gate: "TERRITORIAL-SOURCE-COVERAGE-01",
+
+      projectId,
+      territorioId: ambitoId,
+      ventana: ventanaId,
+      generadoEn: ahora,
+
+      ambito: {
+        tipo: projectId ? "PROYECTO" : "CORPUS_COMPLETO",
+
+        declaracion: projectId
+          ? `Solo evidencia del proyecto «${projectId}».`
+          : "SIN proyecto: corpus completo. Esta cifra NO es de ninguna campaña."
+      },
+
+      corpus: {
+        evidencias: corpus.length,
+        observaciones: observaciones.length,
+        dominios: new Set(corpus.map((e) => e.sourceId).filter(Boolean)).size,
+        conResumen: corpus.filter((e) => e.summary).length,
+        conFecha: corpus.filter((e) => e.publishedAt).length,
+
+        proveedores: porProveedorCorpus
+      },
+
+      cobertura,
+
+      alcanceTerritorial: {
+        ...alcance,
+
+        ejemplos: {
+          [ALCANCES.FUENTE_LOCAL_SIN_TERRITORIO]: alcances
+            .map((a, i) => ({ a, e: evidencias[i] }))
+            .filter((x) => x.a.alcance === ALCANCES.FUENTE_LOCAL_SIN_TERRITORIO)
+            .slice(0, 3)
+            .map((x) => ({
+              titulo: String(x.e.titulo || "").slice(0, 80),
+              fuente: x.a.fuente.nombre,
+              etiqueta: x.a.etiqueta
+            }))
+        }
+      },
+
+      actores: {
+        metricas: universoActores.metricas,
+        declaraciones: universoActores.declaraciones,
+        lista: universoActores.actores.slice(0, 40)
+      },
+
+      descubrimiento: {
+        sinSembrarTemas: true,
+
+        clasificadas: listaTemas.length,
+        descubiertas: listaDescubiertos.length,
+
+        porTipoDeSenal: senales.reduce((acc, s) => {
+          acc[s.tipoSenal] = (acc[s.tipoSenal] || 0) + 1;
+
+          return acc;
+        }, {}),
+
+        /* Cuantas señales parecen un actor y no un asunto. */
+        pareceActor: senales.filter((s) => s.clasificacionDeEntidad).length,
+
+        senales: senales.slice(0, 60),
+
+        declaracion:
+          "No se pasó ninguna lista de temas: todo lo que aparece salió del corpus."
+      },
+
+      atencionObservable,
+
+      metricasProhibidas: {
+        motivo:
+          "Sin denominador poblacional oficial con licencia no se calcula ningún porcentaje. Todo lo anterior se refiere a la MUESTRA OBSERVADA, no a la ciudad."
+      },
+
+      costes: {
+        usd: 0,
+        peticionesExternas: 0,
+        motivo: "Lee el corpus ya persistido. Ningún adapter se invoca."
+      }
+    };
+
+    /*
+      Cinturon final: ninguna cadena de la respuesta puede
+      afirmar mas de lo que los datos sostienen.
+    */
+    const revision = revisarSalida(salida);
+
+    res.json({ ...salida, revisionDeAfirmaciones: revision });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo la auditoria de cobertura" });
   }
 });
 

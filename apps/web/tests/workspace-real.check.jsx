@@ -53,7 +53,7 @@ const pr = leer("pr.json");
 */
 let peticiones = 0;
 
-globalThis.fetch = async (url, opciones) => {
+globalThis.fetch = async (url) => {
   peticiones += 1;
 
   const u = String(url);
