@@ -61,6 +61,31 @@ No existe `writeFile` en este módulo.
 export const VERSION_LEDGER = "1.0";
 
 
+/*
+-----------------------------------------------------------
+MINIMIZAR LA FIRMA
+
+Un correo en el campo `author` es un dato de contacto, no una
+firma editorial. Se conserva la parte que identifica a quien
+firma y se descarta el dominio, que es lo que lo convierte en
+una direccion utilizable.
+
+No se borra la firma entera: quedaria una pieza sin autor
+cuando si lo declara.
+-----------------------------------------------------------
+*/
+
+export function firmaMinimizada(autor) {
+  const s = String(autor || "").trim();
+
+  if (!s) return null;
+
+  const correo = s.match(/^([^@\s]+)@[^@\s]+$/);
+
+  return correo ? correo[1] : s;
+}
+
+
 export function crearLedgerMemoria() {
   const lineas = [];
 
@@ -228,6 +253,7 @@ export function reconstruirEstado(observaciones = [], opciones = {}) {
           emitterStatus: o.emitterStatus || null,
 
           summary: o.summary || null,
+          author: o.author || null,
 
           provenance: o.provenance || null,
 
@@ -275,6 +301,8 @@ export function reconstruirEstado(observaciones = [], opciones = {}) {
       if (!previo.domain && o.domain) previo.domain = o.domain;
 
       if (!previo.summary && o.summary) previo.summary = o.summary;
+
+      if (!previo.author && o.author) previo.author = o.author;
 
       /*
         El emisor se COMPLETA si no constaba. Que RSS resuelva
@@ -417,6 +445,27 @@ export async function registrarPasada({
           limitacion declarada de §13-terdecies.
         */
         summary: ev.snippet || ev.summary || null,
+
+        /*
+          FIRMA — TERRITORIAL-OPEN-LISTENING-EXPANSION-01
+
+          `rssAdapter` ya extraia el autor de `dc:creator` y de
+          `author`, y aqui se perdia. Medido sobre cuatro feeds
+          locales reales: 40 de 40 items lo declaran, y se estaba
+          tirando el 100 %.
+
+          Es la firma TAL COMO la publica la fuente. Puede ser una
+          persona, una seccion o una etiqueta generica —«Redes
+          Sociales»—: quien es cada cosa se decide despues, con
+          evidencia, no aqui.
+
+          MINIMIZACION: algunos feeds ponen un CORREO en el campo
+          de autor. Medido en la primera pasada real:
+          `agencianoticiasuc@gmail.com`. Un correo es un dato de
+          contacto personal y no aporta nada a la firma editorial,
+          asi que se guarda el usuario y se descarta el dominio.
+        */
+        author: firmaMinimizada(ev.author),
 
         provenance: ev.provenance || null,
 

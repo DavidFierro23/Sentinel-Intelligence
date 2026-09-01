@@ -152,7 +152,15 @@ export const METODOS_DESCUBRIMIENTO = Object.freeze({
     que los demas, y si no responde queda NO_RESUELTO: no se
     promueve por parecer razonable.
   */
-  DOMINIO_PROPUESTO: "dominio_propuesto_por_analista"
+  DOMINIO_PROPUESTO: "dominio_propuesto_por_analista",
+
+  /*
+    Salio de una busqueda web abierta. Es la unica via de
+    descubrimiento territorial que funciona hoy sin credencial, y
+    tiene una trampa propia: la busqueda por texto no distingue
+    canton homonimo. `ociocuenca.es` es Cuenca de España.
+  */
+  DESCUBIERTO_POR_BUSQUEDA: "descubierto_por_busqueda_web"
 });
 
 
@@ -347,13 +355,109 @@ const CANDIDATOS_DECLARADOS = [
   */
   {
     dominio: "deportivocuenca.com",
-    nombre: "Deportivo Cuenca (propuesto)",
+    nombre: "Deportivo Cuenca (dominio erroneo)",
     tipo: null,
     subtipo: "CLUB",
     cobertura: { unidadId: "ec-azuay-cuenca", resolucion: "canton" },
     prioridad: PRIORIDADES.OTRA_FUENTE_PUBLICA,
     metodo: METODOS_DESCUBRIMIENTO.DOMINIO_PROPUESTO,
-    nota: "Club de futbol del canton. Dominio propuesto, sin confirmar."
+    nota:
+      "Responde y NO publica feed. El sitio oficial del club es `clubdeportivocuenca.com`, descubierto por busqueda web: este dominio se conserva como comprobado sin feed."
+  },
+
+  /*
+    ===========================================================
+    DESCUBIERTAS POR BUSQUEDA WEB
+    TERRITORIAL-OPEN-LISTENING-EXPANSION-01
+    ===========================================================
+
+    Tres consultas a DuckDuckGo —sin credencial, coste cero—
+    devolvieron 17 dominios que no estaban en el universo. Las
+    cuatro de abajo se comprobaron por HTTP y publican feed.
+
+    POR QUE IMPORTAN MAS QUE CUATRO FUENTES CUALESQUIERA
+    -----------------------------------------------------------
+
+    Cierran cuatro huecos que el corpus RSS NO podia encontrar
+    por si mismo, porque no habia por donde: deporte local,
+    cultura y agenda de eventos, y universidad.
+
+    El agregador tampoco los revelaba: en el gate anterior,
+    Google News sobre Cuenca no devolvio ni uno.
+
+    UNA TRAMPA QUE LA BUSQUEDA WEB SI TIENE
+    -----------------------------------------------------------
+
+    Las mismas consultas devolvieron `ociocuenca.es` y
+    `agendacultural.castillalamancha.es`: son Cuenca, ESPAÑA.
+    Un descubridor por texto no distingue cantones homonimos, y
+    por eso ninguna fuente entra sin comprobacion ni sin que un
+    analista declare su ambito.
+    ===========================================================
+  */
+  {
+    dominio: "clubdeportivocuenca.com",
+    nombre: "Club Deportivo Cuenca",
+    tipo: null,
+    subtipo: "CLUB",
+    cobertura: { unidadId: "ec-azuay-cuenca", resolucion: "canton" },
+    prioridad: PRIORIDADES.OTRA_FUENTE_PUBLICA,
+    metodo: METODOS_DESCUBRIMIENTO.DESCUBIERTO_POR_BUSQUEDA,
+    nota:
+      "Sitio oficial del club de futbol del canton. Descubierto por busqueda web y comprobado por HTTP. Sin tipo de medio: un club no es un medio."
+  },
+  {
+    dominio: "cultura.cuenca.gob.ec",
+    nombre: "Direccion General de Cultura de Cuenca",
+    tipo: TIPOS_FUENTE.INSTITUCION,
+    subtipo: "CULTURA_MUNICIPAL",
+    cobertura: { unidadId: "ec-azuay-cuenca", resolucion: "canton" },
+    prioridad: PRIORIDADES.INSTITUCION_PUBLICA,
+    metodo: METODOS_DESCUBRIMIENTO.DESCUBIERTO_POR_BUSQUEDA,
+    nota:
+      "Agenda cultural del municipio. Subdominio de `cuenca.gob.ec`, que NO publica feed: la agenda cultural si."
+  },
+  {
+    dominio: "cceazuay.gob.ec",
+    nombre: "Casa de la Cultura Ecuatoriana · Nucleo del Azuay",
+    tipo: TIPOS_FUENTE.INSTITUCION,
+    subtipo: "CULTURA",
+    cobertura: { unidadId: "ec-azuay", resolucion: "provincia" },
+    prioridad: PRIORIDADES.INSTITUCION_PUBLICA,
+    metodo: METODOS_DESCUBRIMIENTO.DESCUBIERTO_POR_BUSQUEDA,
+    nota: "Ambito provincial declarado, no cantonal: es el nucleo del Azuay."
+  },
+  {
+    dominio: "agencianoticiasuc.com",
+    nombre: "Agencia Universitaria de Noticias",
+    tipo: null,
+    subtipo: "UNIVERSITARIO",
+    cobertura: null,
+    prioridad: PRIORIDADES.UNIVERSIDAD_O_ENTIDAD,
+    metodo: METODOS_DESCUBRIMIENTO.DESCUBIERTO_POR_BUSQUEDA,
+    nota:
+      "Agencia de noticias universitaria. Cobertura territorial NO declarada: apareció en una consulta sobre la Universidad de Cuenca, y eso no demuestra su ambito."
+  },
+  {
+    dominio: "eldigitaldecuenca.com",
+    nombre: "El Digital de Cuenca",
+    tipo: null,
+    subtipo: null,
+    cobertura: { unidadId: "ec-azuay-cuenca", resolucion: "canton" },
+    prioridad: PRIORIDADES.MEDIO_LOCAL,
+    metodo: METODOS_DESCUBRIMIENTO.DESCUBIERTO_POR_BUSQUEDA,
+    nota:
+      "Medio digital local descubierto por busqueda. Declara feed y NO resulto legible: queda comprobado sin feed util. Sin tipo: la clasificacion de medios sale del catalogo."
+  },
+  {
+    dominio: "cuencadeportiva.com",
+    nombre: "CD Cuenca Deportiva",
+    tipo: null,
+    subtipo: null,
+    cobertura: null,
+    prioridad: PRIORIDADES.OTRA_FUENTE_PUBLICA,
+    metodo: METODOS_DESCUBRIMIENTO.DESCUBIERTO_POR_BUSQUEDA,
+    nota: "Responde y no publica feed. Ambito sin confirmar."
   }
 ];
 

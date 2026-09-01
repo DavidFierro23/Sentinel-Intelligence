@@ -141,7 +141,8 @@ export function construirMatrizDeCobertura({
   senales = { clasificadas: 0, descubiertas: 0 },
   alcance = null,
   tendencia = null,
-  actores = null
+  actores = null,
+  firmas = null
 } = {}) {
   const porProveedor = new Map();
 
@@ -288,16 +289,45 @@ export function construirMatrizDeCobertura({
 
   const cuenta = (clase) => (actores?.porClase ? actores.porClase[clase] || 0 : 0);
 
+  /*
+    PERIODISTAS — se deriva de las FIRMAS observadas.
+
+    Hasta TERRITORIAL-OPEN-LISTENING-EXPANSION-01 esta dimension
+    estaba en NO_PROBADO con razon: el adapter extraia el autor y
+    el libro lo tiraba al persistir. Ahora se guarda, asi que el
+    estado sale de lo que hay.
+
+    PARCIAL y no OPERATIVO aunque haya firmas: la promocion de
+    firma a persona es heuristica y sin verificar, y hay piezas
+    sin firma. Decir OPERATIVO seria afirmar mas de lo medido.
+  */
+  const firmasPersona = firmas?.personas ?? 0;
+
+  const firmasTotal = firmas?.total ?? 0;
+
   filas.push(
-    fila("periodistas", ESTADOS_COBERTURA.NO_PROBADO, {
-      conectores: ["mediaRegistry"],
-      evidencias: 0,
-      actores: cuenta("PERIODISTA"),
-      limitacion:
-        "El corpus resuelve el MEDIO, no la firma. Los feeds traen autor a veces y no se ha explotado.",
-      queFalta: "Extraer y consolidar el campo autor de los feeds que lo declaran.",
-      porQue: "La señal existe en los datos y todavía no se procesa."
-    })
+    fila(
+      "periodistas",
+      firmasTotal > 0 ? ESTADOS_COBERTURA.PARCIAL : ESTADOS_COBERTURA.NO_PROBADO,
+      {
+        conectores: ["rssAdapter", "journalistUniverse"],
+        evidencias: firmas?.piezasConFirma ?? 0,
+        actores: firmasPersona,
+        ultimaObservacion: ultima,
+
+        limitacion: firmasTotal
+          ? `${firmas.secciones || 0} firma(s) son secciones y no personas, y ${firmas.piezasSinFirma || 0} pieza(s) no traen firma. La promoción a persona es heurística y NO está verificada.`
+          : "El corpus resuelve el MEDIO, no la firma.",
+
+        queFalta: firmasTotal
+          ? "Verificar las firmas contra los propios medios y resolver identidad entre medios."
+          : "Extraer y consolidar el campo autor de los feeds que lo declaran.",
+
+        porQue: firmasTotal
+          ? `${firmasTotal} firma(s) observadas en ${firmas.mediosConFirma || 0} medio(s), declaradas por la propia fuente.`
+          : "La señal existe en los datos y todavía no se procesa."
+      }
+    )
   );
 
   filas.push(
