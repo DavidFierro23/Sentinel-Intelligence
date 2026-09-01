@@ -226,15 +226,18 @@ await t("la guarda se evalua ANTES de resolver el endpoint", async () => {
 
 await t("un proveedor APROBADO con endpoint no declarado no gasta credito", async () => {
   /*
-    El otro lado, que solo se puede probar desde que hay un
-    proveedor aprobado: pasa la guarda y aun asi no sale a la red
-    porque Instagram no tiene endpoints declarados.
+    ACTUALIZADO en P-CAND-INSTAGRAM-FALLBACK-01: Instagram ya
+    tiene endpoints declarados (perfil, publicaciones,
+    comentarios, respuestas). La prueba de "no declarado" se
+    mueve a una plataforma que ScrapeCreators no contempla en su
+    registro. Pasa la guarda de aprobacion y aun asi no sale a la
+    red porque no hay endpoint que resolver.
   */
   let llamado = false;
 
   const r = await cli.pedirAlProveedor({
     providerId: "scrapecreators",
-    platformId: "instagram",
+    platformId: "youtube",
     operacion: "comentarios",
     entorno: entornoListo,
     fetchImpl: async () => {
@@ -248,6 +251,17 @@ await t("un proveedor APROBADO con endpoint no declarado no gasta credito", asyn
     llamado === false &&
     r.estado === cli.ESTADOS_CLIENTE.ENDPOINT_NO_DECLARADO &&
     r.llamadas === 0
+  );
+});
+
+await t("Instagram comentarios y respuestas SI estan declarados desde este gate", () => {
+  /*
+    El positivo que reemplaza al negativo anterior: se demuestra
+    que ahora existen, en lugar de solo dejar de afirmar que no.
+  */
+  return (
+    cli.armarPeticion({ p: esp.proveedor("scrapecreators"), platformId: "instagram", operacion: "comentarios", clave: CLAVE }) !== null &&
+    cli.armarPeticion({ p: esp.proveedor("scrapecreators"), platformId: "instagram", operacion: "respuestas", clave: CLAVE }) !== null
   );
 });
 
@@ -334,10 +348,15 @@ await t("la clave viaja en cabecera y NUNCA en la URL", () => {
 });
 
 await t("un endpoint no declarado devuelve null y no una URL inventada", () => {
+  /*
+    ACTUALIZADO en P-CAND-INSTAGRAM-FALLBACK-01: instagram/comentarios
+    ya existe. Se usa una plataforma fuera del registro para seguir
+    probando lo mismo: que un endpoint ausente no inventa una URL.
+  */
   return (
     cli.armarPeticion({
       p: P,
-      platformId: "instagram",
+      platformId: "youtube",
       operacion: "comentarios",
       clave: CLAVE
     }) === null

@@ -392,6 +392,19 @@ export const PROVEEDORES = Object.freeze({
         publicacion: "/v2/tiktok/video",
         comentarios: "/v1/tiktok/video/comments",
         respuestas: "/v1/tiktok/video/comment/replies"
+      },
+
+      /*
+        P-CAND-INSTAGRAM-FALLBACK-01. Instagram entra como
+        FALLBACK, no como sustituto: Meta oficial sigue siendo la
+        fuente primaria donde `business_discovery` alcanza, y esto
+        solo cubre los activos que esa via no abre.
+      */
+      instagram: {
+        perfil: "/v1/instagram/profile",
+        publicaciones: "/v2/instagram/user/posts",
+        comentarios: "/v2/instagram/post/comments",
+        respuestas: "/v1/instagram/post/comment/replies"
       }
     },
 
@@ -402,7 +415,10 @@ export const PROVEEDORES = Object.freeze({
     */
     parametroDeSujeto: {
       facebook: { perfil: "url", publicaciones: "url", comentarios: "url" },
-      tiktok: { perfil: "handle", publicaciones: "handle", comentarios: "url" }
+      tiktok: { perfil: "handle", publicaciones: "handle", comentarios: "url" },
+
+      /* Instagram pide handle en perfil y posts, y URL en comentarios. */
+      instagram: { perfil: "handle", publicaciones: "handle", comentarios: "url" }
     },
 
     /*

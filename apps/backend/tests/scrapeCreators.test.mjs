@@ -479,6 +479,206 @@ await t("no hay ninguna credencial en el registro del proveedor", () => {
 });
 
 
+
+/* ---------------------------------------------------------
+   INSTAGRAM — FALLBACK, P-CAND-INSTAGRAM-FALLBACK-01
+   Cargas SINTETICAS con la FORMA real medida el 2026-08-31
+   sobre @pedropalaciosu (control) y @paulcarrascoc (fallback).
+   Los IDs, nombres y textos son inventados.
+--------------------------------------------------------- */
+const igPerfil = {
+  data: {
+    user: {
+      id: "9000000000",
+      username: "cuenta.sintetica",
+      full_name: "Nombre Sintetico",
+      biography: "bio sintetica",
+      is_private: false,
+      is_verified: false,
+      edge_followed_by: { count: 985 },
+      edge_follow: { count: 200 },
+      edge_owner_to_timeline_media: { count: 266 }
+    }
+  }
+};
+
+const igPosts = {
+  items: [
+    {
+      code: "B3cuuySINTET",
+      /* pk deliberadamente ausente: no llega con trim=true. */
+      media_type: 1,
+      taken_at: 1570734600,
+      caption: { text: "Caption sintetica de Instagram" },
+      like_count: 57,
+      comment_count: 5,
+      url: "https://www.instagram.com/p/B3cuuySINTET/"
+    },
+    {
+      /* Sin caption, sin like_count: dos ausencias reales distintas. */
+      code: "B3HxsSINTET2",
+      media_type: 8,
+      taken_at: 1570000000,
+      caption: null,
+      like_count: null,
+      comment_count: 0
+    }
+  ]
+};
+
+const igComentarios = {
+  /*
+    Cinco entradas, para reproducir el 5 de 5 real observado sobre
+    @paulcarrascoc: es lo que permite probar COBERTURA COMPLETA
+    ademas de la muestra parcial que ya cubren otros tests.
+  */
+  comments: Array.from({ length: 5 }, (_, i) => ({
+    id: `18018190SINTETICO${i}`,
+    text: `Comentario sintetico de Instagram numero ${i}`,
+    created_at: "2024-08-24T21:07:26.000Z",
+    comment_like_count: 0,
+    child_comment_count: 0,
+    user: { pk: `signup-sintetico-${i}`, username: `usuario_sintetico_${i}` }
+  }))
+};
+
+
+bloque("Instagram: mapeo de la forma real (GraphQL anidado)");
+
+const perfilIg = map.perfilDeInstagram(igPerfil);
+
+await t("el id estable sale de data.user.id, no de la URL", () => {
+  return perfilIg.accountProviderId === "9000000000";
+});
+
+await t("followers, following y mediaCount se leen de los edges anidados", () => {
+  return (
+    perfilIg.followers === 985 &&
+    perfilIg.following === 200 &&
+    perfilIg.mediaCount === 266
+  );
+});
+
+await t("la URL canonica se deriva del handle", () => {
+  return perfilIg.canonicalUrl === "https://www.instagram.com/cuenta.sintetica";
+});
+
+const postsIg = map.publicacionesDeInstagram(igPosts);
+
+await t("el code se usa como id estable de publicacion, no pk", () => {
+  return postsIg[0].post_id === "B3cuuySINTET";
+});
+
+await t("el caption es un objeto y se extrae su .text", () => {
+  return postsIg[0].text === "Caption sintetica de Instagram";
+});
+
+await t("media_type numerico se traduce a algo legible", () => {
+  return postsIg[0].content_type === "image" && postsIg[1].content_type === "carousel";
+});
+
+await t("taken_at unix se convierte a ISO", () => {
+  return postsIg[0].published_at === map.desdeUnix(1570734600);
+});
+
+await t("un caption null da texto null, no cadena vacia", () => {
+  return postsIg[1].text === null;
+});
+
+await t("un like_count ausente da null y no se inventa un cero", () => {
+  return postsIg[1].likes === null && postsIg[1].likes !== 0;
+});
+
+await t("un comment_count de 0 SI se conserva como 0 medido", () => {
+  return postsIg[1].comments_count === 0;
+});
+
+const comsIg = map.comentariosDeInstagram(igComentarios);
+
+await t("el id del comentario se conserva tal cual", () => {
+  return comsIg[0].comment_id === "18018190SINTETICO0";
+});
+
+await t("el texto real del comentario se conserva", () => {
+  return comsIg[0].text === "Comentario sintetico de Instagram numero 0";
+});
+
+await t("el timestamp de comentario llega en ISO, igual que en Facebook", () => {
+  return comsIg[0].published_at === "2024-08-24T21:07:26.000Z";
+});
+
+await t("totalDeComentarios de Instagram lee el commentCount de la publicacion", () => {
+  return map.totalDeComentarios("instagram", igComentarios, { comment_count: 5 }) === 5;
+});
+
+
+bloque("Instagram: normalizado con el contrato generico y no fake zero");
+
+const pubIg = esp.normalizarPublicacionDeProveedor({
+  providerId: "scrapecreators",
+  platformId: "instagram",
+  payload: postsIg[1],
+  observedAt: "2026-08-31T12:00:00.000Z"
+});
+
+const metricaIg = (p, n) => p.metricas.find((m) => m.metrica === n);
+
+await t("likes ausente en Instagram queda NO_DISPONIBLE y no 0", () => {
+  const m = metricaIg(pubIg, "likes");
+
+  return m.value === null && m.availability === po.DISPONIBILIDAD.NO_DISPONIBLE;
+});
+
+await t("comentarios en 0 real se distingue de la ausencia", () => {
+  return metricaIg(pubIg, "commentsCount").value === 0;
+});
+
+const corpusIg = esp.normalizarComentariosDeProveedor({
+  providerId: "scrapecreators",
+  platformId: "instagram",
+  postId: "pub-instagram-B3cuuySINTET",
+  postPermalink: igPosts.items[0].url,
+  payload: comsIg,
+  commentsCount: 5,
+  observedAt: "2026-08-31T12:00:00.000Z"
+});
+
+await t("5 observados de 5 declarados es cobertura COMPLETA", () => {
+  return (
+    corpusIg.comentariosObservados === 5 &&
+    corpusIg.comentariosDeclaradosPorLaPlataforma === 5 &&
+    corpusIg.cobertura === "COMPLETA"
+  );
+});
+
+await t("el autor de Instagram se guarda sin perfilado", () => {
+  const a = corpusIg.comentarios[0].author;
+
+  return a.platformUserId === "signup-sintetico-0" && Array.isArray(a.noSeHace);
+});
+
+await t("Instagram no aparece hardcodeado en el contrato de publicacion: solo en provenance", () => {
+  const permitidos = ["provider", "providerId", "observationMethod"];
+
+  const rutas = [];
+
+  const recorrer = (o, ruta) => {
+    if (o === null || typeof o !== "object") {
+      if (String(o).includes("scrapecreators")) rutas.push(ruta);
+
+      return;
+    }
+
+    for (const k of Object.keys(o)) recorrer(o[k], ruta ? `${ruta}.${k}` : k);
+  };
+
+  recorrer(pubIg, "");
+
+  const ultimoTramo = (r) => r.split(".").pop();
+
+  return rutas.length > 0 && rutas.every((r) => permitidos.includes(ultimoTramo(r)));
+});
+
 /* ---------------------------------------------------------
    RESULTADO
 --------------------------------------------------------- */

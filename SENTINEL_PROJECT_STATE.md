@@ -77,6 +77,13 @@ que no sabe.
 | Análisis territorial | 🟡 DESARROLLO PARALELO | ver §14 |
 | Conversación digital | 🟡 DESARROLLO PARALELO | ver §14 |
 | Inteligencia accionable | 🔴 PENDIENTE | no existe capa de recomendación |
+| **Media Intelligence — módulo** | ✅ OPERATIVO | `GET /api/media/:proyectoId/home`, `MediaIntelligenceModule.jsx`, §18-M4 |
+| Media · analizar una publicación | ✅ OPERATIVO | `POST /api/media/pieza/analizar`, herramienta interna del módulo, §18-M1/M2/M3 |
+| Media · presencia observada (ranking) | ✅ OPERATIVO | recuento sobre el corpus, sin score y sin influencia, §18-M4 |
+| Media · candidatos × medios | 🟡 PARCIAL | fuentes distintas y evidencias sí; piezas por candidato no, la arista se deduplica por par |
+| Media · historias / temas | 🟡 PARCIAL | la amplificación no persiste titular: `COBERTURA_INSUFICIENTE` declarada |
+| Media · territorio del corpus | 🔴 PENDIENTE | GEO-1 lo resuelve por pieza y la fila no lo guarda |
+| Media · incidencia | 🔴 PENDIENTE | `METODOLOGIA_EN_CONSTRUCCION` por contrato; nunca devuelve valor |
 | War Room | 🔒 RESERVADO | diseño congelado UX-WR-001 v2.0 |
 | Mapa Territorial (UI) | 🔒 RESERVADO | entrada de menú declarada `reservado` |
 | Correlación Viva (UI) | 🔒 RESERVADO | entrada de menú declarada `reservado` |
@@ -8288,6 +8295,423 @@ ninguno de los otros 5 proyectos del Lake.
 
 ---
 
+## 18-M. MEDIA INTELLIGENCE — historial de la línea
+
+**Por qué esta serie se numera aparte.** Las secciones `18-bis … 18-quadriquadragies`
+son una única secuencia de ordinales latinos que Candidate y Territorial
+extienden a la vez desde dos terminales. Media escribe en el mismo documento y
+tomar el siguiente ordinal significaba, en la práctica, elegir uno que otra
+terminal ya estaba usando sin saberlo. `18-M1 … 18-M4` no puede colisionar con
+ninguno de los dos y mantiene el orden histórico legible.
+
+**Los cuatro gates de Media existían en el repositorio y no en este documento.**
+Se recuperan de los commits reales (`0c98d58`, `ad7c2f8`, `df97ed3`, `1c88033`)
+y del corpus persistido, no de la memoria de nadie. La causa del desfase queda
+registrada porque volverá a pasar: los tres primeros cerraron sin ejecutar el
+protocolo §31, y una reanudación posterior encontró el documento tres gates por
+detrás del árbol de trabajo.
+
+---
+
+## 18-M1. MEDIA-PIECE-01 — analizar una publicación (2026-08-26)
+
+Commit `0c98d58`. Pegar una URL y obtener pieza, emisor, métricas observables,
+candidato relacionado, amplificación, temas, conversación, territorio, snapshot
+y evidencias. Cumple el `CONTRATO_MEDIA_RELATION` que `candidateRelations.js`
+había predeclarado como `CONTRATO_DEFINIDO_SIN_IMPLEMENTAR`.
+
+### Lo que reutiliza sin duplicar
+
+`evidenceContract`, `crossProviderDedup`, `nearDuplicate`, `sourceUniverse`,
+`mediaRegistry`, `sourceClassifier`, `topicEngine2`, `openTopicDiscovery`,
+`stopConcepts`, `actorMentions`, `geoResolver`, `geoContracts` (GEO-1),
+`evidenceGeolocation`, `candidateRelations`, `candidateAmplification`,
+`socialCapabilityMatrix`, `youtubeAdapter`, `searchProviderLayer`,
+`knowledgeLake`. Ni un motor paralelo.
+
+### Garantías fijadas por test
+
+- `value:null` nunca se convierte en 0; se declara por qué falta.
+- Los snapshots se anexan; T0 no se sobrescribe nunca.
+- Con un solo punto: `HISTORICO_INSUFICIENTE`, sin crecimiento inventado.
+- El rol por defecto entre dos piezas es `COBERTURA_RELACIONADA`: publicar
+  después no prueba copia.
+- 15 piezas / 10 fuentes / 1 contenido se cuentan por separado.
+- El territorio pasa por GEO-1 o no se afirma.
+- No existe campo de influencia, población ni intención de voto, y un test lo
+  comprueba sobre la respuesta serializada.
+- Un vídeo no se atribuye al dominio de la plataforma: el emisor es la cuenta.
+
+### Aislamiento
+
+Todo el código nuevo en `services/media/`, `routes/media.js` y
+`apps/web/src/media/`. Ficheros ajenos tocados: `server.js` (1 línea),
+`App.jsx` (2) y `Sidebar.jsx` (entrada de menú).
+
+---
+
+## 18-M2. MEDIA-PIECE-02 — brecha real de X y Facebook (2026-08-27)
+
+Commit `ad7c2f8`. Audita por qué una publicación de X no traía métricas y por
+qué un reel de Facebook no resolvía nada.
+
+**Causa X:** el adapter ya mapeaba las métricas en `normalizarPost`, pero no
+existía ninguna función para resolver un post por su ID: había mapa y no había
+camino. Se añade `xAdapter.resolverPosts` —espejo de `youtubeAdapter.resolverVideos`—
+y `bookmark_count` al mapa, porque el usuario ve «guardados» en pantalla y el
+modelo no los contemplaba. Quedaba un bloqueo que NO era de código: faltaba
+`X_BEARER_TOKEN`.
+
+**Causa Facebook:** no había lector de metadata pública. Sin título no hay temas
+—el motor agrupa por coocurrencia del titular— ni consultas útiles de
+amplificación: 3 de 4 se construyen con él. Las cinco líneas vacías del informe
+tenían una sola causa.
+
+### Nuevo
+
+- `publicMetadata.js`: Open Graph / Twitter Card / JSON-LD **comprobando
+  robots.txt antes de pedir la página**, con User-Agent identificado, sin
+  cookies y sin rodear ningún muro. Un muro se declara
+  `BLOQUEADA_POR_LA_PLATAFORMA`. Caché de robots con TTL de 15 min: sin
+  caducidad, una regla derogada seguiría vigente mientras el proceso viviera.
+- `pieceFieldMatrix.js`: matriz POR CAMPO con seis estados, sin modificar
+  `socialCapabilityMatrix`, que responde otra pregunta.
+- Fallback web: un snippet puede aportar el titular, siempre con procedencia
+  `snippet_de_buscador` y `esContenidoOriginal:false`. Nunca rellena una métrica.
+
+### Dos fallos que detectaron los propios tests
+
+- Un vídeo de YouTube/X se atribuía al dominio de la plataforma; ahora el emisor
+  queda pendiente y se resuelve al leer la API.
+- La matriz marca `instagram.*` DISPONIBLE con `alcanceMedicion` PROPIA. Leerlo
+  sin mirar el alcance habría prometido métricas de terceros inalcanzables;
+  `comprobarCoherencia` pasa a ser scope-aware.
+
+46 tests nuevos; suite completa 121, 0 fallos, ninguna toca la red.
+**No se declara Facebook ni X resueltos:** se reconoce la URL y se resuelve id y
+canónica; las métricas siguen bloqueadas por credencial (X) y por revisión de
+app de Meta (Facebook).
+
+---
+
+## 18-M3. MEDIA-REAL-DEMO-01 — dos demos reales (2026-08-31)
+
+Commits `df97ed3` y `1c88033`. Primer análisis real con métricas de la API
+oficial de X, sobre el proyecto `alcaldia-cuenca-2027-piloto`.
+
+**Credencial:** no había ninguna diferencia de mecanismo entre Candidate y
+Media. `X_BEARER_TOKEN` simplemente no existía cuando MEDIA-PIECE-02 auditó;
+está en el mismo `apps/backend/.env` y lo lee el mismo `xAdapter`. Una sola
+fuente de credencial.
+
+### Siete defectos reales encontrados y corregidos
+
+1. El texto REAL devuelto por la API de X se descartaba: el orquestador solo
+   leía `titulo`, y una publicación de X no tiene título. El fallback web
+   acababa poniendo el snippet de un buscador encima del contenido real.
+2. El emisor mostraba el handle en vez del nombre de la API: «tomebamba» en
+   lugar de «La Voz del Tomebamba».
+3. El fallback web se disparaba en TODA pieza de X buscando un título que la
+   propia matriz declara `NO_DISPONIBLE`, gastando tres consultas para nada.
+4. La comparación de nombres nunca casaba: `variantesDeNombre` devuelve
+   variantes sin acentos y el texto real los lleva. Una pieza que nombraba al
+   candidato salía como «no lo menciona».
+5. El Lake RECHAZABA las 18 filas de cada análisis por falta de `tenantId` (DT1)
+   y `linaje.submotor` (DT3) mientras `guardarAnalisis` informaba
+   `persistido: true`. Ahora `persistido` refleja lo realmente escrito.
+6. La misma pieza recibía DOS claves de entidad según si la API había respondido
+   (`x.com/…` vs `https://x.com/…`), lo que rompía el dedup y el histórico.
+7. Se arrastraban limitaciones ya resueltas («autor no resuelto» junto al nombre
+   del autor). Se podan las que dejaron de ser verdad.
+
+### §6 · Clasificación del emisor
+
+Se añade `NO_CLASIFICADO` y se deja de devolver `CREADOR` por defecto: en un
+panel «CREADOR» se lee como conclusión y no había evidencia. Nuevo
+`emitterCorrespondence`: el catálogo conoce `radiotomebamba.com.ec` y la pieza
+llega de `x.com/tomebamba`; se propone la correspondencia con su fuerza y su
+motivo, marcada `OBSERVADA_NO_VERIFICADA`, y **NO cambia la clase** hasta que un
+analista confirme. Una coincidencia parcial exige cubrir el 60 % del handle.
+
+### Territorio derivado del proyecto (`1c88033`)
+
+El territorio no aparecía porque GEO-1 detecta el topónimo «Cuenca» y se niega a
+resolverlo sin contexto: el registro lo declara ambiguo. Esa negativa es
+correcta y no se tocó. Lo que faltaba era darle el contexto que el proyecto YA
+declara: `obtenerProyecto` devuelve país, provincia y cantón, y
+`territoryRegistry.resolverAmbito` sabe traducirlos. **No se codifica ningún
+territorio en el motor**, y un test comprueba que el orquestador no menciona
+ninguna ciudad, provincia ni id de unidad.
+
+### Las dos demos, verificadas en el Lake
+
+| | CASO 1 | CASO 2 |
+|---|---|---|
+| Pieza | `x.com/tomebamba/status/2072842895451643961` | `elmercurio.com.ec/cuenca/2025/05/14/dos-anos-gestion-prefectura-juan-lloret-azuay` |
+| Emisor | «La Voz del Tomebamba», cuenta `89563373`, vía `x_api` | El Mercurio, `medio_local` del catálogo |
+| Clase | `NO_CLASIFICADO` (correcta) | `MEDIO` |
+| Candidato | `paul-carrasco-carpio` | `juan-cristobal-lloret-valdivieso` |
+| Autor | — | Patricia Naula Herembás |
+| Métricas | 6/6 medidas: views 5.966 · likes 13 · comentarios 11 · shares 6 · quotes 0 · guardados 2 | 6/6 `NO_DISPONIBLE` con motivo, `value:null` |
+| Territorio | Cuenca (cantón, confianza 80) por GEO-1 | — |
+
+130 y 133 tests declarados en los commits. **Reproducidos hoy: 102** con los
+tres ficheros de Media existentes, 0 fallos. La diferencia queda declarada y sin
+explicar; no hay ninguna prueba en rojo.
+
+---
+
+## 18-M4. MEDIA-UX-HOME-01 — el módulo dentro del proyecto (2026-09-01)
+
+Hasta este gate, **«Analizar publicación» era literalmente todo Media
+Intelligence**, y el menú lo decía para no prometer un módulo inexistente. Ahora
+el módulo existe y analizar una publicación es una de sus nueve secciones.
+
+### Lo que se construyó
+
+- `mediaVocabulary.js` — vocabulario oficial. Fija las palabras ANTES de que
+  exista la métrica, que es el único momento en que fijarlas sirve.
+- `mediaCorpus.js` — lee el corpus del proyecto desde el Lake.
+- `mediaHome.js` — las agregaciones de la vista.
+- `GET /api/media/modulo` y `GET /api/media/:proyectoId/home?ventana=` en el
+  MISMO router. No hay una segunda API de Media.
+- `MediaIntelligenceModule.jsx` — la vista, con `MediaPieceModule` dentro.
+
+### Las tres dimensiones, y la que no tiene valor
+
+`PRESENCIA OBSERVADA` y `AMPLIFICACIÓN OBSERVADA` son recuentos auditables fila
+a fila. `INCIDENCIA` se devuelve **siempre sin valor**, con estado
+`METODOLOGIA_EN_CONSTRUCCION` y sus cuatro requisitos: existe como concepto
+precisamente para que nadie la sustituya por un conteo. El motivo va con datos
+reales, no genérico: de 28 piezas del corpus, 26 no se pueden situar en el
+tiempo, y sin orden temporal no se puede afirmar que una fuente aparezca antes
+del crecimiento de un tema.
+
+### Por qué no se usó `obtenerEventosProyecto`
+
+Existe y hace casi esto, pero su proyección DESCARTA `datos`, que es donde vive
+todo lo de Media. Ampliarla habría tocado un fichero compartido con Candidate y
+Territorial. Se usa la misma pareja que ella usa por dentro —`indice.buscar` más
+`lector.aplicarFiltros`—. **Cero ficheros compartidos del Lake modificados.**
+
+### Los tres controles que sostienen las cifras
+
+1. **Aislamiento por proyecto.** El Lake real contiene filas de Media de tres
+   proyectos, dos de ellos de pruebas. Una HOME que las sumara mostraría piezas
+   inventadas en un panel de campaña. El filtro es por `proyectoId` y **el
+   recuento de lo excluido viaja en la respuesta**, para que el aislamiento sea
+   auditable y no una promesa. Verificado por HTTP contra un segundo proyecto
+   real (`ensayo-tipos-…`): 0 piezas, 0 filas de ranking.
+2. **Solo la versión vigente.** La pieza de X se ha reanalizado cuatro veces:
+   contar filas convertiría «volver a mirar» en «más presencia». 166 filas → 47
+   entidades.
+3. **Clave normalizada.** La misma pieza se guardó bajo `https://x.com/…` y
+   `x.com/…` por el defecto 6 de MEDIA-REAL-DEMO-01. La fila antigua no se borra
+   —el Lake es append-only—: se colapsa al leer y el número de colapsos se
+   declara.
+
+### El cero que no es un cero
+
+El caso que obligó a `medidaEnVentana()`: El Mercurio tiene 8 piezas observadas
+y ninguna con fecha ISO utilizable. Con un recuento único, la ventana HOY
+devolvía **0** y la fila se leía «El Mercurio no publicó nada», que es lo
+contrario de lo que ocurre. Ahora hay tres resultados posibles y solo uno es un
+número: sin piezas → `0` y es una medición; con piezas y ninguna datable →
+`null` + `COBERTURA_INSUFICIENTE`; con piezas datables → el recuento. El ranking
+muestra **dos columnas**, ventana y corpus.
+
+### La fecha que no se adivina
+
+Las piezas de amplificación llegan de un buscador con fechas como «3 jul 2026».
+`new Date("3 jul 2026")` es inválida en JS y un parser de meses en español
+situaría la pieza en una ventana que nadie observó. Solo se acepta ISO-8601
+estricto; el resto es `FECHA_NO_NORMALIZADA` y se cuenta. Tampoco se usa la
+fecha de DETECCIÓN como sustituta: una nota de 2023 detectada hoy caería en HOY.
+
+### El agregador que habría arruinado el ranking
+
+`google.com` aparece con 7 piezas —más que casi cualquier medio— porque la
+cobertura se recogió con SerpAPI y los enlaces vuelven envueltos en
+`google.com/goto?url=…`. No es un medio: es un artefacto de nuestra propia
+recolección. `mediaRegistry` ya lo tipa como AGREGADOR, así que el ranking lo
+separa en `artefactosDeRecoleccion`, **visible y declarado**. Ocultarlo sería
+tan malo como rankearlo.
+
+### Ventanas
+
+Se reutiliza `dayWindow` de la línea territorial: HOY es el día CALENDARIO en
+`America/Guayaquil`, y las cinco ventanas se alinean al mismo huso para que HOY
+sea un subconjunto exacto. **No se implementó ningún motor temporal paralelo.**
+La ventana filtra datos reales: sobre el corpus del piloto, HOY/7d/15d/30d
+sitúan 0 piezas y 90d sitúa 1.
+
+### Defecto encontrado por la validación HTTP, y corregido
+
+`historialDePieza` filtraba `clase === "snapshot"` sobre el historial de
+VERSIONES que devuelve `obtenerHistorialEntidad` —versión, hash, fechas,
+integridad—, que **no incluye `datos`**. El histórico volvía vacío aunque el
+Lake tuviera los snapshots. Era invisible porque el respaldo en memoria sí los
+tenía: dentro de una misma sesión el panel se veía correcto y el hueco solo
+aparecía tras reiniciar el backend. Ahora se leen los registros del índice, por
+las dos claves, deduplicados por `snapshotId`. Verificado en un proceso limpio:
+X devuelve 5 snapshots desde `knowledge_lake` con sus 6 métricas reales, y El
+Mercurio 2.
+
+### Cifras reales del proyecto piloto, ventana 90d
+
+Corpus 28 piezas · 2 analizadas · 26 relacionadas · 2 contenidos · 10 fuentes
+originales + 1 artefacto · 4 medios · 1 periodista · 0 creadores · 1 institución
+· 5 no clasificados · 2 candidatos · 28 evidencias. Temas
+`COBERTURA_INSUFICIENTE`, territorio `NO_DISPONIBLE`.
+
+Presencia: #1 La Voz del Tomebamba `NO_CLASIFICADO` (1 en ventana, 1 en corpus),
+#2 El Mercurio `MEDIO` (0 en ventana, 8 en corpus, 2 candidatos).
+Candidatos × medios: Paúl Carrasco 7 fuentes distintas / 7 evidencias; J. C.
+Lloret 6 / 6. Piezas por candidato `NO_DISPONIBLE` con el motivo técnico exacto:
+la arista se deduplica por el par (fuente, candidato).
+
+### Lo que este gate NO hizo
+
+No implementa motor conversacional: `sentinelAI.implementado` es `false` y solo
+se declara qué preguntas sostiene ya la forma de la vista y qué ejes faltan a
+las demás —4 de 7 respondibles; faltan `ventanaAnterior`, `incidencia` y
+`territorio`—. No persiste territorio ni titulares nuevos. No ejecuta
+proveedores: **0 requests externos, 0 USD**.
+
+### Certificación visual
+
+Backend verificado por HTTP en un puerto aparte para no tocar el 3001 de otra
+terminal. UI implementada y construida (`npm run build` limpio), **sin
+certificación visual en navegador**: corresponde a MEDIA-UX-CERT-01.
+
+134 pruebas de Media, 0 fallos; suite completa 1.382, 0 fallos. Las suites de
+Media quedan registradas en `npm test` vía `test:media`.
+
+---
+
+## 18-quinquadragies. P-CAND-INSTAGRAM-FALLBACK-01 (2026-08-31)
+
+**5 requests · 5 creditos (86->81) · $0 USD.** ScrapeCreators no se toco mas
+alla de estas cinco llamadas; ninguna request adicional se ejecuto durante el
+cierre del gate.
+
+Entregable: `docs/P-CAND-INSTAGRAM-FALLBACK-01.md`.
+
+### El hueco exacto
+
+Meta oficial solo alcanza cuentas de Instagram Business/Creator.
+**9 de los 12 activos del piloto son personales** y quedan
+`NO_SOPORTADO_PERSONAL`, sin remedio posible por esa via. Este gate demuestra
+que ScrapeCreators **si puede medirlos**, y construye la regla que evita que un
+dato raspado sustituya a uno oficial cuando el oficial ya funciona.
+
+### Dos activos reales, leidos del Lake
+
+**CONTROL** `@pedropalaciosu` —Meta ya lo mide, `MEDIDO_TERCERO`— id
+`11337989179`, 9.718 followers, 227 following, 12 posts: coincide
+razonablemente con la medicion oficial, que es justo su proposito: control de
+consistencia, no medicion nueva.
+
+**FALLBACK** `@paulcarrascoc` —unico Instagram de Paul Carrasco Carpio,
+personal, `NO_SOPORTADO_PERSONAL` en Meta, cobertura CERO por via oficial— id
+`3623701117`, 985 followers, 200 following, 266 posts declarados. Las 12
+publicaciones devueltas son **todas de 2019**: la cuenta esta inactiva desde
+hace anos. 5 comentarios reales observados, **5 de 5 declarados** (`COMPLETA`).
+
+**No se presenta `@paulcarrascoc` como actividad actual.** El activo valida el
+mecanismo, no la vigencia del candidato en la red.
+
+### Arquitectura de routing (`socialSourceRouting.js`)
+
+Regla por **ACTIVO**, nunca por candidato:
+
+    1. Meta oficial, si esa via puede medir ESE activo.
+    2. ScrapeCreators, solo si la oficial no puede.
+    3. Estado explicito (SIN_FUENTE), si ninguna puede.
+
+Yaku Perez es el caso que obliga a decidir por activo: `@yakuperezg`
+—profesional, Meta lo mide— y `@yaku_perez` —personal, Meta no—. Enrutar por
+candidato mandaria los dos al proveedor y perderia la medicion oficial del
+primero, que es mejor dato y ademas gratis.
+
+**Un fallo temporal de la oficial NO abre el fallback.** `CREDENCIAL_EXPIRADA`
+o `CUOTA_AGOTADA` se arreglan renovando la credencial, no comprando el dato.
+Solo los estados que dicen «esta via no alcanza y no lo hara»
+—`NO_SOPORTADO_PERSONAL`, `BLOQUEADO_META`, `REQUIERE_PPCA`— abren la puerta.
+
+**El proveedor nunca funde cifras con la oficial.** Son dos observaciones con
+dos procedencias (`marcaDeFuente`), nunca un promedio: promediarlas
+produciria un numero que no midio nadie.
+
+**El estado oficial previo se conserva siempre.** Cuando el proveedor mide un
+activo que Meta no alcanza, el motivo del fallo oficial queda anotado junto al
+nuevo estado —`estadoOficialConservado`—, porque es justo lo que decide si
+merece la pena pedir acceso oficial algun dia.
+
+21 tests sinteticos cubren los siete casos exigidos: prioridad oficial,
+fallback real, estado explicito sin fuente, no-fallback por fallo temporal,
+routing por activo (Yaku), multi-asset sin colapsar (3 activos de Marcelo
+Cabrera), y preservacion del estado oficial.
+
+### Routing: PREPARADO_NO_ENGANCHADO en la ruta HTTP
+
+Nuevo `instagramProviderFallback.js`: una funcion orquestadora REAL —no un
+stub— que compone `socialSourceRouting` + `socialProviderClient` +
+`scrapeCreatorsMapper`, llama al cliente generico de verdad y preserva siempre
+el resultado oficial. 13 tests con `fetch` inyectado, sin red.
+
+**Lo que falta:** ni `candidateObservation.js` ni `routes/projects.js`
+invocan todavia esta funcion. Esos dos archivos sostienen 1205 comprobaciones
+de la suite de Candidate —igRoute, multiAsset, socialCoverage,
+realObservation, candidateIntelligence, crossLinkEvidence, baselineT0—.
+Engancharlo exige ademas disenar presupuesto de creditos y manejo de errores
+por HTTP: mas superficie de la que autoriza un gate corto.
+
+**Punto de integracion exacto, documentado y no adivinado:** en
+`observarCandidato`, dentro del bloque de Instagram (linea ~1177 de
+`candidateObservation.js`), tras `observarInstagram()`, invocar
+`observarInstagramConFallback({ cuenta, resultadoOficial: r })` cuando
+`r.estado` este en `OFICIAL_NO_PUEDE`, como parametro opt-in que no cambia el
+comportamiento de ningun llamador existente.
+
+### Validaciones
+
+- **Persistencia real:** snapshot de cuenta, 12 publicaciones, corpus de 5
+  comentarios, con los contratos existentes.
+- **Dedup/rerun:** id de cuenta estable, publicaciones sin duplicar,
+  `firstObservedAt` inmovil, `observationCount` 1->2.
+- **Project isolation:** 0 fugas en los otros proyectos del Lake.
+- **Provenance:** `sourceKind: provider`, `datoLicenciadoPorLaPlataforma:
+  false`, sin credenciales persistidas ni expuestas.
+- **Regresion cero:** 33 suites de Candidate ejecutadas tras los cambios,
+  **1205 comprobaciones adicionales, 0 fallos** —ni `candidateObservation.js`
+  ni `routes/projects.js` se tocaron, asi que el riesgo era estructuralmente
+  bajo, y se verifico igual—. Dos aserciones de `socialProviderClient.test.mjs`
+  que asumian que Instagram no tenia endpoints declarados se actualizaron a la
+  nueva realidad —ahora si los tiene— y se sumo una prueba positiva en su
+  lugar, sin debilitar ninguna.
+
+### Limitaciones
+
+- ScrapeCreators raspa web publica; no es proveedor licenciado por
+  Instagram/Meta.
+- Historico no verificado: no se pagino.
+- La muestra de 12 publicaciones no equivale a las 266 declaradas.
+- El fallback se probo con una cuenta personal inactiva desde 2019: el
+  mecanismo funciona, no implica actividad reciente en los demas activos
+  personales.
+- El orquestador solo pide perfil; publicaciones y comentarios se ejecutaron
+  como script puntual en este gate, no como servicio reutilizable todavia.
+
+### Riesgos
+
+- La cobertura real de los 9 activos personales restantes sigue sin medirse:
+  este gate valido el mecanismo con uno solo.
+- El punto de enganche a la ruta HTTP queda identificado y sin ejecutar.
+- `package.json` sigue mixto entre T1 y T3; no se toco.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -8795,6 +9219,8 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-08-31 | P-CAND-INSTAGRAM-FALLBACK-01 | ScrapeCreators validado como fallback real de Instagram cuando Meta oficial no alcanza: 5 requests, 5 creditos (86->81), 0 USD. El hueco es real: 9 de 12 activos de Instagram del piloto son personales y Meta les da cobertura cero sin remedio posible por esa via. Dos activos reales del Lake: CONTROL @pedropalaciosu, que Meta ya mide y que ScrapeCreators reprodujo con 9.718 followers coincidentes -sirve solo de control de consistencia-; y FALLBACK @paulcarrascoc, unico Instagram de Paul Carrasco y personal, con cobertura cero por Meta, donde ScrapeCreators devolvio 985 followers, 12 publicaciones -todas de 2019, cuenta inactiva- y 5 de 5 comentarios reales con texto, cobertura COMPLETA. No se presenta la cuenta inactiva como actividad vigente: solo valida el mecanismo. Nuevo socialSourceRouting.js con la regla por ACTIVO -Meta oficial primero, proveedor solo si la oficial no puede, estado explicito SIN_FUENTE si ninguna puede-, con Yaku Perez como caso que obliga a decidir por activo y no por candidato -su Instagram profesional lo mide Meta y el personal no-, con un fallo temporal de la oficial -credencial expirada, cuota agotada- que NO abre el fallback porque se arregla renovando la credencial y no comprando el dato, y con el estado oficial previo siempre conservado junto al nuevo estado del proveedor. 21 tests sinteticos cubren los siete casos exigidos, incluido multi-asset con tres activos de Marcelo Cabrera sin colapsar. Nuevo instagramProviderFallback.js, una funcion orquestadora real -no un stub- que compone el routing, el cliente generico y el mapper y preserva siempre el resultado oficial, con 13 tests sin red. Routing declarado PREPARADO_NO_ENGANCHADO en la ruta HTTP: ni candidateObservation.js ni routes/projects.js la invocan todavia, porque esos dos archivos sostienen 1205 comprobaciones de la suite de Candidate y engancharla exige ademas disenar presupuesto de creditos y manejo de errores por HTTP, mas superficie de la que autoriza un gate corto; el punto de integracion exacto queda documentado -linea ~1177 de candidateObservation.js, como parametro opt-in que no cambia ningun llamador existente-. Validado: persistencia real con los contratos existentes, dedup y rerun con firstObservedAt inmovil y observationCount 1->2, aislamiento de proyecto con 0 fugas, provenance sin credenciales, y regresion cero verificada ejecutando las 33 suites de Candidate -1205 comprobaciones adicionales, 0 fallos- pese a que el riesgo ya era bajo por no haber tocado los dos archivos centrales. Dos aserciones de socialProviderClient.test.mjs que asumian que Instagram no tenia endpoints declarados se actualizaron a la nueva realidad sin debilitarlas, sumando una prueba positiva. Limitaciones declaradas: ScrapeCreators raspa web publica, historico no verificado, la muestra no equivale al total declarado, y el fallback solo pide perfil por ahora. Sin cambios en .env, T2 ni T3. Nueva §18-quinquadragies y docs/P-CAND-INSTAGRAM-FALLBACK-01.md. |
+| 2026-09-01 | MEDIA-UX-HOME-01 | Media Intelligence deja de ser «Analizar publicacion»: esa pantalla pasa a ser una de sus nueve secciones y el modulo abre por su HOME del proyecto. 0 requests externos y 0 USD, porque la vista solo lee el Knowledge Lake. El vocabulario se fija ANTES que la metrica, que es el unico momento en que fijarlo sirve: PRESENCIA OBSERVADA y AMPLIFICACION OBSERVADA son recuentos auditables fila a fila, e INCIDENCIA se devuelve SIEMPRE sin valor con METODOLOGIA_EN_CONSTRUCCION y sus cuatro requisitos —existe como concepto para que nadie la sustituya por un conteo—, con el motivo calculado sobre datos reales y no generico: de 28 piezas, 26 no se pueden situar en el tiempo. Tres controles sostienen las cifras. AISLAMIENTO: el Lake real tiene Media de tres proyectos, dos de pruebas, y sumarlos habria puesto piezas inventadas en un panel de campana; el filtro es por proyectoId y el recuento de lo excluido VIAJA en la respuesta, verificado por HTTP contra un segundo proyecto real que devuelve 0 piezas y 0 filas. VIGENCIA: la pieza de X se reanalizo cuatro veces y contar filas convertiria «volver a mirar» en «mas presencia» —166 filas, 47 entidades—. CLAVE NORMALIZADA: la misma pieza vive bajo `https://x.com/…` y `x.com/…` por el defecto 6 de MEDIA-REAL-DEMO-01, y como el Lake es append-only no se borra sino que se colapsa al leer, declarando los colapsos. El caso que obligo a `medidaEnVentana()`: El Mercurio tiene 8 piezas y ninguna con fecha ISO, asi que la ventana HOY devolvia 0 y la fila se leia «no publico nada», lo contrario de lo que ocurre; ahora sin piezas es 0 y es una medicion, con piezas y ninguna datable es null + COBERTURA_INSUFICIENTE, y el ranking muestra dos columnas, ventana y corpus. Las fechas de buscador tipo «3 jul 2026» no se interpretan —`new Date` las da invalidas y un parser de meses en espanol situaria la pieza en una ventana que nadie observo—, y la fecha de DETECCION no sustituye a la de publicacion o una nota de 2023 caeria en HOY. `google.com` aparece con 7 piezas, mas que casi cualquier medio, porque SerpAPI envuelve los enlaces en `google.com/goto?url=`: no es un medio sino residuo de nuestro metodo, asi que sale del ranking a una lista de artefactos VISIBLE, porque ocultarlo seria tan malo como rankearlo. Ventanas reutilizando `dayWindow` de la linea territorial —HOY es dia calendario en America/Guayaquil y las cinco se alinean al mismo huso—, sin motor temporal paralelo, y filtran datos reales: HOY/7/15/30 situan 0 y 90d situa 1. No se uso `obtenerEventosProyecto` porque su proyeccion descarta `datos`, que es donde vive todo lo de Media, y ampliarla habria tocado un fichero compartido con Candidate y Territorial: cero ficheros del Lake modificados. Defecto encontrado por la validacion HTTP y corregido: `historialDePieza` filtraba `clase === "snapshot"` sobre el historial de VERSIONES, que no trae `datos`, asi que el historico volvia vacio con los snapshots guardados; era invisible porque el respaldo en memoria si los tenia y el hueco solo aparecia al reiniciar el backend. Verificado en proceso limpio: X devuelve 5 snapshots desde knowledge_lake con views 5.966, likes 13, comentarios 11, shares 6, quotes 0 y guardados 2, y El Mercurio 2. Cifras reales del piloto a 90d: 28 piezas, 10 fuentes originales, 4 medios, 1 periodista, 0 creadores, 1 institucion, 5 no clasificados, 2 candidatos, 28 evidencias; temas COBERTURA_INSUFICIENTE porque la amplificacion no persiste titular, territorio NO_DISPONIBLE porque GEO-1 lo resuelve por pieza y la fila no lo guarda. @tomebamba sigue NO_CLASIFICADO con su correspondencia OBSERVADA_NO_VERIFICADA: no se asciende a MEDIO. Sentinel AI NO implementado, solo declarado: 4 de 7 preguntas respondibles por la forma de la vista. UI construida y sin certificacion visual en navegador, que corresponde a MEDIA-UX-CERT-01. 134 pruebas de Media, suite completa 1.382, 0 fallos; suites de Media registradas en `npm test` via `test:media`. Nuevas §18-M1 a §18-M4, que recuperan ademas los tres gates de Media que el documento no tenia. |
 | 2026-08-31 | SOCIAL-PROVIDER-REAL-02 | ScrapeCreators validado con datos reales desde Sentinel: 8 requests, 8 creditos, 86 restantes y 0 USD, sin tocar Bright Data. Cierra los tres huecos que Candidate arrastraba: Facebook de terceros, TikTok con metricas y —por primera vez en cualquier plataforma— TEXTO DE COMENTARIOS, con lo que Comments Intelligence pasa de «sin fuente» a «con fuente». Facebook Pedro Palacios en 3 llamadas: perfil con id estable, 57.000 seguidores y 57.624 likes que son cifras distintas y no se funden, tres publicaciones con reacciones y comentarios reales, y un desglose de reacciones por tipo que no es adorno —en una publicacion haha 325 supera a like 173, y un reactionCount agregado de 508 lo habria escondido entero—; comentarios 10 observados de 122 declarados, 8 con texto, y los 2 restantes contados aparte porque no se determino si son de solo imagen o un limite del proveedor. TikTok Yaku Perez en 3 llamadas: id estable, 519.300 seguidores, 5,2 M de likes y 357 videos —exactamente lo que oEmbed no daba, cerrando la otra mitad de P-CAND-TIKTOK-01—, diez videos con views, likes, comentarios y shares, y 20 comentarios de 110 todos con texto; TikTok si entrega shares y Facebook no. Rerun de 2 llamadas: sin duplicar, publicationId y commentId estables, firstObservedAt inmovil, lastObservedAt avanzando y observationCount subiendo, que es lo que de verdad decide porque unos IDs inestables convertirian cada ejecucion en datos nuevos. Tres ausencias que NO son la misma y que colapsadas harian creer que Facebook no da lo mismo en tres casos distintos: shares UNSUPPORTED porque el endpoint no tiene el campo, video_views NO_DATA porque se pidio sobre tres publicaciones que SI eran video y volvio null las tres veces, e historical UNVERIFIED porque no se pagino. Capacidades promovidas una a una: 6 de Facebook y 10 de TikTok a SUPPORTED, Instagram entero sigue sin verificar porque no se probo, y aprobar a ScrapeCreators no movio a Bright Data, SocialCrawl ni Data365, con test que lo comprueba. Lo que NO demuestra, dicho explicitamente: no es cobertura de los 7 candidatos —se midieron dos activos—, no es historico, y los corpus de comentarios son muestras y no el universo. El proveedor no bajo al dominio: candidateObservation y la matriz social no saben que existe, y el unico archivo con conocimiento especifico es el mapper. Dos cosas que la documentacion no decia y costaron una llamada: con trim=true los videos traen url y no share_url, y las fechas vienen en tres formatos distintos segun endpoint. La aprobacion del proveedor es un cambio de codigo con fecha y gate y no una variable de entorno, para que quede en el historial. La clave no aparece en URL, resultado, traza, error, persistencia ni documentacion, verificado sobre el volcado crudo y sobre el Lake, y el aislamiento de proyecto se comprobo contra los otros 5 proyectos. Riesgo declarado: raspa web publica, no es proveedor licenciado, y un proveedor puede desaparecer sin aviso como acaba de hacer Bright Data. package.json quedo sin commitear por seguir mezclando lineas de T1 y T3. 1311 pruebas, 0 fallos. Nueva §18-quadriquadragies y docs/SOCIAL-PROVIDER-REAL-02-SCRAPECREATORS.md. |
 | 2026-08-31 | SOCIAL-PROVIDER-ALTERNATIVE-01 | Bright Data deja de ser camino critico: la cuenta sigue suspendida pese a la verificacion enviada y queda registrada en el codigo como BLOQUEADO_POR_PROVEEDOR, con 0 requests y 0 USD; no es un fallo de Sentinel ni del adapter ni del activo de Pedro Palacios, porque nunca se llego a hacer una llamada. El criterio que ordeno la busqueda dejo de ser quien tiene mejor cobertura y paso a ser a quien puedo probar hoy, y ese corte —alta autoservicio frente a llamada comercial previa— decide mas que cualquier tabla de features. Tres evaluados: ScrapeCreators queda #1 porque cubre los cuatro huecos con endpoints verificados uno a uno en documentacion publica con OpenAPI —Facebook profile, posts, comments y comment replies; TikTok profile, videos, comments y replies—, con 100 creditos gratis y sin tarjeta; SocialCrawl queda #2 con 24 endpoints de Facebook y 33 de TikTok, tambien 100 creditos sin tarjeta, y detalla menos los campos; Data365 queda fuera de la via rapida no por ser peor sino porque su documentacion de creditos llega despues de una llamada introductoria. Nada de esto es cobertura: los tres siguen UNVERIFIED_PROVIDER y ninguno documenta historico de comentarios, hueco que tendra que cubrir el Lake. La prueba real NO se ejecuto y se dice por que: los tres exigen API key y ningun endpoint funciona sin ella, y Sentinel no crea cuentas externas en nombre del usuario, asi que el gate entrega instrucciones en lugar de resultados; los activos que se usarian estan leidos del Lake y no inventados —facebook:pedropalaciosu y tiktok:yaku.perez—, descartando @lafondadecarrasco porque su atribucion quedo COMPATIBLE_NO_CONFIRMADA y probar con ella mezclaria si el proveedor sirve con si la cuenta es del candidato. Lo que si se construyo es la pieza que faltaba desde el PREP: socialProviderClient.js, generico a proposito porque un cliente escrito para Bright Data habria que tirarlo hoy, leyendo base, cabecera y endpoints del registro. Cuatro cosas fijadas por test: la guarda va antes de la red —hoy los cuatro proveedores devuelven llamadas 0 aunque se les pase bandera y clave—, no se inventan URLs, la clave viaja en cabecera y se redacta del resultado, la traza y el error incluido el caso en que el proveedor hace eco de ella, y los bloqueos no se confunden entre credencial, facturacion y cuota. Extraer armarPeticion y clasificarRespuestaHttp como piezas puras resolvio un problema real: la guarda exige proveedor aprobado, asi que sin separarlas no se podian probar sin aprobar a alguien de verdad o sin abrir un agujero en la guarda. Ejecutar la prueba ya no depende de escribir codigo sino de que exista una clave. Y una decision explicita: Candidate Intelligence NO espera al proveedor —X, YouTube e Instagram profesional siguen generando snapshots y las celdas pendientes quedan como REQUIERE_PROVEEDOR, que es un resultado y no un hueco—. 1272 pruebas, 0 fallos. Nueva §18-triquadragies y docs/SOCIAL-PROVIDER-ALTERNATIVE-01.md. |
 | 2026-08-31 | SOCIAL-PROVIDER-REAL-01-PREP | Preparacion del limite de proveedor social externo mientras Bright Data sigue en revision: 0 requests externos y 0 USD. Al auditar los contratos antes de escribir nada aparecio que publicacion y metrica ya estaban resueltas desde P-CAND-03, asi que no habia que crear nada; lo que no existia era el contrato de COMENTARIO, y no existia porque hasta hoy ninguna via entregaba texto —Instagram lo niega con 400 code 100, Facebook cayo con /posts y TikTok no tiene via publica—. Se escribe ahora, antes de tener el dato, para que el dia que llegue no se invente una forma nueva bajo la presion de que ya hay payloads esperando. Nuevo commentObservation.js con commentId estable, relacion con el post, parentCommentId, y firstObservedAt que no se reescribe nunca; el autor se guarda sin perfilado —nombre visible e id de plataforma, lo minimo para deduplicar y contar participantes, sin cruzar con identidad real ni enriquecer ni puntuar, con la lista noSeHace en el propio objeto—; y el corpus separa siempre los comentarios que la plataforma DECLARA de los que se OBSERVARON, con la obligacion de lenguaje COMENTARIOS OBSERVADOS != TODOS LOS COMENTARIOS viajando en el dato y tres estados que se confunden facil: OBSERVADO, SOLO_RECUENTO y SIN_COMENTARIOS, que es un cero medido y no una ausencia. Nuevo externalSocialProvider.js como limite y no como motor: no hay ni un if sobre el nombre del proveedor, sino un registro y un normalizador que traduce cualquier payload al contrato existente con el mapa de campos pasado desde fuera; probado con dos formas distintas —Facebook plano y TikTok con stats.play_count anidado— produciendo el mismo contrato, y con un test que recorre el objeto entero comprobando que el nombre del proveedor solo aparece en campos de procedencia y nunca en la identidad, el contenido o el valor de una metrica. Nada de BrightDataFacebookEngine: un proveedor es una fuente, no un modelo. El estado UNVERIFIED_PROVIDER impide la mentira mas facil —las 27 capacidades declaradas de Bright Data estan sin verificar y estadoDeProveedores devuelve ningunoVerificado true—, porque que la documentacion diga que cubre Facebook no es cobertura y las celdas se moveran una a una tras medir. La bandera SOCIAL_EXTERNAL_PROVIDER_ENABLED queda documentada en .env.example y apagada, sin tocar .env, y encenderla no basta: hay test que la pone en true con clave ficticia y comprueba que Bright Data sigue deshabilitado por estar EN_REVISION, porque aprobar un proveedor es un cambio de codigo y no de configuracion para que quede en el historial de git. Tres fixtures sinteticos marcados TEST_FIXTURE y NO_REAL_DATA, uno de ellos con un comentario sin texto a proposito. 48 comprobaciones nuevas sobre lo que puede romperse en silencio: ausencia distinta de cero, 0 real conservado, IDs estables entre ejecuciones, firstObservedAt inmutable, texto anterior conservado si cambia, multi-activo, aislamiento de proyecto, proveedor desconocido rechazado y ninguna credencial persistida. Falta una sola pieza, el cliente HTTP; todo lo posterior ya esta probado. Nada de esto es cobertura: la decide SOCIAL-PROVIDER-REAL-01. 1248 pruebas, 0 fallos. Nueva §18-duoquadragies y docs/SOCIAL-PROVIDER-REAL-01-RUNBOOK.md. |

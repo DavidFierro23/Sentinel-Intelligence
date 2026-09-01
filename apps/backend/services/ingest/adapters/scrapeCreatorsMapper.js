@@ -194,12 +194,109 @@ export function comentariosDeTikTok(datos = {}) {
 
 
 /*
+===========================================================
+INSTAGRAM — FALLBACK, NO SUSTITUTO
+P-CAND-INSTAGRAM-FALLBACK-01
+===========================================================
+
+Meta oficial sigue siendo la fuente primaria donde
+`business_discovery` alcanza. Esto cubre lo que esa via NO abre:
+las cuentas personales, que son 9 de los 12 activos del piloto.
+
+La respuesta viene anidada en `data.user` con la terminologia
+GraphQL de Instagram —`edge_followed_by.count`— y no con nombres
+planos. Se traduce aqui.
+===========================================================
+*/
+export function perfilDeInstagram(datos = {}) {
+  const u = datos?.data?.user || {};
+
+  return {
+    accountProviderId: u.id ?? null,
+    handle: u.username ?? null,
+    displayName: u.full_name ?? null,
+
+    canonicalUrl: u.username
+      ? `https://www.instagram.com/${u.username}`
+      : null,
+
+    followers: u.edge_followed_by?.count ?? null,
+    following: u.edge_follow?.count ?? null,
+    mediaCount: u.edge_owner_to_timeline_media?.count ?? null,
+
+    biography: u.biography ?? null,
+    esPrivado: u.is_private ?? null,
+    verificado: u.is_verified ?? null
+  };
+}
+
+
+/*
+  `media_type` de Instagram es un entero: 1 imagen, 2 video, 8
+  carrusel. Se traduce a algo legible en lugar de guardar el
+  numero, que no dice nada seis meses despues.
+*/
+const TIPO_DE_MEDIO = Object.freeze({ 1: "image", 2: "video", 8: "carousel" });
+
+
+export function publicacionesDeInstagram(datos = {}) {
+  const items = datos.items || datos.data || [];
+
+  return items.map((p) => ({
+    /*
+      `code` es el shortcode del permalink y es estable. `pk` no
+      llega con trim=true, asi que no se depende de el.
+    */
+    post_id: p.code ?? p.id ?? null,
+
+    permalink: p.url ?? (p.code ? `https://www.instagram.com/p/${p.code}/` : null),
+
+    published_at: desdeUnix(p.taken_at) || p.created_at || null,
+
+    /* El caption es un objeto, no una cadena. */
+    text: typeof p.caption === "string" ? p.caption : p.caption?.text ?? null,
+
+    content_type: TIPO_DE_MEDIO[p.media_type] ?? null,
+
+    likes: p.like_count ?? null,
+    comments_count: p.comment_count ?? null,
+
+    /* Solo en video, y su propia documentacion advierte que puede ser inexacto. */
+    views: p.play_count ?? p.ig_play_count ?? null
+  }));
+}
+
+
+export function comentariosDeInstagram(datos = {}) {
+  return (datos.comments || []).map((c) => ({
+    comment_id: c.id ?? null,
+    text: c.text ?? null,
+
+    /* Aqui llega en ISO, como en los comentarios de Facebook. */
+    published_at: c.created_at ?? null,
+
+    likes: c.comment_like_count ?? null,
+    reply_count: c.child_comment_count ?? null,
+    parent_comment_id: null,
+
+    author_id: c.user?.pk ?? c.user?.id ?? null,
+    author_name: c.user?.username ?? null,
+
+    permalink: null
+  }));
+}
+
+
+/*
   Cuantos comentarios dice la fuente que hay. Se lee aparte
   porque es la mitad de la frase «observados de declarados», y
   cada plataforma lo pone en un sitio distinto.
 */
 export function totalDeComentarios(plataforma, datos = {}, publicacion = null) {
   if (plataforma === "tiktok") return datos.total ?? null;
+
+  /* Instagram no devuelve total en el lote: lo trae la publicacion. */
+  if (plataforma === "instagram") return publicacion?.comment_count ?? null;
 
   return publicacion?.commentCount ?? null;
 }
@@ -223,6 +320,9 @@ export default {
   perfilDeTikTok,
   publicacionesDeTikTok,
   comentariosDeTikTok,
+  perfilDeInstagram,
+  publicacionesDeInstagram,
+  comentariosDeInstagram,
   totalDeComentarios,
   creditos
 };
