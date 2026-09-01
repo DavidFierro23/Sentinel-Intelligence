@@ -14,7 +14,9 @@ import {
   ESTADOS_DATO,
   VENTANAS_HOME,
   VENTANA_POR_DEFECTO,
-  grupoDeClase
+  grupoDeClase,
+  esHostDeInfraestructura,
+  etiquetaDeClase
 } from "./mediaVocabulary.js";
 
 /*
@@ -584,9 +586,17 @@ export function construirFuentes({ piezas = [], amplificacion = [], relaciones =
       nombre: f.nombre,
 
       clase,
+      claseEtiqueta: etiquetaDeClase(clase),
       grupo: grupoDeClase(clase),
       clasesObservadas: clases,
       conflictoDeClase: conflicto,
+
+      /*
+        MEDIA-UX-CERT-01. Un balanceador de AWS no es una
+        cabecera. Se marca aqui, donde ya se conoce el dominio,
+        para que la HOME no tenga que volver a decidirlo.
+      */
+      esInfraestructura: esHostDeInfraestructura(f.dominio),
 
       catalogo: f.catalogo,
 

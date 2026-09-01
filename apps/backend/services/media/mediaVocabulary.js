@@ -547,3 +547,150 @@ export default {
   preguntasRespondibles,
   CONTRATO_MEDIA_HOME
 };
+
+
+/*
+===========================================================
+MEDIA-UX-CERT-01 — AÑADIDOS DE LA CERTIFICACION VISUAL
+===========================================================
+*/
+
+
+/*
+-----------------------------------------------------------
+HOSTS DE INFRAESTRUCTURA
+
+La certificacion visual encontro
+`mw-public-alb-prod-1982631391.us-east-1.elb.amazonaws.com` en el
+puesto #5 del ranking, entre El Universo y Expreso. Es un
+balanceador de carga de AWS —el servidor de origen desde el que
+se sirvio una pagina—, no una cabecera.
+
+En una presentacion de campana eso se lee como un medio mas, y es
+el mismo error de categoria que `google.com`: no describe a quien
+publica, describe COMO llego el dato hasta nosotros.
+
+La lista es deliberadamente corta y solo contiene sufijos que
+NUNCA son una marca editorial. Un dominio propio raro se queda
+donde esta: preferimos una fuente sin clasificar a una fuente
+reclasificada por parecerlo.
+
+No se borra ninguna evidencia: el host pasa a la lista de
+artefactos, visible y con su motivo.
+-----------------------------------------------------------
+*/
+export const SUFIJOS_INFRAESTRUCTURA = Object.freeze([
+  ".elb.amazonaws.com",
+  ".amazonaws.com",
+  ".cloudfront.net",
+  ".akamaized.net",
+  ".akamaihd.net",
+  ".fastly.net",
+  ".azureedge.net",
+  ".googleusercontent.com",
+  ".cloudflare.net",
+  ".herokuapp.com"
+]);
+
+
+export function esHostDeInfraestructura(dominio) {
+  const d = String(dominio || "").toLowerCase();
+
+  if (!d) return false;
+
+  return SUFIJOS_INFRAESTRUCTURA.some((s) => d.endsWith(s));
+}
+
+
+/*
+-----------------------------------------------------------
+ETIQUETAS HUMANAS DE LOS ESTADOS
+
+El contrato conserva `COBERTURA_INSUFICIENTE`; la pantalla dice
+«Cobertura insuficiente». Se traduce en un solo sitio para que
+backend y UI no puedan divergir, y la etiqueta viaja JUNTO al
+valor tecnico: quien audita necesita el crudo, quien presenta
+necesita la frase.
+-----------------------------------------------------------
+*/
+export const ETIQUETAS_ESTADO = Object.freeze({
+  NO_DISPONIBLE: "Dato no disponible",
+  SIN_EVIDENCIA: "Sin evidencia observable",
+  COBERTURA_INSUFICIENTE: "Cobertura insuficiente",
+  NO_CLASIFICADO: "Pendiente de clasificación",
+  METODOLOGIA_EN_CONSTRUCCION: "Metodología en construcción",
+  FECHA_NO_NORMALIZADA: "Fecha no normalizada"
+});
+
+
+export function etiquetaDeEstado(estado) {
+  if (!estado) return null;
+
+  return ETIQUETAS_ESTADO[estado] || String(estado).replace(/_/g, " ").toLowerCase();
+}
+
+
+/*
+-----------------------------------------------------------
+ETIQUETAS HUMANAS DE LA CLASE DE EMISOR
+-----------------------------------------------------------
+*/
+export const ETIQUETAS_CLASE = Object.freeze({
+  MEDIO: "Medio",
+  PERIODISTA: "Periodista",
+  CREADOR: "Creador",
+  INSTITUCIONAL: "Institución",
+  COMUNIDAD: "Comunidad",
+  PLATAFORMA: "Plataforma",
+  OTRO: "Cuenta",
+  NO_CLASIFICADO: "Sin clasificar",
+  NO_DETERMINADO: "Sin determinar"
+});
+
+
+export function etiquetaDeClase(clase) {
+  if (!clase) return "Sin determinar";
+
+  return ETIQUETAS_CLASE[clase] || String(clase).replace(/_/g, " ").toLowerCase();
+}
+
+
+/*
+-----------------------------------------------------------
+NOTA METODOLOGICA
+
+Una sola frase, y va visible junto al ranking. No es un aviso
+legal: es la condicion que hace verdadera la lista.
+-----------------------------------------------------------
+*/
+export const NOTA_METODOLOGICA = Object.freeze({
+  titulo: "Cómo leer este ranking",
+
+  texto:
+    "Ranking basado en evidencia digital observable dentro de las fuentes y la ventana seleccionadas. No mide audiencia, alcance ni influencia, y el corpus no es el ecosistema mediático: una fuente ausente puede no haber publicado, o no haber sido consultada.",
+
+  etiquetaAcceso: "Metodología y cobertura"
+});
+
+
+/*
+-----------------------------------------------------------
+DIMENSIONES FUTURAS DEL RANKING
+
+Se declaran para que la pantalla se diseñe sabiendo que crecera,
+y para que ninguna se pueda encender sin metodologia. Hoy la
+unica con datos es PRESENCIA.
+-----------------------------------------------------------
+*/
+export const DIMENSIONES_FUTURAS = Object.freeze([
+  { id: "presencia", nombre: "Presencia", disponible: true },
+  { id: "interaccion", nombre: "Interacción", disponible: false, requiere: "Métricas por pieza en la mayoría del corpus." },
+  { id: "amplificacion", nombre: "Amplificación", disponible: false, requiere: "Rol de derivación demostrado, no solo cobertura relacionada." },
+  { id: "conversacion", nombre: "Conversación", disponible: false, requiere: "Texto de comentarios, que hoy ninguna vía entrega." },
+  { id: "video", nombre: "Video", disponible: false, requiere: "Métricas de reproducción por plataforma." },
+  { id: "momentum", nombre: "Momentum", disponible: false, requiere: "Dos ventanas completas comparables." }
+]);
+
+
+/* Tamaños de lista previstos. La UI ya los ofrece; el corpus decide. */
+export const TAMANOS_RANKING = Object.freeze([10, 20, 50]);

@@ -8944,6 +8944,99 @@ tocar.**
 
 ---
 
+## 18-M5. MEDIA-UX-CERT-01 — certificación visual del módulo (2026-09-01)
+
+Gate corto de certificación y corrección. **0 requests externos, 0 USD.**
+Entregable: `docs/MEDIA-UX-CERT-01.md`.
+
+### Qué se certificó, y qué NO cubre
+
+Este entorno **no tiene navegador automatizable** —ni Playwright ni Puppeteer—,
+así que no hay capturas ni comprobación de color, espaciado o responsive. Decirlo
+importa, porque cambia el valor de lo que sigue.
+
+Lo que sí es real: la app corre (`:3001` y `:5173` respondiendo 200), Vite compila
+y sirve el módulo, el backend responde el contrato completo, y **las ocho
+secciones se renderizan con la respuesta REAL de la API** mediante
+`tests/media-home.check.jsx`, siguiendo la convención de render que el repositorio
+ya tenía desde `P-CAND-ASSET-TYPE-UI-FIX-01`: *que la función devuelva el dato no
+significa que la pantalla lo pinte*. **47 comprobaciones, 0 fallos**, en `90d` y
+en `hoy`.
+
+Certifica **contenido y semántica de pantalla**, no apariencia. La revisión de
+apariencia sigue siendo humana, y la ruta está escrita en el documento.
+
+### Siete correcciones P1, todas de semántica engañosa
+
+Ninguna P0: el módulo se entendía y se usaba.
+
+**1 · Un balanceador de AWS figuraba como medio, en el puesto #5.**
+`mw-public-alb-prod-…elb.amazonaws.com` aparecía entre El Universo y Expreso. Es
+el servidor de origen desde el que se sirvió una página, no una cabecera. Es el
+mismo error de categoría que `google.com`, que el gate anterior ya había resuelto,
+pero aquella regla estaba atada al tipo del catálogo y este host no está en ningún
+catálogo. Nuevo `esHostDeInfraestructura()` con sufijos que nunca son marca
+editorial; el host sale a la lista de artefactos con clase propia
+`INFRAESTRUCTURA`, distinta de `AGREGADOR` porque no se arreglan igual. La lista
+es corta a propósito: un dominio propio raro se queda donde está, y hay test que
+lo fija.
+
+**2 · Identificadores técnicos donde iban nombres.** La tabla pintaba
+`paul-carrasco-carpio`. Se resuelve del proyecto, y el id NO se pierde: viaja
+debajo, porque es lo que permite auditar la arista.
+
+**3 · Ids de unidad territorial.** Se mostraba `ec-azuay-cuenca`.
+`MEDIA-REAL-DEMO-01` ya había fijado la regla contraria y esta tabla la incumplía.
+Ahora «Cuenca» y «Azuay», con el id disponible en `territorioId`.
+
+**4 · Estados crudos en pantalla.** `COBERTURA_INSUFICIENTE` pasa a «Cobertura
+insuficiente», traducido en UN solo sitio —el vocabulario— porque dos diccionarios
+divergen. El valor técnico no desaparece: viaja al lado y hay test que lo exige.
+
+**5 · El ranking no se llamaba como debía.** Pasa a **PRESENCIA MEDIÁTICA
+OBSERVABLE · 90 días**, con el título decidido en el backend para que no haya dos
+nombres de la misma lista, y con la nota metodológica visible.
+
+**6 · La ventana se leía como «cero actividad».** Con HOY se mostraba `0` a secas
+cuando la verdad es que 26 piezas no se pueden situar en el tiempo. Ahora las dos
+cifras van pegadas y no se suman: «0 pieza(s) situada(s) en la ventana · 26 con
+fecha no normalizada». La normalización es `MEDIA-TIME-NORMALIZATION-01`.
+
+**7 · Artefactos mezclados con medios en Candidatos × Medios.** `google.com`
+figuraba como una «fuente» de un candidato con el mismo peso que El Mercurio. Se
+separan y se cuentan aparte: Carrasco pasa de 7 fuentes a **6 + 1 artefacto**, y
+Lloret de 6 a **4 + 2**. La cifra baja y es más verdadera.
+
+### Dos añadidos P2
+
+**¿Por qué está aquí?** por fila del ranking. No pide nada al backend: la
+justificación viaja en la fila, construida solo con hechos contables —piezas,
+ventana, aristas, procedencia de la clase, correspondencia— y con su límite
+declarado. «Ver evidencia» queda deshabilitado y declarado, no inventado.
+
+**Top 10/20/50 y las seis dimensiones futuras** visibles y atenuadas, con solo
+PRESENCIA activa y cada una declarando qué le falta. El diseño ya no bloquea la
+evolución.
+
+### Preparación, sin encender nada
+
+Universo de medios con `+ Agregar medio · próximamente` **deshabilitado**: no se
+pintó formulario, porque uno que no guarda es peor que ninguno —el analista
+escribe un medio y lo pierde—.
+
+### Separación vista / contenedor
+
+`MediaIntelligenceVista` se separa de `MediaIntelligenceModule`. Sin esa
+separación la pantalla solo se puede comprobar abriendo un navegador, porque los
+datos llegan en un `useEffect` que el render de servidor no ejecuta.
+
+### Comprobaciones
+
+Render 47/47 · Media 39/39 · suite completa 1.472, 0 fallos · build limpio · lint
+con los 6 errores preexistentes y **0 en Media** · 0 requests externos.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -9451,6 +9544,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-09-01 | MEDIA-UX-CERT-01 | Certificacion visual de Media Intelligence y correccion de lo que la inspeccion encontro. 0 requests externos y 0 USD. Primero lo que este gate NO puede afirmar: el entorno no tiene navegador automatizable —ni Playwright ni Puppeteer—, asi que no hay capturas ni comprobacion de color, espaciado o responsive, y la revision de apariencia sigue siendo humana. Lo que si es real: la app corre con backend en 3001 y Vite en 5173 respondiendo 200, Vite compila y sirve el modulo, el backend responde el contrato entero, y las OCHO secciones se renderizan con la respuesta REAL de la API mediante tests/media-home.check.jsx, siguiendo la convencion de render que el repositorio ya tenia desde P-CAND-ASSET-TYPE-UI-FIX-01 —que la funcion devuelva el dato no significa que la pantalla lo pinte—: 47 comprobaciones, 0 fallos, en 90d y en hoy. Ninguna P0: el modulo se entendia y se usaba. Siete correcciones P1, todas de semantica engañosa. La que mas importa: un balanceador de AWS, mw-public-alb-...elb.amazonaws.com, figuraba en el puesto #5 del ranking ENTRE El Universo y Expreso; es el servidor de origen desde el que se sirvio una pagina, no una cabecera, y es el mismo error de categoria que google.com salvo que aquella regla estaba atada al tipo del catalogo y este host no esta en ningun catalogo —nuevo esHostDeInfraestructura() con sufijos que nunca son marca editorial, el host pasa a artefactos con clase propia INFRAESTRUCTURA distinta de AGREGADOR porque no se arreglan igual, y la lista se deja corta a proposito con un test que fija que un dominio propio raro NO se reclasifica por parecerlo—. Las otras seis: identificadores tecnicos donde iban nombres (paul-carrasco-carpio pintado tal cual; se resuelve del proyecto y el id no se pierde, viaja debajo porque es lo que permite auditar la arista); ids de unidad territorial (ec-azuay-cuenca en pantalla, incumpliendo la regla que MEDIA-REAL-DEMO-01 ya habia fijado; ahora Cuenca y Azuay, con el id en territorioId); estados crudos (COBERTURA_INSUFICIENTE pasa a «Cobertura insuficiente», traducido en UN solo sitio porque dos diccionarios divergen, y el crudo no desaparece porque quien audita lo necesita); el titulo del ranking, que pasa a PRESENCIA MEDIATICA OBSERVABLE con la ventana y la nota metodologica visibles, decidido en el backend para que no haya dos nombres de la misma lista; la ventana que se leia como «cero actividad» cuando la verdad es que 26 piezas no se pueden situar en el tiempo, y ahora muestra el par pegado y no sumable «0 situada(s) en la ventana · 26 con fecha no normalizada»; y los artefactos mezclados con medios en Candidatos x Medios, donde google.com figuraba como «fuente» de un candidato con el mismo peso que El Mercurio —separados y contados aparte, Carrasco baja de 7 fuentes a 6 mas 1 artefacto y Lloret de 6 a 4 mas 2, la cifra baja y es mas verdadera—. Dos añadidos P2: «¿Por que esta aqui?» por fila, que no pide nada al backend porque la justificacion viaja en la fila construida solo con hechos contables y con su limite declarado, y «Ver evidencia» deshabilitado y declarado en lugar de inventado; y Top 10/20/50 mas las seis dimensiones futuras visibles y atenuadas, con solo PRESENCIA activa y cada una declarando que le falta, para que el diseño no bloquee la evolucion. Universo de medios preparado con «+ Agregar medio · proximamente» DESHABILITADO: no se pinto formulario, porque uno que no guarda es peor que ninguno. Se separa MediaIntelligenceVista de MediaIntelligenceModule, sin lo cual la pantalla solo se puede comprobar abriendo un navegador. Las dos demos reales reproducen tras reiniciar el backend: Tomebamba 5 snapshots desde knowledge_lake con views 5.966, El Mercurio 2 con metricas null y motivo. Render 47/47, Media 39/39, suite completa 1.472, 0 fallos, build limpio, lint con los 6 preexistentes y 0 en Media. Nueva §18-M5 y docs/MEDIA-UX-CERT-01.md. |
 | 2026-09-01 | P-CAND-INSTAGRAM-ROUTE-01 | Fallback de Instagram conectado al flujo real de observacion, 0 requests externas, 81 creditos de ScrapeCreators sin tocar. socialSourceRouting.js e instagramProviderFallback.js quedaron probados por separado en el gate anterior pero ninguno estaba conectado a observarCandidato; nuevo parametro proveedorInstagram, null por defecto, con el que sin pasarlo el comportamiento es identico byte a byte al de antes -verificado ejecutando las 34 suites de Candidate antes y despues, mismos 1236 checks, 0 fallos en ambos casos-. Cuando se activa no se duplica ninguna decision: se llama siempre a observarInstagramConFallback, que reutiliza fuenteParaActivo internamente, con las dos guardas del gate anterior intactas por debajo -bandera de entorno, proveedor aprobado y credencial-. Nuevo estado MEDIDO_PROVEEDOR aditivo, sin renombrar OBSERVADA a MEDIDO_OFICIAL para no tocar la semantica que ya usan igRoute, multiAsset, socialCoverage y el resto de la suite: Meta gano se reconoce porque el resultado no tiene sourceKind ni canalProveedor, no por un literal nuevo. Provenance con canal en null a proposito -forzar el perfil de un proveedor distinto ahi invitaria a comparar followers de Meta con followers de ScrapeCreators como si fueran la misma medicion- y resultadoOficial siempre intacto y completo, nunca resumido. Diez casos de prueba verificados: Meta gana sin llamar al proveedor, fallback real con perfil mapeado, proveedor deshabilitado con estado explicito PROVEEDOR_DESHABILITADO y nunca excepcion, fallos 401/429/timeout que no tumban la observacion y distinguen CREDENCIAL_RECHAZADA de CUOTA_AGOTADA, multi-activo sin colapsar, reobservacion con id estable, provenance sin confundir MEDIDO_PROVEEDOR con OBSERVADA, project isolation entre projectId distintos, budget guard con dos capas independientes, y un fallo temporal NO_EJECUTABLE que sigue sin abrir el fallback. 31/31 en tests/candidateInstagramFallbackRoute.test.mjs, cero red: todo se probo con fetch inyectado reproduciendo la forma real ya medida sobre @paulcarrascoc, sin repetir profile/posts/comments reales porque lo que cambiaba era el cableado y no la respuesta del proveedor. Limitaciones declaradas: el opt-in solo cubre perfil, la ruta HTTP routes/projects.js sigue sin pasar proveedorInstagram -disenar presupuesto de creditos por request HTTP queda fuera de este gate corto-, y NO_EJECUTABLE sigue sin abrir el fallback por decision ya tomada. package.json sigue mezclado entre terminales y no se toco. T2 y T3 trabajaban en paralelo durante el gate -nuevos archivos territoriales y de media aparecieron a mitad de sesion-; ninguno se toco y SENTINEL_PROJECT_STATE.md se verifico limpio de cambios ajenos sin comitear justo antes de esta seccion. Nueva §18-sexquadragies y docs/P-CAND-INSTAGRAM-ROUTE-01.md. |
 | 2026-08-31 | P-CAND-INSTAGRAM-FALLBACK-01 | ScrapeCreators validado como fallback real de Instagram cuando Meta oficial no alcanza: 5 requests, 5 creditos (86->81), 0 USD. El hueco es real: 9 de 12 activos de Instagram del piloto son personales y Meta les da cobertura cero sin remedio posible por esa via. Dos activos reales del Lake: CONTROL @pedropalaciosu, que Meta ya mide y que ScrapeCreators reprodujo con 9.718 followers coincidentes -sirve solo de control de consistencia-; y FALLBACK @paulcarrascoc, unico Instagram de Paul Carrasco y personal, con cobertura cero por Meta, donde ScrapeCreators devolvio 985 followers, 12 publicaciones -todas de 2019, cuenta inactiva- y 5 de 5 comentarios reales con texto, cobertura COMPLETA. No se presenta la cuenta inactiva como actividad vigente: solo valida el mecanismo. Nuevo socialSourceRouting.js con la regla por ACTIVO -Meta oficial primero, proveedor solo si la oficial no puede, estado explicito SIN_FUENTE si ninguna puede-, con Yaku Perez como caso que obliga a decidir por activo y no por candidato -su Instagram profesional lo mide Meta y el personal no-, con un fallo temporal de la oficial -credencial expirada, cuota agotada- que NO abre el fallback porque se arregla renovando la credencial y no comprando el dato, y con el estado oficial previo siempre conservado junto al nuevo estado del proveedor. 21 tests sinteticos cubren los siete casos exigidos, incluido multi-asset con tres activos de Marcelo Cabrera sin colapsar. Nuevo instagramProviderFallback.js, una funcion orquestadora real -no un stub- que compone el routing, el cliente generico y el mapper y preserva siempre el resultado oficial, con 13 tests sin red. Routing declarado PREPARADO_NO_ENGANCHADO en la ruta HTTP: ni candidateObservation.js ni routes/projects.js la invocan todavia, porque esos dos archivos sostienen 1205 comprobaciones de la suite de Candidate y engancharla exige ademas disenar presupuesto de creditos y manejo de errores por HTTP, mas superficie de la que autoriza un gate corto; el punto de integracion exacto queda documentado -linea ~1177 de candidateObservation.js, como parametro opt-in que no cambia ningun llamador existente-. Validado: persistencia real con los contratos existentes, dedup y rerun con firstObservedAt inmovil y observationCount 1->2, aislamiento de proyecto con 0 fugas, provenance sin credenciales, y regresion cero verificada ejecutando las 33 suites de Candidate -1205 comprobaciones adicionales, 0 fallos- pese a que el riesgo ya era bajo por no haber tocado los dos archivos centrales. Dos aserciones de socialProviderClient.test.mjs que asumian que Instagram no tenia endpoints declarados se actualizaron a la nueva realidad sin debilitarlas, sumando una prueba positiva. Limitaciones declaradas: ScrapeCreators raspa web publica, historico no verificado, la muestra no equivale al total declarado, y el fallback solo pide perfil por ahora. Sin cambios en .env, T2 ni T3. Nueva §18-quinquadragies y docs/P-CAND-INSTAGRAM-FALLBACK-01.md. |
 | 2026-09-01 | MEDIA-UX-HOME-01 | Media Intelligence deja de ser «Analizar publicacion»: esa pantalla pasa a ser una de sus nueve secciones y el modulo abre por su HOME del proyecto. 0 requests externos y 0 USD, porque la vista solo lee el Knowledge Lake. El vocabulario se fija ANTES que la metrica, que es el unico momento en que fijarlo sirve: PRESENCIA OBSERVADA y AMPLIFICACION OBSERVADA son recuentos auditables fila a fila, e INCIDENCIA se devuelve SIEMPRE sin valor con METODOLOGIA_EN_CONSTRUCCION y sus cuatro requisitos —existe como concepto para que nadie la sustituya por un conteo—, con el motivo calculado sobre datos reales y no generico: de 28 piezas, 26 no se pueden situar en el tiempo. Tres controles sostienen las cifras. AISLAMIENTO: el Lake real tiene Media de tres proyectos, dos de pruebas, y sumarlos habria puesto piezas inventadas en un panel de campana; el filtro es por proyectoId y el recuento de lo excluido VIAJA en la respuesta, verificado por HTTP contra un segundo proyecto real que devuelve 0 piezas y 0 filas. VIGENCIA: la pieza de X se reanalizo cuatro veces y contar filas convertiria «volver a mirar» en «mas presencia» —166 filas, 47 entidades—. CLAVE NORMALIZADA: la misma pieza vive bajo `https://x.com/…` y `x.com/…` por el defecto 6 de MEDIA-REAL-DEMO-01, y como el Lake es append-only no se borra sino que se colapsa al leer, declarando los colapsos. El caso que obligo a `medidaEnVentana()`: El Mercurio tiene 8 piezas y ninguna con fecha ISO, asi que la ventana HOY devolvia 0 y la fila se leia «no publico nada», lo contrario de lo que ocurre; ahora sin piezas es 0 y es una medicion, con piezas y ninguna datable es null + COBERTURA_INSUFICIENTE, y el ranking muestra dos columnas, ventana y corpus. Las fechas de buscador tipo «3 jul 2026» no se interpretan —`new Date` las da invalidas y un parser de meses en espanol situaria la pieza en una ventana que nadie observo—, y la fecha de DETECCION no sustituye a la de publicacion o una nota de 2023 caeria en HOY. `google.com` aparece con 7 piezas, mas que casi cualquier medio, porque SerpAPI envuelve los enlaces en `google.com/goto?url=`: no es un medio sino residuo de nuestro metodo, asi que sale del ranking a una lista de artefactos VISIBLE, porque ocultarlo seria tan malo como rankearlo. Ventanas reutilizando `dayWindow` de la linea territorial —HOY es dia calendario en America/Guayaquil y las cinco se alinean al mismo huso—, sin motor temporal paralelo, y filtran datos reales: HOY/7/15/30 situan 0 y 90d situa 1. No se uso `obtenerEventosProyecto` porque su proyeccion descarta `datos`, que es donde vive todo lo de Media, y ampliarla habria tocado un fichero compartido con Candidate y Territorial: cero ficheros del Lake modificados. Defecto encontrado por la validacion HTTP y corregido: `historialDePieza` filtraba `clase === "snapshot"` sobre el historial de VERSIONES, que no trae `datos`, asi que el historico volvia vacio con los snapshots guardados; era invisible porque el respaldo en memoria si los tenia y el hueco solo aparecia al reiniciar el backend. Verificado en proceso limpio: X devuelve 5 snapshots desde knowledge_lake con views 5.966, likes 13, comentarios 11, shares 6, quotes 0 y guardados 2, y El Mercurio 2. Cifras reales del piloto a 90d: 28 piezas, 10 fuentes originales, 4 medios, 1 periodista, 0 creadores, 1 institucion, 5 no clasificados, 2 candidatos, 28 evidencias; temas COBERTURA_INSUFICIENTE porque la amplificacion no persiste titular, territorio NO_DISPONIBLE porque GEO-1 lo resuelve por pieza y la fila no lo guarda. @tomebamba sigue NO_CLASIFICADO con su correspondencia OBSERVADA_NO_VERIFICADA: no se asciende a MEDIO. Sentinel AI NO implementado, solo declarado: 4 de 7 preguntas respondibles por la forma de la vista. UI construida y sin certificacion visual en navegador, que corresponde a MEDIA-UX-CERT-01. 134 pruebas de Media, suite completa 1.382, 0 fallos; suites de Media registradas en `npm test` via `test:media`. Nuevas §18-M1 a §18-M4, que recuperan ademas los tres gates de Media que el documento no tenia. |

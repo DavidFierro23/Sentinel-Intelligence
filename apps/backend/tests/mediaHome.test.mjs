@@ -893,7 +893,187 @@ test("Sentinel AI: se declara no implementado y que preguntas faltan por ejes", 
 
 /*
 ===========================================================
-11 · REGRESION — EL LAKE REAL Y EL ANALISIS DE UNA PIEZA
+11 · MEDIA-UX-CERT-01 — LO QUE ENCONTRO LA CERTIFICACION
+===========================================================
+
+Cada prueba de este bloque corresponde a un defecto REAL visto
+inspeccionando la pantalla, no a una hipotesis.
+===========================================================
+*/
+
+test("un balanceador de AWS no puede aparecer como medio", async () => {
+  await sembrar([
+    piezaFila(PROYECTO_A, "mw-public-alb-prod-123.us-east-1.elb.amazonaws.com/nota", {
+      fuente: "mw-public-alb-prod-123.us-east-1.elb.amazonaws.com"
+    }),
+    piezaFila(PROYECTO_A, "medioa.com/nota", { fuente: "medioa.com" })
+  ]);
+
+  const h = await homeDeProyecto({ projectId: PROYECTO_A, ahora: AHORA, lake: {} });
+
+  const infra = "mw-public-alb-prod-123.us-east-1.elb.amazonaws.com";
+
+  assert.ok(
+    h.presencia.ranking.every((f) => f.dominio !== infra),
+    "un host de infraestructura no es una cabecera"
+  );
+
+  const artefacto = h.presencia.artefactosDeRecoleccion.find((a) => a.dominio === infra);
+
+  assert.ok(artefacto, "y tampoco se oculta: la evidencia no se borra");
+
+  assert.equal(artefacto.clase, "INFRAESTRUCTURA");
+
+  assert.match(artefacto.motivoDeExclusion, /balanceador de carga o una CDN/);
+});
+
+
+test("un dominio propio raro NO se reclasifica como infraestructura", async () => {
+  await sembrar([
+    piezaFila(PROYECTO_A, "diario-raro-xyz.ec/nota", { fuente: "diario-raro-xyz.ec" })
+  ]);
+
+  const h = await homeDeProyecto({ projectId: PROYECTO_A, ahora: AHORA, lake: {} });
+
+  assert.ok(
+    h.presencia.ranking.some((f) => f.dominio === "diario-raro-xyz.ec"),
+    "preferimos una fuente sin clasificar a una reclasificada por parecerlo"
+  );
+});
+
+
+test("toda cifra ausente trae etiqueta humana ademas del estado tecnico", async () => {
+  await sembrar([
+    piezaFila(PROYECTO_A, "medioa.com/nota", {
+      fuente: "medioa.com",
+      fechaHecho: "3 jul 2026"
+    })
+  ]);
+
+  const h = await homeDeProyecto({
+    projectId: PROYECTO_A,
+    ventana: "hoy",
+    ahora: AHORA,
+    lake: {}
+  });
+
+  Object.entries(h.resumen).forEach(([clave, m]) => {
+    if (m.valor === null) {
+      assert.ok(m.estado, `${clave} debe traer estado tecnico`);
+
+      assert.ok(m.etiqueta, `${clave} debe traer etiqueta humana`);
+
+      assert.ok(
+        !/_/.test(m.etiqueta),
+        `la etiqueta de ${clave} no puede ser el estado crudo`
+      );
+    }
+  });
+
+  /* Y el crudo NO desaparece: quien audita lo necesita. */
+  const fila = h.presencia.ranking.find((f) => f.dominio === "medioa.com");
+
+  assert.equal(fila.piezasObservadas.estado, ESTADOS_DATO.COBERTURA_INSUFICIENTE);
+
+  assert.equal(fila.piezasObservadas.etiqueta, "Cobertura insuficiente");
+});
+
+
+test("cada fila del ranking explica por que esta ahi, solo con hechos del corpus", async () => {
+  const rel = (source, target) =>
+    fila({
+      proyectoId: PROYECTO_A,
+      entidad: `${source}->${target}`,
+      fuente: source,
+      datos: {
+        clase: "relacion",
+        source,
+        target,
+        tipo: "medio_publica_sobre",
+        evidenceIds: [`ev-${source}`]
+      }
+    });
+
+  await sembrar([
+    piezaFila(PROYECTO_A, "medioa.com/n1", {
+      fuente: "medioa.com",
+      fechaHecho: "2026-08-31T10:00:00.000Z"
+    }),
+    rel("medioa.com", "candidato-uno")
+  ]);
+
+  const h = await homeDeProyecto({ projectId: PROYECTO_A, ahora: AHORA, lake: {} });
+
+  const f = h.presencia.ranking.find((x) => x.dominio === "medioa.com");
+
+  assert.ok(f.porQue.razones.length >= 3);
+
+  const claves = f.porQue.razones.map((r) => r.clave);
+
+  assert.ok(claves.includes("piezas"));
+
+  assert.ok(claves.includes("ventana"));
+
+  assert.ok(claves.includes("candidatos"));
+
+  /* La justificacion declara lo que NO explica. */
+  assert.match(f.porQue.limite, /No explican audiencia/);
+
+  /* Y no inventa ninguna cifra nueva: la de piezas coincide con el corpus. */
+  const razonPiezas = f.porQue.razones.find((r) => r.clave === "piezas");
+
+  assert.equal(razonPiezas.valor, f.piezasEnCorpus.valor);
+});
+
+
+test("el territorio se devuelve por su nombre, no por su id tecnico", async () => {
+  await sembrar([
+    piezaFila(PROYECTO_A, "elmercurio.com.ec/nota", { fuente: "elmercurio.com.ec" })
+  ]);
+
+  const h = await homeDeProyecto({ projectId: PROYECTO_A, ahora: AHORA, lake: {} });
+
+  const f = h.presencia.ranking.find((x) => x.dominio === "elmercurio.com.ec");
+
+  assert.ok(f.territorios.valor, "El Mercurio tiene cobertura declarada en el catalogo");
+
+  assert.ok(
+    !f.territorios.valor.some((x) => /^ec-/.test(x)),
+    "la tabla no puede mostrar ids de unidad"
+  );
+
+  /* El id sigue disponible para auditar. */
+  assert.ok(f.territorioId);
+});
+
+
+test("el ranking se titula presencia mediatica observable y trae su metodologia", async () => {
+  await sembrar([piezaFila(PROYECTO_A, "medioa.com/n", { fuente: "medioa.com" })]);
+
+  const h = await homeDeProyecto({ projectId: PROYECTO_A, ventana: "30d", ahora: AHORA, lake: {} });
+
+  assert.equal(h.presencia.titulo, "PRESENCIA MEDIÁTICA OBSERVABLE");
+
+  assert.equal(h.presencia.subtitulo, "30 dias");
+
+  assert.match(h.presencia.notaMetodologica.texto, /evidencia digital observable/);
+
+  /* Preparacion de Top N y dimensiones, sin encender ninguna sin metodo. */
+  assert.deepEqual(h.presencia.tamanosDisponibles, [10, 20, 50]);
+
+  const disponibles = h.presencia.dimensionesFuturas.filter((d) => d.disponible);
+
+  assert.equal(disponibles.length, 1, "solo PRESENCIA tiene datos hoy");
+
+  h.presencia.dimensionesFuturas
+    .filter((d) => !d.disponible)
+    .forEach((d) => assert.ok(d.requiere, `${d.id} debe declarar que le falta`));
+});
+
+
+/*
+===========================================================
+12 · REGRESION — EL LAKE REAL Y EL ANALISIS DE UNA PIEZA
 ===========================================================
 
 Invariantes sobre el corpus real. Nunca cifras exactas: el

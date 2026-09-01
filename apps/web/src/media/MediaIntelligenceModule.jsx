@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   Newspaper,
@@ -183,7 +183,7 @@ function Cifra({ etiqueta, m, ancho = "auto" }) {
     : "var(--sentinel-texto)";
 
   const texto = ausente
-    ? (m.estado || "NO_DISPONIBLE").replace(/_/g, " ")
+    ? m.etiqueta || (m.estado || "NO_DISPONIBLE").replace(/_/g, " ")
     : Array.isArray(m.valor)
       ? m.valor.join(", ")
       : String(m.valor);
@@ -267,7 +267,7 @@ function CeldaCifra({ m }) {
         fontWeight: 600
       }}
     >
-      {(m.estado || "NO_DISPONIBLE").replace(/_/g, " ")}
+      {m.etiqueta || (m.estado || "NO_DISPONIBLE").replace(/_/g, " ")}
     </span>
   );
 }
@@ -371,6 +371,13 @@ habria hecho que un cambio de columna se aplicara a una sola.
 ===========================================================
 */
 function TablaPresencia({ filas, ventanaTexto }) {
+  /*
+    Que fila tiene abierta su justificacion. Vive en la tabla y no
+    en el modulo: es estado de presentacion y cambiar de seccion
+    debe olvidarlo.
+  */
+  const [abierta, setAbierta] = useState(null);
+
   if (!filas?.length) {
     return (
       <p style={{ fontSize: "0.75rem", color: "var(--sentinel-texto-tenue)", margin: 0 }}>
@@ -394,12 +401,14 @@ function TablaPresencia({ filas, ventanaTexto }) {
             <th style={TH}>Temas</th>
             <th style={TH}>Cobertura declarada</th>
             <th style={TH}>Última observación</th>
+            <th style={TH}>¿Por qué?</th>
           </tr>
         </thead>
 
         <tbody>
           {filas.map((f) => (
-            <tr key={f.dominio}>
+            <Fragment key={f.dominio}>
+            <tr>
               <td style={{ ...TD, color: "var(--sentinel-texto-tenue)" }}>
                 {f.rank}
                 {f.empatadoConAnterior ? (
@@ -447,7 +456,7 @@ function TablaPresencia({ filas, ventanaTexto }) {
 
               <td style={TD}>
                 <Chip
-                  texto={f.clase}
+                  texto={f.claseEtiqueta || f.clase}
                   color={
                     f.clase === "MEDIO"
                       ? "var(--sentinel-cyan)"
@@ -538,7 +547,93 @@ function TablaPresencia({ filas, ventanaTexto }) {
               <td style={{ ...TD, color: "var(--sentinel-texto-suave)", whiteSpace: "nowrap" }}>
                 {fechaCorta(f.ultimaObservacion)}
               </td>
+
+              {/*
+                No abre un panel nuevo ni pide nada al backend: la
+                justificacion YA viaja en la fila, construida solo
+                con hechos contables del corpus.
+              */}
+              <td style={TD}>
+                <button
+                  onClick={() =>
+                    setAbierta(abierta === f.dominio ? null : f.dominio)
+                  }
+                  style={{
+                    padding: "4px 9px",
+                    borderRadius: "var(--radio-pill)",
+                    border: "1px solid var(--sentinel-borde-vivo)",
+                    background:
+                      abierta === f.dominio ? "rgba(0,212,255,.10)" : "transparent",
+                    color: "var(--sentinel-cyan)",
+                    fontSize: "0.64rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    whiteSpace: "nowrap"
+                  }}
+                >
+                  {abierta === f.dominio ? "Ocultar" : "¿Por qué?"}
+                </button>
+              </td>
             </tr>
+
+            {abierta === f.dominio && f.porQue ? (
+              <tr>
+                <td colSpan={10} style={{ ...TD, background: "rgba(8,28,58,.55)" }}>
+                  <div style={{ ...ETIQUETA, marginBottom: "8px" }}>
+                    Por qué {f.nombre} está en esta posición
+                  </div>
+
+                  <ul
+                    style={{
+                      margin: 0,
+                      paddingLeft: "17px",
+                      fontSize: "0.73rem",
+                      color: "var(--sentinel-texto-suave)",
+                      lineHeight: 1.7
+                    }}
+                  >
+                    {f.porQue.razones.map((r) => (
+                      <li key={r.clave}>{r.texto}</li>
+                    ))}
+                  </ul>
+
+                  <p
+                    style={{
+                      margin: "10px 0 0",
+                      fontSize: "0.68rem",
+                      color: "#eda100",
+                      lineHeight: 1.6
+                    }}
+                  >
+                    {f.porQue.limite}
+                  </p>
+
+                  {/*
+                    El enlace a la evidencia todavia no existe como
+                    pantalla. Se declara preparado en lugar de
+                    pintar un boton que no lleva a ningun sitio.
+                  */}
+                  <div style={{ marginTop: "10px" }}>
+                    <button
+                      disabled
+                      title="La lista de evidencias por fuente llega con MEDIA-SOURCE-UNIVERSE-01."
+                      style={{
+                        padding: "4px 10px",
+                        borderRadius: "var(--radio-pill)",
+                        border: "1px dashed var(--sentinel-borde-vivo)",
+                        background: "transparent",
+                        color: "var(--sentinel-texto-tenue)",
+                        fontSize: "0.64rem",
+                        cursor: "not-allowed"
+                      }}
+                    >
+                      Ver evidencia · preparado
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ) : null}
+            </Fragment>
           ))}
         </tbody>
       </table>
@@ -552,103 +647,39 @@ function TablaPresencia({ filas, ventanaTexto }) {
 MODULO
 ===========================================================
 */
-export default function MediaIntelligenceModule() {
-  const [proyectos, setProyectos] = useState([]);
-  const [projectId, setProjectId] = useState("");
-  const [ventana, setVentana] = useState("90d");
-  const [seccion, setSeccion] = useState("resumen");
+/*
+===========================================================
+LA VISTA — separada del contenedor a proposito
+===========================================================
 
-  const [home, setHome] = useState(null);
-  const [cargando, setCargando] = useState(false);
-  const [error, setError] = useState(null);
+`MediaIntelligenceVista` no sabe pedir datos: los recibe. El
+contenedor de abajo es el que consulta el backend.
 
-  /* Proyectos activos. Media Intelligence no existe sin uno. */
-  useEffect(() => {
-    let vivo = true;
+La separacion existe por MEDIA-UX-CERT-01: sin ella la pantalla
+solo se puede comprobar abriendo un navegador, porque los datos
+llegan en un `useEffect` que el render de servidor no ejecuta.
+Partida en dos, la vista se renderiza en Node con la respuesta
+REAL de la API y se puede comprobar QUE PINTA, que es justo la
+distancia donde se colo el fallo de P-CAND-ASSET-TYPE-UI-FIX-01.
 
-    (async () => {
-      try {
-        const r = await fetch(`${BACKEND}/api/projects/`);
-
-        const j = await r.json();
-
-        if (!vivo) return;
-
-        const lista = j?.proyectos || [];
-
-        setProyectos(lista);
-
-        /*
-          No se elige por nombre ni se codifica ningun proyecto:
-          se toma el primero de la lista si el analista no ha
-          elegido. Con otro proyecto sale otro corpus.
-        */
-        setProjectId((actual) => actual || lista[0]?.id || "");
-      } catch (e) {
-        if (vivo) setError(`No se pudieron listar los proyectos: ${e.message}`);
-      }
-    })();
-
-    return () => {
-      vivo = false;
-    };
-  }, []);
-
-  const cargar = useCallback(async () => {
-    if (!projectId) return;
-
-    setCargando(true);
-    setError(null);
-
-    try {
-      const r = await fetch(
-        `${BACKEND}/api/media/${encodeURIComponent(projectId)}/home?ventana=${encodeURIComponent(ventana)}`
-      );
-
-      const j = await r.json();
-
-      if (!r.ok || j?.ok === false) {
-        setHome(null);
-
-        setError(j?.motivo || `El backend respondió ${r.status}.`);
-
-        return;
-      }
-
-      setHome(j);
-    } catch (e) {
-      setHome(null);
-
-      setError(`No se pudo leer Media Intelligence: ${e.message}`);
-    } finally {
-      setCargando(false);
-    }
-  }, [projectId, ventana]);
-
-  useEffect(() => {
-    /* La sección «analizar» no necesita la HOME. */
-    if (seccion === "analizar") return undefined;
-
-    /*
-      La carga se AGENDA en lugar de lanzarse dentro del efecto.
-
-      Dos razones, y ninguna es cosmética: llamar a `cargar()`
-      aquí pone `setCargando(true)` en el cuerpo sincrónico del
-      efecto y provoca un render en cascada, y además cambiar de
-      proyecto y de ventana seguido disparaba dos lecturas del
-      Lake de las que solo la última importa. Con el temporizador,
-      el `clearTimeout` del cleanup cancela la primera.
-    */
-    const temporizador = setTimeout(cargar, 0);
-
-    return () => clearTimeout(temporizador);
-  }, [cargar, seccion]);
-
-  const proyecto = useMemo(
-    () => proyectos.find((p) => p.id === projectId) || null,
-    [proyectos, projectId]
-  );
-
+No sustituye a mirar la pantalla: no comprueba color ni
+espaciado.
+===========================================================
+*/
+export function MediaIntelligenceVista({
+  proyectos = [],
+  projectId = "",
+  proyecto = null,
+  ventana = "90d",
+  seccion = "resumen",
+  home = null,
+  cargando = false,
+  error = null,
+  onProyecto = () => {},
+  onVentana = () => {},
+  onSeccion = () => {},
+  onRecargar = () => {}
+}) {
   const ventanaTexto =
     VENTANAS.find((v) => v.id === ventana)?.texto || ventana;
 
@@ -727,7 +758,7 @@ export default function MediaIntelligenceModule() {
 
           <select
             value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
+            onChange={(e) => onProyecto(e.target.value)}
             style={{
               marginTop: "6px",
               width: "100%",
@@ -775,7 +806,7 @@ export default function MediaIntelligenceModule() {
               return (
                 <button
                   key={v.id}
-                  onClick={() => setVentana(v.id)}
+                  onClick={() => onVentana(v.id)}
                   style={{
                     padding: "6px 12px",
                     borderRadius: "var(--radio-pill)",
@@ -805,12 +836,33 @@ export default function MediaIntelligenceModule() {
             >
               {home.ventana.zona} · {home.ventana.fechaLocalDesde || home.ventana.fechaLocal} →{" "}
               {home.ventana.fechaLocal}
+
+              {/*
+                EL PAR, SIEMPRE JUNTO.
+
+                «0» a secas se lee como «Sentinel no encontró
+                actividad». La verdad es otra: no puede situar 26
+                piezas en el tiempo. Las dos cifras van pegadas y
+                no se suman: una es un recuento de la ventana y la
+                otra un hueco de normalización.
+              */}
+              <div style={{ marginTop: "4px", color: "var(--sentinel-texto-suave)" }}>
+                {home.ventana.dentroDeVentana} pieza(s) situada(s) en la ventana
+                {home.ventana.sinFechaUtilizable > 0 ? (
+                  <>
+                    {" · "}
+                    <span style={{ color: "#eda100" }}>
+                      {home.ventana.sinFechaUtilizable} con fecha no normalizada
+                    </span>
+                  </>
+                ) : null}
+              </div>
             </div>
           ) : null}
         </div>
 
         <button
-          onClick={cargar}
+          onClick={onRecargar}
           disabled={cargando || !projectId}
           style={{
             padding: "8px 14px",
@@ -865,7 +917,7 @@ export default function MediaIntelligenceModule() {
           return (
             <button
               key={s.id}
-              onClick={() => setSeccion(s.id)}
+              onClick={() => onSeccion(s.id)}
               style={{
                 padding: "7px 13px",
                 borderRadius: "var(--radio-pill)",
@@ -1011,7 +1063,10 @@ export default function MediaIntelligenceModule() {
                           </td>
                           <td style={TD}>
                             {v.estado ? (
-                              <Chip texto={v.estado.replace(/_/g, " ")} color="#eda100" />
+                              <Chip
+                                texto={v.estadoEtiqueta || v.estado.replace(/_/g, " ")}
+                                color="#eda100"
+                              />
                             ) : (
                               <Chip texto="MEDIBLE" color="var(--sentinel-live)" />
                             )}
@@ -1046,7 +1101,7 @@ export default function MediaIntelligenceModule() {
             <>
               <Seccion
                 icono={Radio}
-                titulo={`Presencia observada · ${ventanaTexto}`}
+                titulo={`${home.presencia.titulo || "Presencia mediática observable"} · ${home.presencia.subtitulo || ventanaTexto}`}
                 nota={home.presencia.dimension?.definicion}
               >
                 <Aviso>
@@ -1061,6 +1116,86 @@ export default function MediaIntelligenceModule() {
 
                 <TablaPresencia filas={ranking} ventanaTexto={ventanaTexto} />
 
+                {/*
+                  Preparacion de TOP 10/20/50 y de las dimensiones
+                  futuras. Los controles se muestran DESACTIVADOS y
+                  con su requisito: el corpus actual tiene 10
+                  fuentes, asi que ofrecer «Top 50» hoy seria
+                  ofrecer una lista que no existe.
+                */}
+                <div
+                  style={{
+                    marginTop: "14px",
+                    paddingTop: "12px",
+                    borderTop: "1px solid var(--sentinel-borde)",
+                    display: "flex",
+                    gap: "18px",
+                    flexWrap: "wrap"
+                  }}
+                >
+                  <div>
+                    <div style={ETIQUETA}>Tamaño de la lista</div>
+
+                    <div style={{ display: "flex", gap: "6px", marginTop: "6px" }}>
+                      {(home.presencia.tamanosDisponibles || []).map((n) => {
+                        const alcanzable = ranking.length >= n;
+
+                        return (
+                          <span
+                            key={n}
+                            title={
+                              alcanzable
+                                ? `El corpus tiene ${ranking.length} fuentes.`
+                                : `El corpus solo tiene ${ranking.length} fuente(s): un Top ${n} mostraría una lista que no existe.`
+                            }
+                            style={{
+                              padding: "4px 10px",
+                              borderRadius: "var(--radio-pill)",
+                              border: "1px solid var(--sentinel-borde)",
+                              color: alcanzable
+                                ? "var(--sentinel-texto-suave)"
+                                : "var(--sentinel-texto-tenue)",
+                              opacity: alcanzable ? 1 : 0.45,
+                              fontSize: "0.68rem"
+                            }}
+                          >
+                            Top {n}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={ETIQUETA}>Dimensiones</div>
+
+                    <div style={{ display: "flex", gap: "6px", marginTop: "6px", flexWrap: "wrap" }}>
+                      {(home.presencia.dimensionesFuturas || []).map((d) => (
+                        <span
+                          key={d.id}
+                          title={d.disponible ? "Con datos en este corpus." : d.requiere}
+                          style={{
+                            padding: "4px 10px",
+                            borderRadius: "var(--radio-pill)",
+                            border: `1px solid ${
+                              d.disponible ? "var(--sentinel-cyan)" : "var(--sentinel-borde)"
+                            }`,
+                            color: d.disponible
+                              ? "#FFFFFF"
+                              : "var(--sentinel-texto-tenue)",
+                            opacity: d.disponible ? 1 : 0.5,
+                            fontSize: "0.68rem",
+                            fontWeight: d.disponible ? 650 : 500
+                          }}
+                        >
+                          {d.nombre}
+                          {d.disponible ? "" : " · pendiente"}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
                 <Lista items={home.presencia.dimension?.noSignifica} />
 
                 <p
@@ -1073,6 +1208,31 @@ export default function MediaIntelligenceModule() {
                 >
                   {home.presencia.dimension?.sesgoDeclarado}
                 </p>
+
+                {home.presencia.notaMetodologica ? (
+                  <div
+                    style={{
+                      marginTop: "12px",
+                      paddingTop: "10px",
+                      borderTop: "1px solid var(--sentinel-borde)"
+                    }}
+                  >
+                    <div style={ETIQUETA}>
+                      {home.presencia.notaMetodologica.titulo}
+                    </div>
+
+                    <p
+                      style={{
+                        margin: "6px 0 0",
+                        fontSize: "0.7rem",
+                        color: "var(--sentinel-texto-suave)",
+                        lineHeight: 1.6
+                      }}
+                    >
+                      {home.presencia.notaMetodologica.texto}
+                    </p>
+                  </div>
+                ) : null}
               </Seccion>
 
               {home.presencia.artefactosDeRecoleccion?.length ? (
@@ -1097,7 +1257,7 @@ export default function MediaIntelligenceModule() {
                         <tr key={a.dominio}>
                           <td style={TD}>{a.dominio}</td>
                           <td style={TD}>
-                            <Chip texto={a.tipoEnCatalogo} color="#eda100" />
+                            <Chip texto={a.claseEtiqueta || a.tipoEnCatalogo} color="#eda100" />
                           </td>
                           <td style={TD}>{a.piezasObservadas}</td>
                           <td style={{ ...TD, fontSize: "0.7rem", color: "var(--sentinel-texto-suave)" }}>
@@ -1117,7 +1277,10 @@ export default function MediaIntelligenceModule() {
                 nota={home.incidencia.definicion}
               >
                 <Chip
-                  texto={home.incidencia.estado?.replace(/_/g, " ")}
+                  texto={
+                    home.incidencia.estadoEtiqueta ||
+                    home.incidencia.estado?.replace(/_/g, " ")
+                  }
                   color="#eda100"
                 />
 
@@ -1169,6 +1332,61 @@ export default function MediaIntelligenceModule() {
                 filas={ranking.filter((f) => f.grupo === "MEDIO")}
                 ventanaTexto={ventanaTexto}
               />
+
+              {/*
+                UNIVERSO DE MEDIOS — espacio preparado, sin backend.
+
+                No se pinta un formulario: un formulario que no
+                guarda nada es peor que no tenerlo, porque el
+                analista escribe un medio y lo pierde. Se declara
+                qué resolverá y qué gate lo trae.
+              */}
+              <div
+                style={{
+                  marginTop: "16px",
+                  paddingTop: "14px",
+                  borderTop: "1px solid var(--sentinel-borde)"
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                  <div style={ETIQUETA}>Universo de medios</div>
+
+                  <Chip texto="PREPARADO · MEDIA-SOURCE-UNIVERSE-01" color="#eda100" />
+                </div>
+
+                <p
+                  style={{
+                    margin: "8px 0 0",
+                    fontSize: "0.72rem",
+                    color: "var(--sentinel-texto-suave)",
+                    lineHeight: 1.6,
+                    maxWidth: "760px"
+                  }}
+                >
+                  Hoy los medios de esta tabla son los que aparecieron en el corpus,
+                  no un padrón. El universo permitirá sostener a la vez los medios
+                  que Sentinel descubre y los que el analista declara, con
+                  deduplicación, verificación, varios activos por plataforma e
+                  histórico preservado.
+                </p>
+
+                <button
+                  disabled
+                  title="Requiere el registro de medios por proyecto: MEDIA-SOURCE-UNIVERSE-01."
+                  style={{
+                    marginTop: "10px",
+                    padding: "6px 12px",
+                    borderRadius: "var(--radio-s, 8px)",
+                    border: "1px dashed var(--sentinel-borde-vivo)",
+                    background: "transparent",
+                    color: "var(--sentinel-texto-tenue)",
+                    fontSize: "0.7rem",
+                    cursor: "not-allowed"
+                  }}
+                >
+                  + Agregar medio · próximamente
+                </button>
+              </div>
             </Seccion>
           ) : null}
 
@@ -1203,7 +1421,7 @@ export default function MediaIntelligenceModule() {
                             <td style={{ ...TD, fontWeight: 650 }}>{a}</td>
                             <td style={TD}>{f.nombre}</td>
                             <td style={TD}>
-                              <Chip texto={f.clase} />
+                              <Chip texto={f.claseEtiqueta || f.clase} />
                             </td>
                           </tr>
                         ))
@@ -1266,7 +1484,13 @@ export default function MediaIntelligenceModule() {
             >
               {home.historias.estado ? (
                 <Aviso>
-                  <Chip texto={home.historias.estado.replace(/_/g, " ")} color="#eda100" />
+                  <Chip
+                    texto={
+                      home.historias.estadoEtiqueta ||
+                      home.historias.estado.replace(/_/g, " ")
+                    }
+                    color="#eda100"
+                  />
                   <div style={{ marginTop: "8px" }}>{home.historias.motivo}</div>
                 </Aviso>
               ) : null}
@@ -1464,7 +1688,22 @@ export default function MediaIntelligenceModule() {
                   <tbody>
                     {(home.candidatosPorFuente.filas || []).map((c) => (
                       <tr key={c.candidateId}>
-                        <td style={{ ...TD, fontWeight: 650 }}>{c.candidateId}</td>
+                        <td style={{ ...TD, fontWeight: 650 }}>
+                          {c.nombre || c.candidateId}
+
+                          {c.nombre && c.nombre !== c.candidateId ? (
+                            <div
+                              style={{
+                                fontSize: "0.62rem",
+                                fontWeight: 400,
+                                color: "var(--sentinel-texto-tenue)",
+                                marginTop: "2px"
+                              }}
+                            >
+                              {c.candidateId}
+                            </div>
+                          ) : null}
+                        </td>
                         <td style={TD}>
                           <CeldaCifra m={c.fuentesDistintas} />
                         </td>
@@ -1478,7 +1717,24 @@ export default function MediaIntelligenceModule() {
                           <CeldaCifra m={c.temasAsociados} />
                         </td>
                         <td style={{ ...TD, fontSize: "0.7rem", maxWidth: "300px" }}>
-                          {c.principalesFuentes.join(", ")}
+                          {c.principalesFuentes.length
+                            ? c.principalesFuentes.join(", ")
+                            : "—"}
+
+                          {c.artefactosDeRecoleccion?.length ? (
+                            <div
+                              style={{
+                                marginTop: "5px",
+                                fontSize: "0.62rem",
+                                color: "#eda100",
+                                lineHeight: 1.5
+                              }}
+                            >
+                              + {c.artefactosDeRecoleccion.length} artefacto(s) de
+                              recolección, contados aparte:{" "}
+                              {c.artefactosDeRecoleccion.join(", ")}
+                            </div>
+                          ) : null}
                         </td>
                         <td style={{ ...TD, whiteSpace: "nowrap", color: "var(--sentinel-texto-suave)" }}>
                           {fechaCorta(c.ultimaObservacion)}
@@ -1575,7 +1831,10 @@ export default function MediaIntelligenceModule() {
                             ) : (
                               <span title={`Valor en la fila: ${t.fechaPublicacionBruta || "ninguno"}`}>
                                 <Chip
-                                  texto={(t.fechaPublicacionEstado || "SIN EVIDENCIA").replace(/_/g, " ")}
+                                  texto={
+                                    t.fechaPublicacionEstadoEtiqueta ||
+                                    (t.fechaPublicacionEstado || "SIN EVIDENCIA").replace(/_/g, " ")
+                                  }
                                   color="#eda100"
                                 />
                               </span>
@@ -1618,5 +1877,126 @@ export default function MediaIntelligenceModule() {
         </>
       ) : null}
     </div>
+  );
+}
+
+
+/*
+===========================================================
+EL CONTENEDOR — estado y datos
+===========================================================
+*/
+export default function MediaIntelligenceModule() {
+  const [proyectos, setProyectos] = useState([]);
+  const [projectId, setProjectId] = useState("");
+  const [ventana, setVentana] = useState("90d");
+  const [seccion, setSeccion] = useState("resumen");
+
+  const [home, setHome] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState(null);
+
+  /* Proyectos activos. Media Intelligence no existe sin uno. */
+  useEffect(() => {
+    let vivo = true;
+
+    (async () => {
+      try {
+        const r = await fetch(`${BACKEND}/api/projects/`);
+
+        const j = await r.json();
+
+        if (!vivo) return;
+
+        const lista = j?.proyectos || [];
+
+        setProyectos(lista);
+
+        /*
+          No se elige por nombre ni se codifica ningun proyecto:
+          se toma el primero de la lista si el analista no ha
+          elegido. Con otro proyecto sale otro corpus.
+        */
+        setProjectId((actual) => actual || lista[0]?.id || "");
+      } catch (e) {
+        if (vivo) setError(`No se pudieron listar los proyectos: ${e.message}`);
+      }
+    })();
+
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  const cargar = useCallback(async () => {
+    if (!projectId) return;
+
+    setCargando(true);
+    setError(null);
+
+    try {
+      const r = await fetch(
+        `${BACKEND}/api/media/${encodeURIComponent(projectId)}/home?ventana=${encodeURIComponent(ventana)}`
+      );
+
+      const j = await r.json();
+
+      if (!r.ok || j?.ok === false) {
+        setHome(null);
+
+        setError(j?.motivo || `El backend respondió ${r.status}.`);
+
+        return;
+      }
+
+      setHome(j);
+    } catch (e) {
+      setHome(null);
+
+      setError(`No se pudo leer Media Intelligence: ${e.message}`);
+    } finally {
+      setCargando(false);
+    }
+  }, [projectId, ventana]);
+
+  useEffect(() => {
+    /* La sección «analizar» no necesita la HOME. */
+    if (seccion === "analizar") return undefined;
+
+    /*
+      La carga se AGENDA en lugar de lanzarse dentro del efecto.
+
+      Dos razones, y ninguna es cosmética: llamar a `cargar()`
+      aquí pone `setCargando(true)` en el cuerpo sincrónico del
+      efecto y provoca un render en cascada, y además cambiar de
+      proyecto y de ventana seguido disparaba dos lecturas del
+      Lake de las que solo la última importa. Con el temporizador,
+      el `clearTimeout` del cleanup cancela la primera.
+    */
+    const temporizador = setTimeout(cargar, 0);
+
+    return () => clearTimeout(temporizador);
+  }, [cargar, seccion]);
+
+  const proyecto = useMemo(
+    () => proyectos.find((p) => p.id === projectId) || null,
+    [proyectos, projectId]
+  );
+
+  return (
+    <MediaIntelligenceVista
+      proyectos={proyectos}
+      projectId={projectId}
+      proyecto={proyecto}
+      ventana={ventana}
+      seccion={seccion}
+      home={home}
+      cargando={cargando}
+      error={error}
+      onProyecto={setProjectId}
+      onVentana={setVentana}
+      onSeccion={setSeccion}
+      onRecargar={cargar}
+    />
   );
 }

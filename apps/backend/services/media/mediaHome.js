@@ -20,8 +20,16 @@ import {
   EQUIVALENCIAS_PROHIBIDAS_HOME,
   REGLA_CORRESPONDENCIA,
   CONTRATO_MEDIA_HOME,
-  preguntasRespondibles
+  preguntasRespondibles,
+  etiquetaDeEstado,
+  NOTA_METODOLOGICA,
+  DIMENSIONES_FUTURAS,
+  TAMANOS_RANKING
 } from "./mediaVocabulary.js";
+
+import { contenidoDeProyecto } from "../projects/projectStore.js";
+
+import { unidadPorId } from "../geo/territoryRegistry.js";
 
 /*
 ===========================================================
@@ -84,10 +92,21 @@ la tentacion de devolver null «y ya» es permanente.
 export function medida(valor, { estado = null, motivo = null, nota = null } = {}) {
   const ausente = valor === null || valor === undefined;
 
+  const estadoFinal = ausente ? estado || ESTADOS_DATO.NO_DISPONIBLE : estado;
+
   return {
     valor: ausente ? null : valor,
 
-    estado: ausente ? estado || ESTADOS_DATO.NO_DISPONIBLE : estado,
+    estado: estadoFinal,
+
+    /*
+      MEDIA-UX-CERT-01. La etiqueta humana viaja JUNTO al valor
+      tecnico, no en su lugar: la pantalla necesita «Cobertura
+      insuficiente» y quien audita necesita COBERTURA_INSUFICIENTE.
+      Traducirlo en la UI habria puesto el diccionario en dos
+      sitios, y dos diccionarios divergen.
+    */
+    etiqueta: etiquetaDeEstado(estadoFinal),
 
     motivo:
       ausente && !motivo
@@ -156,7 +175,28 @@ const TIPOS_NO_ORIGINALES = ["agregador", "enciclopedico"];
 
 
 function esFuenteOriginal(fuente) {
+  if (fuente?.esInfraestructura) return false;
+
   return !TIPOS_NO_ORIGINALES.includes(fuente?.catalogo?.tipo);
+}
+
+
+/*
+  Por que una fuente salio del ranking. Cada motivo nombra una
+  categoria distinta de artefacto: mezclarlos en «no es un medio»
+  impediria saber si el problema es nuestro metodo de recoleccion
+  o la infraestructura del propio publicador.
+*/
+function motivoDeExclusion(fuente) {
+  if (fuente?.esInfraestructura) {
+    return "Es un host de infraestructura —un balanceador de carga o una CDN—, no una cabecera. Describe desde que servidor se sirvio la pagina, no quien la publico.";
+  }
+
+  if (fuente?.catalogo?.tipo === "agregador") {
+    return "Es un agregador o un redirector de buscador: su presencia dice como recogimos la cobertura, no quien publico. Incluirlo en el ranking lo presentaria como un medio.";
+  }
+
+  return "No es una fuente original de publicacion.";
 }
 
 
@@ -169,6 +209,37 @@ export async function homeDeProyecto(opciones = {}) {
   const ventanaPedida = String(opciones.ventana || VENTANA_POR_DEFECTO);
 
   const ahora = opciones.ahora || new Date().toISOString();
+
+  /*
+    -----------------------------------------------------------
+    NOMBRES LEGIBLES
+
+    La certificacion visual encontro `paul-carrasco-carpio`
+    pintado tal cual en la tabla de candidatos. Un identificador
+    tecnico en una pantalla de campana no es un detalle
+    cosmetico: parece que el sistema no sabe quien es.
+
+    El nombre se resuelve del proyecto —la misma fuente que la
+    ficha del candidato— y el id NUNCA se pierde: viaja al lado,
+    porque es lo que permite auditar la arista.
+
+    Si el proyecto no responde, se sigue con el id. Un fallo
+    resolviendo nombres no puede dejar sin HOME al analista.
+    -----------------------------------------------------------
+  */
+  const nombresDeCandidato = new Map();
+
+  try {
+    const contenido = await contenidoDeProyecto(opciones.projectId);
+
+    (contenido?.candidatos || []).forEach((c) => {
+      const id = c.candidateId || c.id;
+
+      if (id && c.nombre) nombresDeCandidato.set(id, c.nombre);
+    });
+  } catch {
+    /* Sin nombres: se muestran los ids, que siguen siendo correctos. */
+  }
 
   const corpus = await leerCorpusDeProyecto(opciones);
 
@@ -270,6 +341,7 @@ export async function homeDeProyecto(opciones = {}) {
         hasta: w.hasta,
         ...r.recuento,
         estado: r.estado,
+        estadoEtiqueta: etiquetaDeEstado(r.estado),
         declaracion: r.declaracion
       };
     }),
@@ -411,7 +483,9 @@ export async function homeDeProyecto(opciones = {}) {
       artefactos,
       clavesEnVentana,
       corpus,
-      historias
+      historias,
+      nombresDeCandidato,
+      ventana
     }),
 
     /*
@@ -422,7 +496,9 @@ export async function homeDeProyecto(opciones = {}) {
     candidatosPorFuente: construirCandidatosPorFuente({
       corpus,
       candidatos,
-      historias
+      historias,
+      nombresDeCandidato,
+      fuentesOriginales
     }),
 
     historias,
@@ -440,6 +516,9 @@ export async function homeDeProyecto(opciones = {}) {
       ...DIMENSIONES.INCIDENCIA,
 
       valor: null,
+
+      /* Misma regla que `medida()`: crudo para auditar, etiqueta para la pantalla. */
+      estadoEtiqueta: etiquetaDeEstado(DIMENSIONES.INCIDENCIA.estado),
 
       /*
         Se calcula lo que falta con los datos REALES, para que la
@@ -519,12 +598,106 @@ metodologia que lo sostenga: el numero saldria de una
 preferencia mia disfrazada de metrica.
 ===========================================================
 */
+/*
+  Nombre legible de una unidad territorial. Si el registro no la
+  conoce se devuelve el id: es peor un hueco que un id.
+*/
+function nombreDeUnidad(unidadId) {
+  if (!unidadId) return null;
+
+  try {
+    return unidadPorId(unidadId)?.nombre || unidadId;
+  } catch {
+    return unidadId;
+  }
+}
+
+
+/*
+  Las razones por las que una fila esta donde esta. Solo hechos
+  contables, cada uno con el dato que lo sostiene.
+*/
+function justificacion({ fuente, suyas, enVentana, datables, ventana, nombresDeCandidato }) {
+  const razones = [];
+
+  razones.push({
+    clave: "piezas",
+    texto: `${suyas.length} pieza(s) de esta fuente en el corpus del proyecto.`,
+    valor: suyas.length
+  });
+
+  if (datables === 0 && suyas.length > 0) {
+    razones.push({
+      clave: "ventana",
+      texto: `Ninguna tiene fecha en formato ISO-8601, asi que la ventana${ventana ? ` de ${ventana.etiqueta.toLowerCase()}` : ""} no puede situarlas. Su posicion la decide el corpus completo, no la ventana.`,
+      valor: null
+    });
+  } else {
+    razones.push({
+      clave: "ventana",
+      texto: `${enVentana.length} de ${datables} pieza(s) datables caen dentro de la ventana${ventana ? ` de ${ventana.etiqueta.toLowerCase()}` : ""}.`,
+      valor: enVentana.length
+    });
+  }
+
+  if (fuente.candidatosMencionados.length) {
+    const nombres = fuente.candidatosMencionados.map(
+      (id) => nombresDeCandidato.get(id) || id
+    );
+
+    razones.push({
+      clave: "candidatos",
+      texto: `Aristas MEDIO_PUBLICA_SOBRE observadas hacia: ${nombres.join(", ")}.`,
+      valor: fuente.candidatosMencionados.length
+    });
+  } else {
+    razones.push({
+      clave: "candidatos",
+      texto: "Ninguna arista hacia un candidato del proyecto.",
+      valor: 0
+    });
+  }
+
+  razones.push({
+    clave: "clase",
+    texto:
+      fuente.catalogo?.motivo ||
+      "La clase de esta fuente no procede del catalogo de medios.",
+    valor: null
+  });
+
+  if (fuente.correspondencias?.length) {
+    razones.push({
+      clave: "correspondencia",
+      texto: `Correspondencia observada con «${fuente.correspondencias[0].nombre}», en estado ${fuente.correspondencias[0].estado}. No cambia la clase.`,
+      valor: null
+    });
+  }
+
+  return {
+    razones,
+
+    /*
+      Lo que esta justificacion NO es. Va dentro, porque es
+      justo aqui donde alguien leeria «esta el primero, luego
+      es el mas importante».
+    */
+    limite:
+      "Estas razones explican la POSICION en el corpus observado. No explican audiencia, alcance ni importancia editorial, que este corpus no mide.",
+
+    evidenciaDisponible: suyas.some((p) => p.evidenceId)
+  };
+}
+
+
 export function construirPresencia({
   fuentes = [],
   artefactos = [],
   clavesEnVentana = new Set(),
   corpus,
-  historias
+  historias,
+  nombresDeCandidato = new Map(),
+  ventana = null
 }) {
   const piezasPorClave = new Map(
     [...corpus.piezas, ...corpus.amplificacion].map((p) => [p.clave, p])
@@ -598,9 +771,15 @@ export function construirPresencia({
           de esta fuente». Un medio que declara cubrir Cuenca no
           demuestra haber publicado sobre Cuenca.
         */
+        /*
+          Nombre de la unidad, no su id. La regla ya estaba fijada
+          en MEDIA-REAL-DEMO-01 —«se muestra el NOMBRE del ambito,
+          nunca el id tecnico»— y esta tabla la incumplia:
+          mostraba `ec-azuay-cuenca`.
+        */
         territorios: medida(
           f.coberturaDeclaradaEnCatalogo
-            ? [f.coberturaDeclaradaEnCatalogo.unidadId]
+            ? [nombreDeUnidad(f.coberturaDeclaradaEnCatalogo.unidadId)]
             : null,
           {
             estado: f.coberturaDeclaradaEnCatalogo
@@ -613,6 +792,8 @@ export function construirPresencia({
           }
         ),
 
+        territorioId: f.coberturaDeclaradaEnCatalogo?.unidadId || null,
+
         autores: f.autores,
 
         /*
@@ -623,7 +804,31 @@ export function construirPresencia({
         correspondencias: f.correspondencias,
 
         ultimaObservacion: f.ultimaObservacion,
-        publicacionMasReciente: f.publicacionMasReciente
+        publicacionMasReciente: f.publicacionMasReciente,
+
+        /*
+          -----------------------------------------------------
+          ¿POR QUE ESTA AQUI?
+
+          La justificacion se ENUMERA a partir de lo ya
+          persistido: piezas, candidatos, evidencias y la ultima
+          observacion. No hay ningun calculo nuevo y no hay
+          ninguna frase generada: cada linea apunta a filas del
+          Lake que se pueden abrir.
+
+          Existe porque una lista ordenada sin explicacion se
+          discute con opiniones. Con las cuatro lineas delante,
+          se discute con evidencia.
+          -----------------------------------------------------
+        */
+        porQue: justificacion({
+          fuente: f,
+          suyas,
+          enVentana,
+          datables,
+          ventana,
+          nombresDeCandidato
+        })
       };
     })
     /*
@@ -690,13 +895,36 @@ export function construirPresencia({
       tipoEnCatalogo: f.catalogo.tipo,
       piezasObservadas: f.piezasObservadas,
 
-      motivoDeExclusion:
-        f.catalogo.tipo === "agregador"
-          ? "Es un agregador o un redirector de buscador: su presencia dice como recogimos la cobertura, no quien publico. Incluirlo en el ranking lo presentaria como un medio."
-          : "No es una fuente original de publicacion."
+      clase: f.esInfraestructura ? "INFRAESTRUCTURA" : "AGREGADOR",
+
+      claseEtiqueta: f.esInfraestructura
+        ? "Infraestructura"
+        : "Agregador / redirector",
+
+      motivoDeExclusion: motivoDeExclusion(f)
     })),
 
-    orden: "piezasObservadas, luego candidatosMencionados, luego dominio",
+    /*
+      El titulo que la pantalla debe usar. Se decide en el
+      backend para que no haya dos nombres de la misma lista.
+    */
+    titulo: "PRESENCIA MEDIÁTICA OBSERVABLE",
+
+    subtitulo: ventana ? ventana.etiqueta : null,
+
+    notaMetodologica: NOTA_METODOLOGICA,
+
+    /*
+      Preparacion de TOP 10/20/50 y de las dimensiones futuras.
+      Se declaran para que la pantalla se construya sabiendo que
+      crecera, y para que ninguna dimension pueda encenderse sin
+      su metodologia.
+    */
+    tamanosDisponibles: TAMANOS_RANKING,
+
+    dimensionesFuturas: DIMENSIONES_FUTURAS,
+
+    orden: "piezasObservadas, luego piezasEnCorpus, luego candidatosMencionados, luego dominio",
 
     sinScore:
       "Este orden es un RECUENTO, no una puntuacion. No hay score 0-100 ni pesos: decidir cuanto vale una pieza frente a otra exigiria una metodologia que no existe.",
@@ -712,7 +940,15 @@ export function construirPresencia({
 CANDIDATOS x MEDIOS
 ===========================================================
 */
-export function construirCandidatosPorFuente({ corpus, candidatos = [], historias }) {
+export function construirCandidatosPorFuente({
+  corpus,
+  candidatos = [],
+  historias,
+  nombresDeCandidato = new Map(),
+  fuentesOriginales = []
+}) {
+  const dominiosOriginales = new Set(fuentesOriginales.map((f) => f.dominio));
+
   const filas = candidatos.map((candidateId) => {
     const suyas = corpus.relaciones.filter((r) => r.target === candidateId);
 
@@ -734,14 +970,35 @@ export function construirCandidatosPorFuente({ corpus, candidatos = [], historia
       lugar de aproximar con los temas de sus fuentes: los temas
       de un medio no son los temas de un candidato.
     */
+    /*
+      Las fuentes se separan en dos listas. En la tabla anterior
+      aparecian juntas, asi que `google.com` figuraba como uno de
+      los «medios» de un candidato con el mismo peso visual que
+      El Mercurio. Son cosas distintas y ahora se cuentan aparte.
+    */
+    const mediaticas = fuentes.filter((d) => dominiosOriginales.has(d)).sort();
+
+    const noMediaticas = fuentes.filter((d) => !dominiosOriginales.has(d)).sort();
+
     return {
       candidateId,
 
-      fuentesDistintas: medida(fuentes.length, {
-        nota: "Dominios o cuentas distintas con al menos una arista observada hacia este candidato."
+      /* El nombre para la pantalla; el id sigue viajando al lado. */
+      nombre: nombresDeCandidato.get(candidateId) || candidateId,
+
+      nombreResuelto: nombresDeCandidato.has(candidateId),
+
+      fuentesDistintas: medida(mediaticas.length, {
+        nota: `Fuentes con al menos una arista observada hacia este candidato.${
+          noMediaticas.length
+            ? ` Ademas ${noMediaticas.length} artefacto(s) de recoleccion, contados aparte porque no son fuentes que publiquen.`
+            : ""
+        }`
       }),
 
-      principalesFuentes: fuentes.sort(),
+      principalesFuentes: mediaticas,
+
+      artefactosDeRecoleccion: noMediaticas,
 
       /*
         NULL a proposito, con el motivo tecnico exacto. Es la
@@ -779,6 +1036,8 @@ export function construirCandidatosPorFuente({ corpus, candidatos = [], historia
         a.candidateId.localeCompare(b.candidateId)
     );
 
+  const sinResolver = filas.filter((f) => !f.nombreResuelto).length;
+
   return {
     filas,
 
@@ -793,7 +1052,9 @@ export function construirCandidatosPorFuente({ corpus, candidatos = [], historia
     ],
 
     esPresenciaMediatica:
-      "Es PRESENCIA MEDIATICA OBSERVADA: que fuentes aparecen asociadas a que candidato dentro del corpus de este proyecto.",
+      "Medios y fuentes donde Sentinel OBSERVO una relacion con cada candidato, dentro del corpus de este proyecto. Es presencia mediatica observable y no tiene signo.",
+
+    nombresSinResolver: sinResolver,
 
     advertenciaDeArista:
       corpus.relaciones.find((r) => r.advertencia)?.advertencia || null
@@ -921,6 +1182,7 @@ export function construirProcedencia({ corpus, evidencias = [] }) {
       fechaPublicacion: p.publishedAt,
       fechaPublicacionBruta: p.publishedAtBruto,
       fechaPublicacionEstado: p.fechaPublicacionEstado,
+      fechaPublicacionEstadoEtiqueta: etiquetaDeEstado(p.fechaPublicacionEstado),
       observadaEn: p.observedAt,
       procedenciaDelEmisor: p.emisor?.procedencia || null
     })),
@@ -1022,6 +1284,9 @@ export function construirHistorias(corpus) {
     piezasDeAmplificacionSinTitular: sinTitular,
 
     estado: temas.length ? null : ESTADOS_DATO.COBERTURA_INSUFICIENTE,
+    estadoEtiqueta: temas.length
+      ? null
+      : etiquetaDeEstado(ESTADOS_DATO.COBERTURA_INSUFICIENTE),
     motivo,
 
     metodo: salida?.metodo || null,
