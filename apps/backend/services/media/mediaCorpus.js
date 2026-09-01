@@ -8,6 +8,8 @@ import { ventanaDeDias, ZONA_POR_DEFECTO } from "../territorial/dayWindow.js";
 
 import { identificarFuente } from "../conversation/mediaRegistry.js";
 
+import { normalizarFecha, resumirNormalizacion } from "./mediaTime.js";
+
 import { CLASES_EMISOR } from "./pieceContracts.js";
 
 import {
@@ -65,18 +67,23 @@ LOS TRES CONTROLES QUE SOSTIENEN LAS CIFRAS
     porque el Lake es append-only; se COLAPSA al leer,
     normalizando la clave, y el numero de colapsos se declara.
 
-LA FECHA QUE NO SE ADIVINA
+LA FECHA, DESDE MEDIA-TIME-NORMALIZATION-01
 -----------------------------------------------------------
 
 Las piezas de amplificacion llegan de un buscador y su fecha
-puede venir como «3 jul 2026». Eso no es una fecha ISO y no se
-interpreta: `new Date("3 jul 2026")` es invalida en JS, y un
-parser de meses en espanol situaria la pieza en una ventana que
-nadie observo. Se marca FECHA_NO_NORMALIZADA y se cuenta.
+viene como «3 jul 2026». Hasta ese gate se rechazaban todas por
+no ser ISO. Ahora las interpreta `mediaTime`, que solo resuelve
+lo INEQUIVOCO —mes escrito en espanol, o numerica donde el dia
+sea mayor que 12— y deja `null` lo demas con su motivo.
 
-Tampoco se usa la fecha de DETECCION como sustituta de la de
-publicacion. Una nota de 2023 detectada hoy caeria en la
-ventana HOY, y HOY dejaria de significar nada.
+La normalizacion ocurre AL LEER y no reescribe el Lake: el valor
+crudo queda intacto, la operacion es idempotente por
+construccion y mejorar el parser manana mejora todo el corpus
+sin ningun backfill.
+
+Lo que sigue prohibido: usar la fecha de DETECCION como
+sustituta de la de publicacion. Una nota de 2023 detectada hoy
+caeria en la ventana HOY, y HOY dejaria de significar nada.
 ===========================================================
 */
 
@@ -337,9 +344,26 @@ export async function leerCorpusDeProyecto(opciones = {}) {
     observadoEn: r.fechaDeteccion || null
   }));
 
-  const sinFechaNormalizada = [...piezas, ...amplificacion].filter(
+  const todasLasPiezas = [...piezas, ...amplificacion];
+
+  const sinFechaNormalizada = todasLasPiezas.filter(
     (p) => p.publishedAt === null
   ).length;
+
+  /*
+    Resumen de la normalizacion temporal: cuantas se resolvieron,
+    con que metodo, y por que motivo NO se resolvieron las demas.
+    Los motivos no se colapsan en «no se pudo»: SIN_VALOR se
+    arregla reingiriendo y AMBIGUA no se arregla nunca sin mas
+    contexto, asi que mezclarlos ocultaria cual tiene solucion.
+  */
+  const normalizacion = resumirNormalizacion(
+    todasLasPiezas.map((p) => ({
+      normalizada: Boolean(p.publishedAt),
+      metodo: p.fechaProvenance?.metodo || null,
+      motivo: p.fechaMotivo || null
+    }))
+  );
 
   return {
     ok: true,
@@ -381,6 +405,8 @@ export async function leerCorpusDeProyecto(opciones = {}) {
     },
 
     fechas: {
+      ...normalizacion,
+
       piezasSinFechaNormalizada: sinFechaNormalizada,
       estado:
         sinFechaNormalizada > 0
@@ -389,7 +415,7 @@ export async function leerCorpusDeProyecto(opciones = {}) {
 
       declaracion:
         sinFechaNormalizada > 0
-          ? `${sinFechaNormalizada} pieza(s) no tienen fecha de publicacion en formato ISO-8601. No se interpretan y quedan fuera de toda ventana temporal: adivinarlas las situaria en un periodo que nadie observo.`
+          ? `${normalizacion.normalizadas} de ${normalizacion.total} pieza(s) tienen fecha de publicacion utilizable. Las ${sinFechaNormalizada} restantes quedan fuera de toda ventana temporal, cada una con su motivo: adivinarlas las situaria en un periodo que nadie observo.`
           : "Todas las piezas del corpus tienen fecha de publicacion normalizada."
     }
   };
@@ -407,6 +433,32 @@ function normalizarPieza(registro, clave, origen) {
   const emisor = d.emisor || null;
 
   const publishedAtBruto = registro?.fechaHecho ?? null;
+
+  /*
+    -----------------------------------------------------------
+    MEDIA-TIME-NORMALIZATION-01 — LA FECHA SE DERIVA AL LEER
+
+    Se normaliza aqui y NO se reescribe la fila del Lake. La
+    decision es deliberada:
+
+    · el valor crudo queda intacto y siempre reauditable;
+    · es idempotente por construccion —leer dos veces no puede
+      duplicar nada, ni mover un id, ni crear una version;
+    · mejorar el parser manana mejora TODO el corpus sin un
+      backfill, incluidas las filas que hoy no se resuelven.
+
+    Un backfill habria escrito 9 versiones nuevas de piezas para
+    obtener el mismo resultado, con riesgo de sobrescribir una
+    fecha valida y sin ganar nada que no se pueda derivar.
+
+    `observedAt` se pasa SOLO como referencia de fechas
+    relativas. No puede convertirse en `publishedAt`: no hay
+    ningun camino en `normalizarFecha` que lo permita.
+    -----------------------------------------------------------
+  */
+  const fecha = normalizarFecha(publishedAtBruto, {
+    observedAt: registro?.fechaDeteccion || null
+  });
 
   return {
     clave,
@@ -438,16 +490,37 @@ function normalizarPieza(registro, clave, origen) {
     rol: origen === "RELACIONADA" ? d.rol || null : null,
     piezaOrigen: d.piezaOrigen || null,
 
-    publishedAt: instanteIso(publishedAtBruto),
+    publishedAt: fecha.publishedAt,
     publishedAtBruto,
 
-    fechaPublicacionEstado:
-      publishedAtBruto === null
-        ? ESTADOS_DATO.SIN_EVIDENCIA
-        : instanteIso(publishedAtBruto)
-          ? null
-          : ESTADOS_DATO.FECHA_NO_NORMALIZADA,
+    /*
+      Trazabilidad temporal completa: como se supo la fecha, con
+      que precision y contra que referencia. Sin esto, una fecha
+      derivada de «ayer» seria indistinguible de una leida de la
+      API.
+    */
+    fechaProvenance: {
+      metodo: fecha.metodo,
+      precision: fecha.precision,
+      raw: fecha.raw,
+      razon: fecha.razon,
+      referenciaObservacion: fecha.referenciaObservacion,
+      version: fecha.version
+    },
 
+    fechaPublicacionEstado: fecha.normalizada
+      ? null
+      : publishedAtBruto === null
+        ? ESTADOS_DATO.SIN_EVIDENCIA
+        : ESTADOS_DATO.FECHA_NO_NORMALIZADA,
+
+    fechaMotivo: fecha.motivo,
+
+    /*
+      Cuando Sentinel VIO la pieza. Nunca sustituye a la fecha de
+      publicacion: son dos preguntas distintas y el contrato las
+      mantiene separadas.
+    */
     observedAt: registro?.fechaDeteccion || null
   };
 }

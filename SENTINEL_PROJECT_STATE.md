@@ -9037,6 +9037,91 @@ con los 6 errores preexistentes y **0 en Media** · 0 requests externos.
 
 ---
 
+## 18-M6. MEDIA-TIME-NORMALIZATION-01 — fechas sin inventarlas (2026-09-01)
+
+**0 requests externos, 0 USD.** Entregable:
+`docs/MEDIA-TIME-NORMALIZATION-01.md`.
+
+### Una corrección al baseline que este documento traía
+
+Los gates anteriores decían «26 piezas en `FECHA_NO_NORMALIZADA`». Inventariando
+pieza por pieza, esa cifra mezclaba dos estados distintos: **9** con un valor que
+no era ISO, y **17 sin ningún valor de fecha**. La distinción no es cosmética —
+una se arregla con un parser y la otra solo volviendo a la fuente—, y
+colapsarlas hacía parecer que el gate podía resolver 26 casos cuando el techo
+real eran 9.
+
+### La escalera de fuentes temporales
+
+`ISO_8601` → `TEXTO_ES_INEQUIVOCO` → `NUMERICA_INEQUIVOCA` →
+`RELATIVO_A_OBSERVACION`. La primera que resuelve gana y el método queda
+registrado en la pieza. **No hay un peldaño para «usar `observedAt`»**, y hay un
+test que comprueba que no existe ningún camino que lo permita.
+
+### El detalle que decide si «HOY» significa algo
+
+`3 jul 2026` tiene precisión de DÍA. Anclarlo a `2026-07-03T00:00:00Z` parece
+inofensivo y no lo es: en `America/Guayaquil` esa medianoche UTC son las 19:00
+del 2 de julio, así que la pieza caería en el día anterior. Con ventanas de
+calendario eso desplaza piezas de un día al otro sistemáticamente. Se ancla a la
+**medianoche local** y se declara `precision: "DIA"`. Lo mismo para una fecha ISO
+sin hora: la precisión del dato no cambia porque el formato sea ISO.
+
+### Lo que se negó a normalizar
+
+`03/07/2026` puede ser 3 de julio o 7 de marzo y la convención del publicador no
+viaja en el dato: queda `AMBIGUA`. Elegir DD/MM «porque en Latinoamérica se usa
+así» acertaría muchas veces y fallaría **en silencio** el resto, que es la peor
+combinación posible. `21/05/2025` sí se resuelve, porque no hay mes 21. `ayer`
+sin instante de observación no se resuelve. Los motivos no se colapsan en «no se
+pudo»: `SIN_VALOR` se arregla reingiriendo y `AMBIGUA` no se arregla nunca.
+
+### Por qué NO hubo backfill
+
+La normalización ocurre **al leer**. El valor crudo queda intacto, la operación
+es idempotente por construcción —leer dos veces no puede duplicar nada ni mover
+un id— y mejorar el parser mañana mejora todo el corpus sin backfill. Un backfill
+habría escrito 9 versiones nuevas para el mismo resultado, con riesgo de
+sobrescribir una fecha válida. Verificado: `registrosEnLake` idéntico tras dos
+lecturas.
+
+### Antes / después
+
+Piezas con fecha utilizable **2 → 11** de 28; proporción datable **7 % → 39 %**;
+`FECHA_NO_NORMALIZADA` **9 → 0**; `SIN_EVIDENCIA` 17, sin cambio y no
+normalizable sin reingestión. Ventana 90d **1 → 5** piezas situadas; HOY–30D
+siguen en 0 y es correcto, porque la pieza datable más reciente es de julio.
+
+En el ranking, **El Mercurio pasa de aparentar inactividad —0 con 8 piezas en
+corpus— a encabezar la lista con 2 piezas reales dentro de la ventana**. El
+Universo y Primicias muestran **0 legítimo**: tienen piezas datables de 2023 y
+2025, fuera de los 90 días. Facebook e Instagram siguen en cobertura
+insuficiente, porque sus piezas no tienen fecha y no se les asigna un 0.
+
+### Lo que no cambió
+
+Candidatos × Medios intacto, con `piezas por candidato` todavía `NO_DISPONIBLE`
+porque la arista se deduplica por par. Amplificación sigue sin afirmar copia ni
+causalidad. Incidencia sigue `METODOLOGIA_EN_CONSTRUCCION`: su motivo se
+recalcula solo y ya dice 17 en vez de 26, pero normalizar fechas no crea la
+segunda ventana comparable que le falta.
+
+### Comprobaciones
+
+`mediaTime.test.mjs` 28/28 · Media registradas 142/142 · suite completa 1.473, 0
+fallos · render 47/47 · build limpio · lint con los 6 preexistentes y 0 en Media.
+
+Tres tests cambiaron de *fixture* y ninguno se debilitó: usaban `3 jul 2026` como
+ejemplo de fecha no interpretable y ahora se resuelve, así que pasan a
+`03/07/2026`, que sigue siendo genuinamente ambigua; se añadió la contraparte que
+comprueba que la fecha en español sí se resuelve.
+
+`mediaTime.test.mjs` **no está registrado en `npm test`**: `package.json` sigue
+mezclando líneas sin commitear de otra terminal y este gate tenía prohibido
+tocarlo.
+
+---
+
 ## 19. Persistencia de proyectos
 
 ✅ OPERATIVO — commit `99a632b`. Confirmado por el código:
@@ -9544,6 +9629,7 @@ Después de cada sprint importante:
 
 | Fecha | Commit | Cambio |
 |---|---|---|
+| 2026-09-01 | MEDIA-TIME-NORMALIZATION-01 | Normalizacion temporal de las piezas de Media sin inventar una sola fecha. 0 requests externos, 0 USD. Empieza corrigiendo el baseline que este documento traia: «26 piezas en FECHA_NO_NORMALIZADA» mezclaba dos estados distintos —9 con un valor que no era ISO y 17 SIN NINGUN valor de fecha—, y la distincion no es cosmetica porque una se arregla con un parser y la otra solo volviendo a la fuente; colapsarlas hacia parecer que el gate podia resolver 26 casos cuando el techo real eran 9. Escalera de fuentes temporales con el metodo registrado en cada pieza: ISO_8601, TEXTO_ES_INEQUIVOCO, NUMERICA_INEQUIVOCA y RELATIVO_A_OBSERVACION, sin ningun peldano para «usar observedAt» y con un test que comprueba que no existe camino que lo permita. El detalle que decide si HOY significa algo: «3 jul 2026» tiene precision de DIA, y anclarlo a medianoche UTC lo pondria a las 19:00 del 2 de julio en Guayaquil, desplazando piezas de un dia al otro de forma sistematica con ventanas de calendario; se ancla a medianoche LOCAL y se declara precision DIA, y lo mismo se aplica a una fecha ISO sin hora porque la precision del dato no cambia por el formato. Lo que se niega a resolver: 03/07/2026 queda AMBIGUA porque puede ser 3 de julio o 7 de marzo y la convencion del publicador no viaja en el dato —elegir DD/MM acertaria muchas veces y fallaria EN SILENCIO el resto, la peor combinacion posible—, mientras 21/05/2025 si se resuelve porque no hay mes 21; «ayer» sin instante de observacion tampoco se resuelve; y los motivos no se colapsan en «no se pudo», porque SIN_VALOR se arregla reingiriendo y AMBIGUA no se arregla nunca sin mas contexto. NO hubo backfill, y es una decision: la normalizacion ocurre AL LEER, asi que el valor crudo queda intacto, la operacion es idempotente por construccion —leer dos veces no puede duplicar nada ni mover un id— y mejorar el parser manana mejora todo el corpus sin reescribir nada; un backfill habria escrito 9 versiones nuevas para el mismo resultado con riesgo de sobrescribir una fecha valida, y se verifico que registrosEnLake es identico tras dos lecturas. Antes/despues: piezas con fecha utilizable 2 -> 11 de 28, proporcion datable 7% -> 39%, FECHA_NO_NORMALIZADA 9 -> 0, SIN_EVIDENCIA 17 sin cambio por no ser normalizable sin reingestion; ventana 90d 1 -> 5 piezas situadas, y HOY-30D siguen en 0 correctamente porque la pieza datable mas reciente es de julio. El cambio mas visible esta en el ranking: El Mercurio pasa de aparentar inactividad —0 con 8 piezas en corpus— a encabezar la lista con 2 piezas reales dentro de la ventana, mientras El Universo y Primicias muestran un 0 LEGITIMO por tener piezas datables de 2023 y 2025 fuera de los 90 dias, y Facebook e Instagram siguen en cobertura insuficiente porque sus piezas no tienen fecha y no se les asigna un cero. Sin cambios en Candidatos x Medios, donde piezas por candidato sigue NO_DISPONIBLE porque la arista se deduplica por par, ni en Amplificacion, que sigue sin afirmar copia ni causalidad; Incidencia sigue METODOLOGIA_EN_CONSTRUCCION y su motivo se recalcula solo diciendo ya 17 en vez de 26, porque normalizar fechas no crea la segunda ventana comparable que le falta. Tres tests cambiaron de fixture y ninguno se debilito: usaban «3 jul 2026» como ejemplo de fecha no interpretable y ahora se resuelve, asi que pasan a 03/07/2026, que sigue siendo genuinamente ambigua, y se anadio la contraparte que comprueba que la fecha en espanol SI se resuelve. mediaTime.test.mjs 28/28, Media registradas 142/142, suite completa 1.473 con 0 fallos, render de pantalla 47/47, build limpio, lint con los 6 preexistentes y 0 en Media. La suite nueva NO se registra en npm test porque package.json sigue mezclando lineas sin comitear de otra terminal y este gate tenia prohibido tocarlo. Nueva §18-M6 y docs/MEDIA-TIME-NORMALIZATION-01.md. |
 | 2026-09-01 | MEDIA-UX-CERT-01 | Certificacion visual de Media Intelligence y correccion de lo que la inspeccion encontro. 0 requests externos y 0 USD. Primero lo que este gate NO puede afirmar: el entorno no tiene navegador automatizable —ni Playwright ni Puppeteer—, asi que no hay capturas ni comprobacion de color, espaciado o responsive, y la revision de apariencia sigue siendo humana. Lo que si es real: la app corre con backend en 3001 y Vite en 5173 respondiendo 200, Vite compila y sirve el modulo, el backend responde el contrato entero, y las OCHO secciones se renderizan con la respuesta REAL de la API mediante tests/media-home.check.jsx, siguiendo la convencion de render que el repositorio ya tenia desde P-CAND-ASSET-TYPE-UI-FIX-01 —que la funcion devuelva el dato no significa que la pantalla lo pinte—: 47 comprobaciones, 0 fallos, en 90d y en hoy. Ninguna P0: el modulo se entendia y se usaba. Siete correcciones P1, todas de semantica engañosa. La que mas importa: un balanceador de AWS, mw-public-alb-...elb.amazonaws.com, figuraba en el puesto #5 del ranking ENTRE El Universo y Expreso; es el servidor de origen desde el que se sirvio una pagina, no una cabecera, y es el mismo error de categoria que google.com salvo que aquella regla estaba atada al tipo del catalogo y este host no esta en ningun catalogo —nuevo esHostDeInfraestructura() con sufijos que nunca son marca editorial, el host pasa a artefactos con clase propia INFRAESTRUCTURA distinta de AGREGADOR porque no se arreglan igual, y la lista se deja corta a proposito con un test que fija que un dominio propio raro NO se reclasifica por parecerlo—. Las otras seis: identificadores tecnicos donde iban nombres (paul-carrasco-carpio pintado tal cual; se resuelve del proyecto y el id no se pierde, viaja debajo porque es lo que permite auditar la arista); ids de unidad territorial (ec-azuay-cuenca en pantalla, incumpliendo la regla que MEDIA-REAL-DEMO-01 ya habia fijado; ahora Cuenca y Azuay, con el id en territorioId); estados crudos (COBERTURA_INSUFICIENTE pasa a «Cobertura insuficiente», traducido en UN solo sitio porque dos diccionarios divergen, y el crudo no desaparece porque quien audita lo necesita); el titulo del ranking, que pasa a PRESENCIA MEDIATICA OBSERVABLE con la ventana y la nota metodologica visibles, decidido en el backend para que no haya dos nombres de la misma lista; la ventana que se leia como «cero actividad» cuando la verdad es que 26 piezas no se pueden situar en el tiempo, y ahora muestra el par pegado y no sumable «0 situada(s) en la ventana · 26 con fecha no normalizada»; y los artefactos mezclados con medios en Candidatos x Medios, donde google.com figuraba como «fuente» de un candidato con el mismo peso que El Mercurio —separados y contados aparte, Carrasco baja de 7 fuentes a 6 mas 1 artefacto y Lloret de 6 a 4 mas 2, la cifra baja y es mas verdadera—. Dos añadidos P2: «¿Por que esta aqui?» por fila, que no pide nada al backend porque la justificacion viaja en la fila construida solo con hechos contables y con su limite declarado, y «Ver evidencia» deshabilitado y declarado en lugar de inventado; y Top 10/20/50 mas las seis dimensiones futuras visibles y atenuadas, con solo PRESENCIA activa y cada una declarando que le falta, para que el diseño no bloquee la evolucion. Universo de medios preparado con «+ Agregar medio · proximamente» DESHABILITADO: no se pinto formulario, porque uno que no guarda es peor que ninguno. Se separa MediaIntelligenceVista de MediaIntelligenceModule, sin lo cual la pantalla solo se puede comprobar abriendo un navegador. Las dos demos reales reproducen tras reiniciar el backend: Tomebamba 5 snapshots desde knowledge_lake con views 5.966, El Mercurio 2 con metricas null y motivo. Render 47/47, Media 39/39, suite completa 1.472, 0 fallos, build limpio, lint con los 6 preexistentes y 0 en Media. Nueva §18-M5 y docs/MEDIA-UX-CERT-01.md. |
 | 2026-09-01 | P-CAND-INSTAGRAM-ROUTE-01 | Fallback de Instagram conectado al flujo real de observacion, 0 requests externas, 81 creditos de ScrapeCreators sin tocar. socialSourceRouting.js e instagramProviderFallback.js quedaron probados por separado en el gate anterior pero ninguno estaba conectado a observarCandidato; nuevo parametro proveedorInstagram, null por defecto, con el que sin pasarlo el comportamiento es identico byte a byte al de antes -verificado ejecutando las 34 suites de Candidate antes y despues, mismos 1236 checks, 0 fallos en ambos casos-. Cuando se activa no se duplica ninguna decision: se llama siempre a observarInstagramConFallback, que reutiliza fuenteParaActivo internamente, con las dos guardas del gate anterior intactas por debajo -bandera de entorno, proveedor aprobado y credencial-. Nuevo estado MEDIDO_PROVEEDOR aditivo, sin renombrar OBSERVADA a MEDIDO_OFICIAL para no tocar la semantica que ya usan igRoute, multiAsset, socialCoverage y el resto de la suite: Meta gano se reconoce porque el resultado no tiene sourceKind ni canalProveedor, no por un literal nuevo. Provenance con canal en null a proposito -forzar el perfil de un proveedor distinto ahi invitaria a comparar followers de Meta con followers de ScrapeCreators como si fueran la misma medicion- y resultadoOficial siempre intacto y completo, nunca resumido. Diez casos de prueba verificados: Meta gana sin llamar al proveedor, fallback real con perfil mapeado, proveedor deshabilitado con estado explicito PROVEEDOR_DESHABILITADO y nunca excepcion, fallos 401/429/timeout que no tumban la observacion y distinguen CREDENCIAL_RECHAZADA de CUOTA_AGOTADA, multi-activo sin colapsar, reobservacion con id estable, provenance sin confundir MEDIDO_PROVEEDOR con OBSERVADA, project isolation entre projectId distintos, budget guard con dos capas independientes, y un fallo temporal NO_EJECUTABLE que sigue sin abrir el fallback. 31/31 en tests/candidateInstagramFallbackRoute.test.mjs, cero red: todo se probo con fetch inyectado reproduciendo la forma real ya medida sobre @paulcarrascoc, sin repetir profile/posts/comments reales porque lo que cambiaba era el cableado y no la respuesta del proveedor. Limitaciones declaradas: el opt-in solo cubre perfil, la ruta HTTP routes/projects.js sigue sin pasar proveedorInstagram -disenar presupuesto de creditos por request HTTP queda fuera de este gate corto-, y NO_EJECUTABLE sigue sin abrir el fallback por decision ya tomada. package.json sigue mezclado entre terminales y no se toco. T2 y T3 trabajaban en paralelo durante el gate -nuevos archivos territoriales y de media aparecieron a mitad de sesion-; ninguno se toco y SENTINEL_PROJECT_STATE.md se verifico limpio de cambios ajenos sin comitear justo antes de esta seccion. Nueva §18-sexquadragies y docs/P-CAND-INSTAGRAM-ROUTE-01.md. |
 | 2026-08-31 | P-CAND-INSTAGRAM-FALLBACK-01 | ScrapeCreators validado como fallback real de Instagram cuando Meta oficial no alcanza: 5 requests, 5 creditos (86->81), 0 USD. El hueco es real: 9 de 12 activos de Instagram del piloto son personales y Meta les da cobertura cero sin remedio posible por esa via. Dos activos reales del Lake: CONTROL @pedropalaciosu, que Meta ya mide y que ScrapeCreators reprodujo con 9.718 followers coincidentes -sirve solo de control de consistencia-; y FALLBACK @paulcarrascoc, unico Instagram de Paul Carrasco y personal, con cobertura cero por Meta, donde ScrapeCreators devolvio 985 followers, 12 publicaciones -todas de 2019, cuenta inactiva- y 5 de 5 comentarios reales con texto, cobertura COMPLETA. No se presenta la cuenta inactiva como actividad vigente: solo valida el mecanismo. Nuevo socialSourceRouting.js con la regla por ACTIVO -Meta oficial primero, proveedor solo si la oficial no puede, estado explicito SIN_FUENTE si ninguna puede-, con Yaku Perez como caso que obliga a decidir por activo y no por candidato -su Instagram profesional lo mide Meta y el personal no-, con un fallo temporal de la oficial -credencial expirada, cuota agotada- que NO abre el fallback porque se arregla renovando la credencial y no comprando el dato, y con el estado oficial previo siempre conservado junto al nuevo estado del proveedor. 21 tests sinteticos cubren los siete casos exigidos, incluido multi-asset con tres activos de Marcelo Cabrera sin colapsar. Nuevo instagramProviderFallback.js, una funcion orquestadora real -no un stub- que compone el routing, el cliente generico y el mapper y preserva siempre el resultado oficial, con 13 tests sin red. Routing declarado PREPARADO_NO_ENGANCHADO en la ruta HTTP: ni candidateObservation.js ni routes/projects.js la invocan todavia, porque esos dos archivos sostienen 1205 comprobaciones de la suite de Candidate y engancharla exige ademas disenar presupuesto de creditos y manejo de errores por HTTP, mas superficie de la que autoriza un gate corto; el punto de integracion exacto queda documentado -linea ~1177 de candidateObservation.js, como parametro opt-in que no cambia ningun llamador existente-. Validado: persistencia real con los contratos existentes, dedup y rerun con firstObservedAt inmovil y observationCount 1->2, aislamiento de proyecto con 0 fugas, provenance sin credenciales, y regresion cero verificada ejecutando las 33 suites de Candidate -1205 comprobaciones adicionales, 0 fallos- pese a que el riesgo ya era bajo por no haber tocado los dos archivos centrales. Dos aserciones de socialProviderClient.test.mjs que asumian que Instagram no tenia endpoints declarados se actualizaron a la nueva realidad sin debilitarlas, sumando una prueba positiva. Limitaciones declaradas: ScrapeCreators raspa web publica, historico no verificado, la muestra no equivale al total declarado, y el fallback solo pide perfil por ahora. Sin cambios en .env, T2 ni T3. Nueva §18-quinquadragies y docs/P-CAND-INSTAGRAM-FALLBACK-01.md. |

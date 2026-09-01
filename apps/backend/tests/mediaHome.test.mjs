@@ -344,12 +344,22 @@ test("ventanas: filtran datos reales, no solo la etiqueta", async () => {
 });
 
 
-test("ventanas: una fecha que no es ISO no se interpreta, se declara", async () => {
+test("ventanas: una fecha AMBIGUA no se interpreta, se declara", async () => {
+  /*
+    Este test nacio con «3 jul 2026» como ejemplo de fecha no
+    interpretable. MEDIA-TIME-NORMALIZATION-01 la resuelve, asi
+    que el fixture pasa a una fecha que sigue siendo imposible de
+    resolver HONESTAMENTE: «03/07/2026» puede ser 3 de julio o 7
+    de marzo, y la convencion del publicador no viaja en el dato.
+
+    La afirmacion no se debilita: se mantiene «lo que no se puede
+    demostrar no se interpreta», sobre un caso que de verdad no
+    se puede demostrar.
+  */
   await sembrar([
     piezaFila(PROYECTO_A, "medioa.com/sin-fecha", {
       fuente: "medioa.com",
-      /* Lo que devuelve un buscador. No es ISO y no se adivina. */
-      fechaHecho: "3 jul 2026"
+      fechaHecho: "03/07/2026"
     })
   ]);
 
@@ -357,14 +367,40 @@ test("ventanas: una fecha que no es ISO no se interpreta, se declara", async () 
 
   assert.equal(c.piezas[0].publishedAt, null);
 
-  assert.equal(c.piezas[0].publishedAtBruto, "3 jul 2026");
+  assert.equal(c.piezas[0].publishedAtBruto, "03/07/2026");
 
   assert.equal(
     c.piezas[0].fechaPublicacionEstado,
     ESTADOS_DATO.FECHA_NO_NORMALIZADA
   );
 
+  assert.equal(c.piezas[0].fechaMotivo, "AMBIGUA");
+
   assert.equal(c.fechas.piezasSinFechaNormalizada, 1);
+});
+
+
+test("ventanas: una fecha de buscador en espanol SI se interpreta ahora", async () => {
+  /*
+    La contraparte del test anterior, y la razon de que aquel
+    cambiara de fixture: lo que antes se rechazaba en bloque
+    ahora se resuelve cuando es inequivoco.
+  */
+  await sembrar([
+    piezaFila(PROYECTO_A, "medioa.com/con-fecha", {
+      fuente: "medioa.com",
+      fechaHecho: "3 jul 2026"
+    })
+  ]);
+
+  const c = await leerCorpusDeProyecto({ projectId: PROYECTO_A, lake: {} });
+
+  assert.ok(c.piezas[0].publishedAt);
+
+  assert.equal(c.piezas[0].fechaProvenance.metodo, "TEXTO_ES_INEQUIVOCO");
+
+  /* Y el crudo se conserva. */
+  assert.equal(c.piezas[0].publishedAtBruto, "3 jul 2026");
 });
 
 
@@ -415,14 +451,19 @@ test("aplicarVentana devuelve TRES grupos: dentro, fuera y sin fecha utilizable"
 */
 
 test("no fake zero: una fuente con piezas no datables NO devuelve 0 en la ventana", async () => {
+  /*
+    Fixture cambiado en MEDIA-TIME-NORMALIZATION-01: las fechas en
+    espanol ya se resuelven, asi que para probar «no datable» hace
+    falta una fecha que de verdad no lo sea. Las dos son ambiguas.
+  */
   await sembrar([
     piezaFila(PROYECTO_A, "medioa.com/nota-1", {
       fuente: "medioa.com",
-      fechaHecho: "3 jul 2026"
+      fechaHecho: "03/07/2026"
     }),
     piezaFila(PROYECTO_A, "medioa.com/nota-2", {
       fuente: "medioa.com",
-      fechaHecho: "4 jul 2026"
+      fechaHecho: "04/07/2026"
     })
   ]);
 
@@ -943,10 +984,11 @@ test("un dominio propio raro NO se reclasifica como infraestructura", async () =
 
 
 test("toda cifra ausente trae etiqueta humana ademas del estado tecnico", async () => {
+  /* Ambigua a proposito: es lo que garantiza el estado ausente. */
   await sembrar([
     piezaFila(PROYECTO_A, "medioa.com/nota", {
       fuente: "medioa.com",
-      fechaHecho: "3 jul 2026"
+      fechaHecho: "03/07/2026"
     })
   ]);
 
