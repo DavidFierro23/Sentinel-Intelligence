@@ -1,6 +1,7 @@
 // apps/backend/services/projects/projectStore.js
 
 import { normalizarTexto } from "../textUtils.js";
+import { resolverIdentidadCanonica } from "../intelligence/accountIdentity.js";
 
 import {
   escribirEnLake,
@@ -2757,7 +2758,22 @@ export async function guardarSnapshots(proyectoId, candidatoId, snapshots = []) 
       leyendose: no hace falta migrar nada.
       ---------------------------------------------------------
     */
-    const claveActivo = String(snap.accountId || "sin-activo")
+    /*
+      IDENTIDAD CANONICA — P-CAND-SNAPSHOTS-01.
+
+      `accountId` se normaliza SIEMPRE antes de persistir (case,
+      acentos, prefijo `@`, y los pocos alias de cambio de
+      namespace ya revisados a mano en accountIdentity.js). Esto
+      es ademas del `.toLowerCase()` que ya existia para la clave
+      del Lake: aquel evitaba duplicar la ENTIDAD, pero el campo
+      `accountId` guardado dentro de `datos` seguia con el case
+      original, lo que rompia cualquier comparacion exacta contra
+      la capa de identidad consolidada (fichaIdentidad). Snapshots
+      YA escritos no se tocan -esto solo afecta a partir de ahora-.
+    */
+    const accountIdCanonico = resolverIdentidadCanonica(snap.accountId);
+
+    const claveActivo = String(accountIdCanonico || "sin-activo")
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "_");
 
@@ -2772,7 +2788,7 @@ export async function guardarSnapshots(proyectoId, candidatoId, snapshots = []) 
           proyectoId,
           fuente: SUBMOTOR,
           linaje: linaje("observar_cuenta"),
-          datos: { ...snap, candidatoId }
+          datos: { ...snap, accountId: accountIdCanonico, candidatoId }
         },
         {}
       );

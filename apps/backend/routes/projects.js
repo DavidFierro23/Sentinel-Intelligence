@@ -1371,6 +1371,64 @@ router.post("/:proyectoId/candidatos/:candidatoId/observar", async (req, res) =>
       proveedorInstagram
     });
 
+    /*
+      SNAPSHOT DE CUENTA MEDIDA POR PROVEEDOR — P-CAND-SNAPSHOTS-01.
+
+      Hallazgo de tres gates consecutivos (BENCH-02, BENCH-02A): esta
+      ruta mide en vivo (`observarInstagramConFallback` y cualquier
+      fallback de proveedor futuro sobre otras plataformas) pero
+      nunca persistia el snapshot de la CUENTA -solo publicaciones,
+      via `guardarPublicaciones`, mas abajo-. Sin esto, cada llamada
+      real a `proveedorInstagram: true` se perdia en cuanto terminaba
+      el request HTTP.
+
+      Generico, no especifico de Instagram: cualquier resultado con
+      estado MEDIDO_PROVEEDOR y `canalProveedor.followers` se
+      persiste igual, sea cual sea la plataforma. No se inventa
+      ningun campo que el proveedor no haya devuelto -`followers`
+      llega `null` si el mapeador no lo tenia, nunca se convierte a 0-.
+    */
+    const medicionesDeProveedor = r.resultados.filter(
+      (x) => x.estado === "MEDIDO_PROVEEDOR" && x.canalProveedor
+    );
+
+    let snapshotsDeProveedorGuardados = null;
+
+    if (medicionesDeProveedor.length) {
+      const snapshotsDeCuenta = medicionesDeProveedor.map((x) => ({
+        candidateId: candidatoId,
+        accountId: x.accountId,
+        projectId: proyectoId,
+        platform: x.plataformaId,
+        capturedAt: r.observedAt,
+        followers: x.canalProveedor.followers ?? null,
+        postsObserved: 0,
+        metricsAvailable: ["followers"],
+        lastActivityAt: null,
+        provider: x.provider || null,
+        estado: x.estado,
+        limitations: [
+          "la via oficial no alcanza este activo (o no aplica); el estado oficial se conserva completo en `resultadoOficial`",
+          "proveedor externo: no es dato licenciado por la plataforma",
+          "persistido automaticamente por el flujo HTTP /observar (P-CAND-SNAPSHOTS-01); antes de este gate este snapshot solo se generaba manualmente"
+        ],
+        comparacion: {
+          snapshotAnterior: null,
+          delta: null,
+          publicacionesDelPeriodo: null,
+          temasActivos: [],
+          nota: "Change Attribution no esta implementado."
+        },
+        candidatoId
+      }));
+
+      snapshotsDeProveedorGuardados = await guardarSnapshots(
+        proyectoId,
+        candidatoId,
+        snapshotsDeCuenta
+      );
+    }
+
     /* Persistencia append-only: las metricas son snapshots. */
     let guardado = null;
 
@@ -1404,6 +1462,14 @@ router.post("/:proyectoId/candidatos/:candidatoId/observar", async (req, res) =>
     res.json({
       candidatoId,
       observedAt: r.observedAt,
+
+      /*
+        Transparencia de persistencia -P-CAND-SNAPSHOTS-01-: cuantos
+        snapshots de CUENTA medidos por proveedor se escribieron en
+        esta llamada. `null` cuando ningun resultado de este request
+        califico -no hay proveedor que reportar, no un fallo silencioso-.
+      */
+      snapshotsDeProveedorGuardados,
 
       resultados: r.resultados.map((x) => ({
         plataformaId: x.plataformaId,
