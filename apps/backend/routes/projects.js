@@ -1327,6 +1327,36 @@ router.post("/:proyectoId/candidatos/:candidatoId/observar", async (req, res) =>
       if (a.accountId) tiposDeActivo[a.accountId] = a.assetType;
     });
 
+    /*
+      ---------------------------------------------------------
+      FALLBACK DE PROVEEDOR — P-CAND-INSTAGRAM-HTTP-01
+      ---------------------------------------------------------
+
+      Opt-in EN DOS CAPAS, ninguna suficiente por si sola:
+
+        1. El cliente lo pide explicitamente en el cuerpo de esta
+           peticion POST. Una lectura (GET /identidad, GET
+           /inteligencia) nunca pasa por aqui: no hay forma de
+           que abrir una ficha o listar candidatos dispare esto.
+
+        2. El servidor decide si de verdad sale a la red.
+           `observarCandidato` no vuelve a preguntar si el
+           cliente quiere: eso ya se decidio arriba. Lo que
+           comprueba —sin duplicarlo aqui— es si el entorno lo
+           permite: `SOCIAL_EXTERNAL_PROVIDER_ENABLED`, el
+           proveedor aprobado en el registro y su credencial.
+           Las tres siguen siendo obligatorias y no cambian.
+
+      El entorno se lee del proceso, nunca del cuerpo de la
+      peticion: un cliente no puede mandar su propia clave ni
+      fingir que el entorno esta configurado.
+      ---------------------------------------------------------
+    */
+    const proveedorInstagram =
+      req.body?.proveedorInstagram === true
+        ? { id: "scrapecreators", entorno: process.env }
+        : null;
+
     const r = await observarCandidato({
       candidateId: candidatoId,
       projectId: proyectoId,
@@ -1336,7 +1366,9 @@ router.post("/:proyectoId/candidatos/:candidatoId/observar", async (req, res) =>
 
       idParaBusinessDiscovery: contextoMeta.idParaBusinessDiscovery,
       cuentasPropias: contextoMeta.cuentasPropias,
-      tiposDeActivo
+      tiposDeActivo,
+
+      proveedorInstagram
     });
 
     /* Persistencia append-only: las metricas son snapshots. */
@@ -1403,7 +1435,35 @@ router.post("/:proyectoId/candidatos/:candidatoId/observar", async (req, res) =>
 
         /* Si el estado lo dijo Meta o lo dijo el analista. */
         procedenciaDelEstado: x.procedenciaDelEstado || null,
-        assetType: x.assetType || null
+        assetType: x.assetType || null,
+
+        /*
+          P-CAND-INSTAGRAM-HTTP-01. Presentes SOLO cuando el
+          activo se midio por proveedor de respaldo:
+          `sourceKind`/`provider` son la marca de procedencia que
+          distingue esto de una medicion oficial, y
+          `estadoOficialConservado` es la razon por la que Meta no
+          alcanzaba el activo -nunca se pierde, aunque el
+          proveedor haya medido despues-.
+
+          `canalProveedor` es del proveedor, nunca se mete dentro
+          de `canal`: son formas distintas y compararlas como si
+          fueran la misma medicion seria inventar una
+          equivalencia que no existe.
+        */
+        sourceKind: x.sourceKind || null,
+        provider: x.provider || null,
+        canalProveedor: x.canalProveedor || null,
+        estadoOficialConservado: x.estadoOficialConservado || null,
+
+        /*
+          El proveedor se intento y no pudo -sin aprobar, sin
+          credencial, bloqueado, error de red-. El estado oficial
+          de arriba sigue siendo el real; esto solo explica por
+          que no hay `canalProveedor`.
+        */
+        proveedorIntentado: x.proveedorIntentado || false,
+        proveedorError: x.proveedorError || null
       })),
 
       resumen: r.resumen,
