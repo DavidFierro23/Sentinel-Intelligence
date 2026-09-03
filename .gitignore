@@ -26,3 +26,7 @@ apps/backend/scripts/backup/logs/
 
 # Staging temporal del backup offsite (se regenera en cada corrida)
 apps/backend/.backup-staging/
+
+# Paquete cifrado de recuperación de secretos — nunca debe versionarse,
+# ni siquiera cifrado: git no es su lugar, R2 es su lugar.
+apps/backend/scripts/secrets/output/
