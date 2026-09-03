@@ -98,8 +98,17 @@ if [ "$DRY_RUN" = "true" ]; then
   echo "[backup] SENTINEL_BACKUP_DRY_RUN=true: no se sube nada al remoto. Paquete queda en ${STAGING_DIR}."
 else
   echo "[backup] subiendo a ${REMOTE}/"
-  rclone copyto "${STAGING_DIR}/${ARCHIVE_NAME}" "${REMOTE}/${ARCHIVE_NAME}" --checksum
-  rclone copyto "${STAGING_DIR}/${CHECKSUM_NAME}" "${REMOTE}/${CHECKSUM_NAME}" --checksum
+  #
+  # --s3-no-check-bucket: un token con privilegio mínimo (Object
+  # Read & Write, sin permiso de administración del bucket) no
+  # puede responder a la comprobación de existencia de bucket que
+  # rclone hace por defecto antes de subir (una llamada
+  # CreateBucket bajo el capó), y sin este flag la subida falla
+  # con AccessDenied aunque el permiso de escritura sí exista. No
+  # es una ampliación de permisos: es decirle a rclone que no
+  # pregunte algo que este token, a propósito, no puede responder.
+  rclone copyto "${STAGING_DIR}/${ARCHIVE_NAME}" "${REMOTE}/${ARCHIVE_NAME}" --checksum --s3-no-check-bucket
+  rclone copyto "${STAGING_DIR}/${CHECKSUM_NAME}" "${REMOTE}/${CHECKSUM_NAME}" --checksum --s3-no-check-bucket
   echo "[backup] subida confirmada por rclone (--checksum verifica contenido, no solo tamaño/fecha)."
 fi
 
