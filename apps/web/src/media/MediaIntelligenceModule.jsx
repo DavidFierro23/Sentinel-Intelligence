@@ -2338,9 +2338,16 @@ export function MediaIntelligenceVista({
 EL CONTENEDOR — estado y datos
 ===========================================================
 */
-export default function MediaIntelligenceModule() {
+export default function MediaIntelligenceModule({ projectIdInicial = "" }) {
   const [proyectos, setProyectos] = useState([]);
-  const [projectId, setProjectId] = useState("");
+
+  /*
+    El proyecto puede llegar del workspace. Se toma como valor
+    inicial y el selector propio del modulo sigue funcionando:
+    asi Medios respeta el contexto global sin dejar de ser
+    utilizable por si mismo.
+  */
+  const [projectId, setProjectId] = useState(projectIdInicial || "");
   const [ventana, setVentana] = useState("90d");
   const [seccion, setSeccion] = useState("resumen");
 
@@ -2355,7 +2362,19 @@ export default function MediaIntelligenceModule() {
 
     (async () => {
       try {
-        const r = await fetch(`${BACKEND}/api/projects/`);
+        /*
+          La ruta es `/api/proyectos`, no `/api/projects`.
+
+          Estuvo mal desde MEDIA-UX-HOME-01 y nunca salio a la
+          luz porque toda la verificacion de Media se hizo con
+          llamadas directas al servicio o con payloads inyectados
+          en el render check: el selector de proyecto devolvia 404
+          y el desplegable quedaba vacio en el navegador.
+
+          Es exactamente la clase de fallo que solo aparece al
+          abrir la aplicacion, y por eso este gate lo encuentra.
+        */
+        const r = await fetch(`${BACKEND}/api/proyectos/`);
 
         const j = await r.json();
 
@@ -2380,6 +2399,19 @@ export default function MediaIntelligenceModule() {
       vivo = false;
     };
   }, []);
+
+  /*
+    Si el workspace cambia de proyecto, Medios lo sigue. Se agenda
+    en lugar de llamarse en el cuerpo del efecto: un setState
+    sincrono ahi provoca un render en cascada.
+  */
+  useEffect(() => {
+    if (!projectIdInicial) return undefined;
+
+    const t = setTimeout(() => setProjectId(projectIdInicial), 0);
+
+    return () => clearTimeout(t);
+  }, [projectIdInicial]);
 
   const cargar = useCallback(async () => {
     if (!projectId) return;

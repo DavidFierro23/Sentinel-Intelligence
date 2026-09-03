@@ -1,24 +1,44 @@
 import {
   Search,
-  Network,
   Users,
-  TrendingUp,
   Map,
   Newspaper,
-  Settings
+  Settings,
+  LayoutDashboard,
+  Sparkles
 } from "lucide-react";
 
 /*
 ===========================================================
-SIDEBAR — Sprint UX-BRAND-001
+SIDEBAR — SENTINEL-UX-CONSOLIDATION-01
 ===========================================================
 
-Menú definitivo de la identidad oficial. El icono de War Room
-es el propio isotipo: es el búho de la marca, no un emoji.
+Seis destinos ordenados por la PREGUNTA que responden, no por
+el motor que hay detras. Configuracion queda aparte, porque no
+es una pregunta de analisis.
 
-Cada entrada declara si el módulo está OPERATIVO o RESERVADO.
-Un menú que lleva a una pantalla vacía sin avisar hace perder
-el tiempo al analista; uno que declara el estado, no.
+QUE SALE DE LA NAVEGACION PRIMARIA, Y POR QUE NO SE BORRA
+-----------------------------------------------------------
+
+    War Room         reservado, prometia una sala que no existe;
+                     su pregunta —«¿que esta pasando?»— la
+                     responde ahora RESUMEN, con datos reales.
+
+    Knowledge Graph  no era un motor: App montaba el MISMO
+                     componente que Investigaciones y solo
+                     cambiaba que se veia. El menu sugeria dos
+                     cosas donde habia una. Pasa a ser una vista
+                     dentro de Investigaciones.
+
+    Correlacion Viva reservado. Es una capacidad interna y su
+                     destino natural es Sentinel AI.
+
+Los tres ids siguen resolviendo en `moduleRegistry`: un enlace
+guardado no se rompe, se redirige a donde hoy vive su respuesta.
+
+El estado por entrada se conserva —un menu que lleva a una
+pantalla vacia sin avisar hace perder el tiempo— pero ya no hay
+ninguna entrada primaria RESERVADA: todas llevan a algo.
 ===========================================================
 */
 
@@ -29,70 +49,62 @@ el tiempo al analista; uno que declara el estado, no.
 */
 const MODULOS = [
   {
-    id: "war_room",
-    texto: "War Room",
-    icono: "buho",
-    estado: "reservado",
-    nota: "Diseño congelado en UX-WR-001 v2.0. Sin implementar."
-  },
-  {
-    id: "investigaciones",
-    texto: "Investigaciones",
-    icono: Search,
-    estado: "operativo"
-  },
-  {
-    id: "knowledge_graph",
-    texto: "Knowledge Graph",
-    icono: Network,
+    id: "resumen",
+    texto: "Resumen",
+    icono: LayoutDashboard,
     estado: "operativo",
-    nota: "Se construye desde una investigación."
+    nota: "¿Qué está pasando? Estado observable del proyecto activo."
   },
   {
     id: "candidatos",
     texto: "Candidatos",
     icono: Users,
     estado: "operativo",
-    nota: "Se puebla desde una investigación."
+    nota: "Proyectos, candidatos y sus expedientes de identidad digital."
   },
   {
-    id: "correlacion",
-    texto: "Correlación Viva",
-    icono: TrendingUp,
-    estado: "reservado",
-    nota: "Requiere el Confidence Engine continuo."
-  },
-  {
+    /*
+      El id sigue siendo `mapa` por compatibilidad: es la clave
+      con la que App monta el modulo territorial y la que llevan
+      los enlaces guardados.
+    */
     id: "mapa",
     texto: "Territorio",
     icono: Map,
     estado: "operativo",
-    /*
-      Se llama "Territorio" y no "Mapa Territorial" porque no hay
-      mapa: falta el GeoJSON oficial. Prometer un mapa en el menú
-      y entregar una tabla es la misma clase de engaño que el
-      propio módulo tiene prohibido.
-    */
-    nota: "Inteligencia territorial y conversación pública. El mapa requiere el GeoJSON oficial."
+    nota: "¿Dónde ocurre? Inteligencia territorial y conversación pública."
   },
   {
     /*
-      MEDIA-UX-HOME-01. Hasta este gate la entrada se llamaba
-      "Analizar publicación" porque eso era literalmente todo el
-      modulo, y prometer "Media Intelligence" habria sido falso.
-
-      Ahora el modulo existe: tiene home del proyecto, ranking de
-      presencia observada, candidatos x medios, amplificacion y
-      trazabilidad. "Analizar publicación" pasa a ser una de sus
-      nueve secciones, y la nota lo dice para que nadie la busque
-      donde estaba.
+      Igual con `media_pieza`: nacio cuando el modulo era «analizar
+      una pieza». Hoy es Media Intelligence entero, y renombrar el
+      id habria roto los deep links por un motivo cosmetico.
     */
     id: "media_pieza",
     texto: "Medios",
     icono: Newspaper,
     estado: "operativo",
-    nota: "Media Intelligence · presencia observada, amplificación y evidencias del proyecto. «Analizar publicación» es una herramienta interna del módulo."
+    nota: "¿Quién publica y cómo se amplifica? Presencia mediática observable."
   },
+  {
+    id: "investigaciones",
+    texto: "Investigaciones",
+    icono: Search,
+    estado: "operativo",
+    nota: "¿Qué hay detrás de un actor? Incluye el mapa de relaciones."
+  },
+  {
+    id: "sentinel_ai",
+    texto: "Sentinel AI",
+    icono: Sparkles,
+    estado: "preparacion",
+    nota: "Consulta en lenguaje natural. Todavía no está conectado."
+  }
+];
+
+
+/* Configuracion va aparte: no es una pregunta de analisis. */
+const APARTE = [
   {
     id: "configuracion",
     texto: "Configuración",
@@ -101,28 +113,6 @@ const MODULOS = [
   }
 ];
 
-/*
-  El icono de War Room es el propio buho de la marca.
-
-  Se declara solo la ALTURA y width queda en "auto": asi el
-  navegador conserva la proporcion original del archivo (953x773).
-  Fijar ambos lados deformaria el isotipo, que el sprint prohibe.
-*/
-function IconoBuho({ activo }) {
-  return (
-    <img
-      src="/branding/owl-320.png"
-      alt=""
-      style={{
-        height: "20px",
-        width: "auto",
-        flexShrink: 0,
-        opacity: activo ? 1 : 0.72,
-        transition: "opacity 180ms"
-      }}
-    />
-  );
-}
 
 export default function Sidebar({ activo, onSeleccionar }) {
   return (
@@ -236,31 +226,36 @@ export default function Sidebar({ activo, onSeleccionar }) {
                 boxShadow: seleccionado ? "var(--glow-cyan)" : "none"
               }}
             >
-              {m.icono === "buho" ? (
-                <IconoBuho activo={seleccionado} />
-              ) : (
-                <Icono size={19} style={{ flexShrink: 0 }} />
-              )}
+              {/*
+                El buho de la marca era el icono de War Room, que
+                sale de la navegacion primaria. El isotipo sigue
+                en la cabecera del sidebar y deja de repetirse en
+                una entrada de menu.
+              */}
+              <Icono size={19} style={{ flexShrink: 0 }} />
 
               <span style={{ flex: 1, minWidth: 0 }}>{m.texto}</span>
 
               {/*
-                Estado del módulo. Se declara en el propio menú
-                para no prometer pantallas que no existen.
+                Estado del modulo, declarado en el propio menu.
+                Ya no hay ninguna entrada RESERVADA: la unica que
+                no esta terminada es Sentinel AI, y dice que esta
+                en preparacion en lugar de prometer una sala que
+                no existe.
               */}
-              {m.estado === "reservado" && (
+              {m.estado === "preparacion" && (
                 <span
                   style={{
                     fontSize: "8.5px",
                     letterSpacing: "0.8px",
-                    color: "var(--sentinel-texto-tenue)",
-                    border: "1px solid var(--sentinel-borde)",
+                    color: "#eda100",
+                    border: "1px solid #eda10055",
                     borderRadius: "var(--radio-pill)",
                     padding: "2px 7px",
                     flexShrink: 0
                   }}
                 >
-                  RESERVADO
+                  EN PREP.
                 </span>
               )}
             </button>
@@ -269,6 +264,57 @@ export default function Sidebar({ activo, onSeleccionar }) {
       </nav>
 
       <div style={{ flex: 1 }} />
+
+      {/*
+        CONFIGURACION, separada del bloque analitico por una
+        linea. No responde una pregunta de inteligencia y
+        mezclarla con las seis obligaba a leerla cada vez.
+      */}
+      <nav
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: "4px",
+          paddingTop: "12px",
+          borderTop: "1px solid var(--sentinel-borde)",
+          marginBottom: "4px"
+        }}
+      >
+        {APARTE.map((m) => {
+          const seleccionado = activo === m.id;
+
+          const Icono = m.icono;
+
+          return (
+            <button
+              key={m.id}
+              className="sentinel-hover"
+              onClick={() => onSeleccionar(m.id)}
+              aria-current={seleccionado ? "page" : undefined}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+                padding: "10px 14px",
+                borderRadius: "var(--radio-m)",
+                border: "1px solid",
+                borderColor: seleccionado ? "var(--sentinel-cyan)" : "transparent",
+                cursor: "pointer",
+                background: seleccionado ? "rgba(11,95,255,.22)" : "transparent",
+                color: seleccionado ? "#FFFFFF" : "var(--sentinel-texto-tenue)",
+                fontWeight: seleccionado ? 650 : 500,
+                fontSize: "12.5px",
+                textAlign: "left"
+              }}
+            >
+              <Icono size={17} style={{ flexShrink: 0 }} />
+
+              <span style={{ flex: 1, minWidth: 0 }}>{m.texto}</span>
+            </button>
+          );
+        })}
+      </nav>
 
       <div
         style={{
