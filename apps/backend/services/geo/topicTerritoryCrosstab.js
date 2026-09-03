@@ -603,7 +603,37 @@ export function construirMatriz({
     el mismo motivo por el que `resolverLote` recibe la pista de
     fuente como funcion.
   */
-  toponimos = null
+  toponimos = null,
+
+  /*
+    ---------------------------------------------------------
+    COMPUERTA DE APTITUD TERRITORIAL
+    TERRITORIAL-SOCIAL-GEO-DISAMBIGUATION-01
+
+    Predicado opcional `(evidencia, indice) => boolean`. Cuando
+    se inyecta, una evidencia NO apta deja de atribuir
+    territorio: pasa a `TERRITORIO_NO_RESUELTO` con motivo
+    declarado.
+
+    Por que hace falta. La busqueda social abierta trae piezas
+    de Lambayeque, La Habana o Neuquen porque «cuenca» es
+    tambien un sustantivo comun. Medido: 13 de 28 atribuciones
+    que descansaban solo en ese termino eran de otro lugar. Sin
+    compuerta, esas 13 sumaban en una celda que afirma «esto
+    pasa en Cuenca».
+
+    Por que es opcional y no obligatoria. La firman los
+    llamadores que sepan calcular la aptitud —hoy, la ruta
+    territorial con `socialGeoDisambiguation`—. Encenderla por
+    defecto cambiaria en silencio el resultado de Candidate y
+    Media, que tambien consumen esta matriz.
+
+    La pieza NO se borra ni sale del corpus observado: sigue
+    contando como evidencia de recoleccion. Lo unico que pierde
+    es el derecho a afirmar territorio.
+    ---------------------------------------------------------
+  */
+  aptitudTerritorial = null
 } = {}) {
   const DIAS = { hoy: 1, "24h": 1, "7d": 7, "15d": 15, "30d": 30, "90d": 90 };
 
@@ -638,6 +668,22 @@ export function construirMatriz({
 
   const territorioDe = (i) => {
     const u = ubicaciones[i];
+
+    /*
+      Compuerta primero: da igual lo bien que resolviera el
+      resolutor si la pieza no es apta para afirmar territorio.
+    */
+    if (typeof aptitudTerritorial === "function" && !aptitudTerritorial(normalizadas[i], i)) {
+      return {
+        unidadId: TERRITORIO_NO_RESUELTO,
+        nombre: "Territorio no resuelto",
+        nivel: null,
+        noAptaParaMetricas: true,
+        razones: [
+          "La evidencia se observó y se conserva, pero su atribución territorial no es apta para métricas. No suma en ninguna celda de territorio."
+        ]
+      };
+    }
 
     if (!u?.unidadId) {
       return {

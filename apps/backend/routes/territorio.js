@@ -150,6 +150,12 @@ import { construirMatrizDeCobertura } from "../services/territorial/listeningCov
 
 import { construirUniversoDeActores } from "../services/territorial/actorUniverse.js";
 
+import {
+  desambiguarLote as desambiguarLoteSocial,
+  resumirDesambiguacion,
+  ESTADOS_GEO as ESTADOS_GEO_SOCIAL
+} from "../services/territorial/socialGeoDisambiguation.js";
+
 import { revisarSalida, afirmar } from "../services/territorial/claimGuard.js";
 
 /* --- TERRITORIAL-ACCELERATION-02 --- */
@@ -3110,6 +3116,110 @@ router.post("/conversacion", async (req, res) => {
     console.error("[territorio] conversacion fallo:", e);
 
     res.status(500).json({ error: e?.message || "fallo el analisis" });
+  }
+});
+
+
+/*
+===========================================================
+POST /territorio/desambiguar-social
+TERRITORIAL-SOCIAL-GEO-DISAMBIGUATION-01
+
+Reclasifica el contenido social ya persistido y devuelve las
+dos cifras que no deben confundirse: corpus observado y corpus
+territorialmente elegible.
+
+Lee del ledger. NO sale a internet: cero peticiones a X, a
+YouTube y a cualquier proveedor. Lo que se desambigua es lo que
+ya se recolecto.
+===========================================================
+*/
+router.post("/desambiguar-social", async (req, res) => {
+  try {
+    const cuerpo = req.body || {};
+
+    const projectId = cuerpo.proyectoId || null;
+
+    const ambitoId = cuerpo.territorio || "ec-azuay-cuenca";
+
+    /* Misma convencion que el resto del archivo: import en el handler. */
+    const { resolverUbicacion } = await import("../services/geo/geoResolver.js");
+
+    const ledger = crearLedgerFichero();
+
+    const observaciones = await ledger.leerTodos();
+
+    const estado = reconstruirEstado(observaciones, {
+      projectId,
+      incluirLegado: cuerpo.incluirLegado === true
+    });
+
+    /* `reconstruirEstado` devuelve un Map, no un objeto plano. */
+    const corpus = [...estado.values()];
+
+    /*
+      Solo lo social: el resto del corpus no tiene este problema.
+
+      `providers` es un ARRAY —una evidencia puede haber sido
+      observada por mas de un proveedor— y no un `providerId`
+      suelto. Comprobado contra el ledger real: 353 web, 21
+      YouTube, 47 X.
+    */
+    const esSocial = (e) =>
+      (e.providers || []).some((p) => {
+        const id = typeof p === "string" ? p : p?.providerId;
+
+        return id === "x_api" || id === "youtube_data";
+      });
+
+    const sociales = corpus.filter(esSocial);
+
+    const entradas = sociales.map((e) => ({
+      evidencia: e,
+      ubicacion: resolverUbicacion(
+        {
+          titulo: e.title || e.titulo || "",
+          descripcion: e.summary || e.resumen || "",
+          resumen: e.summary || e.resumen || ""
+        },
+        { ambitoId }
+      )
+    }));
+
+    const { resultados, emisoresLocalesCorroborados, declaracion } =
+      desambiguarLoteSocial(entradas);
+
+    const resumen = resumirDesambiguacion(resultados);
+
+    res.json({
+      territorio: ambitoId,
+      proyectoId: projectId,
+      peticionesExternas: 0,
+
+      ...resumen,
+
+      emisoresLocalesCorroborados,
+      declaracionDelEmisor: declaracion,
+
+      estadosPosibles: Object.values(ESTADOS_GEO_SOCIAL),
+
+      piezas: resultados.map((r, i) => ({
+        evidenceId: sociales[i].evidenceId,
+        providerId: sociales[i].providerId,
+        emisor: sociales[i].publisher || sociales[i].domain || null,
+        estadoGeo: r.estadoGeo,
+        etiqueta: r.etiqueta,
+        aptoParaMetricas: r.aptoParaMetricas,
+        signalsPositive: r.signalsPositive,
+        signalsNegative: r.signalsNegative,
+        queryProvenance: r.queryProvenance,
+        resolutionReason: r.resolutionReason
+      }))
+    });
+  } catch (e) {
+    console.error("[territorio] desambiguacion social fallo:", e);
+
+    res.status(500).json({ error: e?.message || "fallo la desambiguacion" });
   }
 });
 

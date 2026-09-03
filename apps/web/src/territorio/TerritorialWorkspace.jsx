@@ -167,6 +167,29 @@ const td = {
 };
 
 
+/*
+  Un tuit no tiene titular: su texto vive en el resumen. La tabla
+  pintaba «(sin titular)» en filas que si tenian contenido.
+
+  No se inventa un titulo. Se muestra el texto que hay y se marca
+  de donde salio, para que el lector sepa que esta leyendo el
+  cuerpo y no un titular editorial.
+
+  Espejo de socialGeoDisambiguation.textoParaMostrar en el backend.
+*/
+function textoVisible(e) {
+  const titulo = String(e?.titulo || e?.title || "").trim();
+
+  if (titulo) return { texto: titulo, esResumen: false };
+
+  const resumen = String(e?.resumen || e?.summary || "").trim();
+
+  if (resumen) return { texto: resumen, esResumen: true };
+
+  return { texto: "(sin texto declarado)", esResumen: false };
+}
+
+
 function Badge({ estado, texto }) {
   const color = ESTADO_COLOR[estado] || "#64748b";
 
@@ -366,7 +389,12 @@ function CajonEvidencia({ celda, evidenciaPorId, tendencia, onClose }) {
 
       {evs.map((e) => (
         <div key={e.evidenceId} style={{ padding: "9px 0", borderTop: "1px solid var(--sentinel-borde)", fontSize: "11.5px" }}>
-          <div style={{ color: "var(--sentinel-texto)", lineHeight: 1.5 }}>{e.titulo || "(sin titular)"}</div>
+          <div style={{ color: "var(--sentinel-texto)", lineHeight: 1.5 }}>
+            {textoVisible(e).texto}
+            {textoVisible(e).esResumen && (
+              <span style={{ color: "var(--sentinel-texto-tenue)", fontSize: "10px" }}> · texto de la pieza</span>
+            )}
+          </div>
 
           <div style={{ color: "var(--sentinel-texto-tenue)", fontSize: "10.5px", marginTop: "4px", lineHeight: 1.7 }}>
             {e.dominio}
@@ -1026,7 +1054,7 @@ export default function TerritorialWorkspace({
                 .map((e) => ({
                   celdas: [
                     <span key="t" title={e.evidenceId}>
-                      {String(e.titulo || "(sin titular)").slice(0, 70)}
+                      {textoVisible(e).texto.slice(0, 70)}
                     </span>,
                     e.dominio,
                     e.emisor || <Badge key="b" estado="NO_RESUELTO" texto="no resuelto" />,
