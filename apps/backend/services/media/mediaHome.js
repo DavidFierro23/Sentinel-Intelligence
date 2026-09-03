@@ -1,10 +1,11 @@
 // apps/backend/services/media/mediaHome.js
 
+import { resolverVentana, aplicarVentana, construirFuentes } from "./mediaCorpus.js";
+
 import {
-  leerCorpusDeProyecto,
-  resolverVentana,
-  aplicarVentana
-} from "./mediaCorpus.js";
+  corpusCanonicoDeProyecto,
+  PROCEDENCIAS
+} from "./mediaCanonicalCorpus.js";
 
 import { temasDePieza } from "./pieceTopics.js";
 
@@ -241,20 +242,61 @@ export async function homeDeProyecto(opciones = {}) {
     /* Sin nombres: se muestran los ids, que siguen siendo correctos. */
   }
 
-  const corpus = await leerCorpusDeProyecto(opciones);
+  /*
+    -----------------------------------------------------------
+    MEDIA-CORPUS-INTEGRATION-01
 
-  if (!corpus.ok) {
+    La HOME deja de leer solo `media_piece` y pasa a leer el
+    CORPUS CANONICO, que reconcilia las piezas analizadas, su
+    amplificacion y las publicaciones medidas de los activos.
+
+    No es un corpus nuevo: es una vista sobre los dos almacenes
+    que ya existen, con las duplicadas fundidas, las
+    republicaciones conservadas y los artefactos fuera.
+    -----------------------------------------------------------
+  */
+  const canonico = await corpusCanonicoDeProyecto(opciones);
+
+  if (!canonico.ok) {
     return {
       ok: false,
       gate: GATE,
-      motivo: corpus.motivo,
-      estado: corpus.estado || ESTADOS_DATO.NO_DISPONIBLE
+      motivo: canonico.motivo,
+      estado: canonico.estado || ESTADOS_DATO.NO_DISPONIBLE
     };
   }
 
+  /*
+    El corpus de piezas se conserva para lo que sigue dependiendo
+    de el —relaciones con candidatos, amplificacion, aislamiento—
+    sin volver a leer el Lake.
+  */
+  const corpus = {
+    ...canonico.corpusDePiezas,
+    piezas: canonico.analizadas,
+    amplificacion: canonico.relacionadas,
+    medidas: canonico.medidas,
+
+    /*
+      Las fuentes se RECONSTRUYEN sobre el corpus canonico. Sin
+      esto, El Universo y Expreso seguian apareciendo con 1 pieza
+      —la que trajo la busqueda de amplificacion— mientras el
+      corpus ya tenia 41 de cada uno leidas de su propio feed. El
+      ranking habria quedado desmentido por sus propios datos.
+
+      Las piezas medidas cuentan como observadas de esa fuente,
+      que es exactamente lo que son: lo que el medio publico.
+    */
+    fuentes: construirFuentes({
+      piezas: canonico.analizadas,
+      amplificacion: [...canonico.relacionadas, ...canonico.medidas],
+      relaciones: canonico.corpusDePiezas.relaciones || []
+    })
+  };
+
   const ventana = resolverVentana(ventanaPedida, ahora);
 
-  const todasLasPiezas = [...corpus.piezas, ...corpus.amplificacion];
+  const todasLasPiezas = canonico.piezas;
 
   const enVentana = aplicarVentana(todasLasPiezas, ventana);
 
@@ -272,6 +314,8 @@ export async function homeDeProyecto(opciones = {}) {
   const relacionadasEnVentana = corpus.amplificacion.filter((p) =>
     clavesEnVentana.has(p.clave)
   );
+
+  const medidasEnVentana = corpus.medidas.filter((p) => clavesEnVentana.has(p.clave));
 
   const fuentesOriginales = corpus.fuentes.filter(esFuenteOriginal);
 
@@ -371,6 +415,19 @@ export async function homeDeProyecto(opciones = {}) {
         enCorpus: corpus.amplificacion.length,
         datablesEnCorpus: corpus.amplificacion.filter((p) => p.publishedAt).length,
         nota: `${corpus.amplificacion.length} relacionada(s) en el corpus completo. Llegan de la busqueda de amplificacion, no de un analisis directo.`
+      }),
+
+      /*
+        Tercera procedencia, desde MEDIA-CORPUS-INTEGRATION-01:
+        publicaciones leidas del propio activo del medio. No son
+        amplificacion de nada —son lo que el medio publico— y por
+        eso se cuentan aparte.
+      */
+      piezasMedidas: medidaEnVentana({
+        enVentana: medidasEnVentana.length,
+        enCorpus: corpus.medidas.length,
+        datablesEnCorpus: corpus.medidas.filter((p) => p.publishedAt).length,
+        nota: `${corpus.medidas.length} pieza(s) leida(s) de los activos medidos del medio.`
       }),
 
       /*
@@ -481,6 +538,7 @@ export async function homeDeProyecto(opciones = {}) {
     presencia: construirPresencia({
       fuentes: fuentesOriginales,
       artefactos,
+      exclusionesCanonicas: canonico.reconciliacion.exclusiones,
       clavesEnVentana,
       corpus,
       historias,
@@ -560,7 +618,24 @@ export async function homeDeProyecto(opciones = {}) {
 
     cobertura: {
       ...corpus.lectura,
-      fechas: corpus.fechas,
+      fechas: canonico.fechas,
+
+      /*
+        La reconciliacion viaja en la respuesta: cuantas entradas
+        habia, cuantas se fundieron, cuantas se excluyeron y por
+        que. Sin esto, «103 piezas» seria un numero sin auditoria.
+      */
+      reconciliacion: {
+        entradas: canonico.reconciliacion.entradas,
+        excluidas: canonico.reconciliacion.excluidas,
+        canonicas: canonico.reconciliacion.canonicas,
+        exactDuplicates: canonico.reconciliacion.exactDuplicates,
+        probableDuplicates: canonico.reconciliacion.probableDuplicates,
+        republications: canonico.reconciliacion.republications,
+        porMotivoDeExclusion: canonico.reconciliacion.porMotivoDeExclusion
+      },
+
+      procedencias: canonico.procedencias,
 
       loQueNoSabemos: [
         corpus.aislamiento.declaracion,
@@ -598,6 +673,86 @@ metodologia que lo sostenga: el numero saldria de una
 preferencia mia disfrazada de metrica.
 ===========================================================
 */
+/*
+  Une los artefactos detectados como fuentes con los que el
+  corpus canonico excluyo pieza a pieza. La clave es el dominio;
+  el recuento de piezas se suma.
+*/
+const ETIQUETA_MOTIVO = Object.freeze({
+  DOMINIO_DE_PLATAFORMA: "Plataforma",
+  ARTEFACTO_DE_RECOLECCION: "Agregador / redirector",
+  HOST_DE_INFRAESTRUCTURA: "Infraestructura",
+  FEED_DE_COMENTARIOS: "Feed de comentarios",
+  IDENTIDAD_EN_CONFLICTO: "Identidad en conflicto",
+  SIN_URL_UTILIZABLE: "Sin URL utilizable"
+});
+
+
+const MOTIVO_LARGO = Object.freeze({
+  DOMINIO_DE_PLATAFORMA:
+    "Es la raiz de una plataforma: el emisor es la cuenta que publica, no el dominio.",
+  ARTEFACTO_DE_RECOLECCION:
+    "Es un agregador o un redirector de buscador: su presencia dice como recogimos la cobertura, no quien publico.",
+  HOST_DE_INFRAESTRUCTURA:
+    "Es un host de infraestructura —un balanceador de carga o una CDN—, no una cabecera.",
+  FEED_DE_COMENTARIOS:
+    "Es un feed de comentarios: son respuestas de lectores, no publicaciones editoriales.",
+  IDENTIDAD_EN_CONFLICTO:
+    "El activo que la publico esta reclamado por dos entidades: no puede contar para ninguna.",
+  SIN_URL_UTILIZABLE: "No tiene URL con la que identificar la pieza."
+});
+
+
+function fusionarArtefactos(artefactos, exclusiones) {
+  const porDominio = new Map();
+
+  artefactos.forEach((f) => {
+    porDominio.set(f.dominio, {
+      dominio: f.dominio,
+      tipoEnCatalogo: f.catalogo?.tipo || null,
+      piezasObservadas: f.piezasObservadas || 0,
+
+      clase: f.esInfraestructura ? "INFRAESTRUCTURA" : "AGREGADOR",
+
+      claseEtiqueta: f.esInfraestructura ? "Infraestructura" : "Agregador / redirector",
+
+      motivoDeExclusion: motivoDeExclusion(f)
+    });
+  });
+
+  (exclusiones || []).forEach((e) => {
+    const dominio = e.dominio || "(sin dominio)";
+
+    const previo = porDominio.get(dominio);
+
+    if (previo) {
+      previo.piezasExcluidas = (previo.piezasExcluidas || 0) + 1;
+
+      return;
+    }
+
+    porDominio.set(dominio, {
+      dominio,
+      tipoEnCatalogo: null,
+      piezasObservadas: 0,
+      piezasExcluidas: 1,
+
+      clase: e.motivo,
+      claseEtiqueta: ETIQUETA_MOTIVO[e.motivo] || e.motivo,
+
+      motivoDeExclusion: MOTIVO_LARGO[e.motivo] || "No es una publicacion editorial."
+    });
+  });
+
+  return [...porDominio.values()].sort(
+    (a, b) =>
+      (b.piezasExcluidas || b.piezasObservadas || 0) -
+      (a.piezasExcluidas || a.piezasObservadas || 0) ||
+      a.dominio.localeCompare(b.dominio)
+  );
+}
+
+
 /*
   Nombre legible de una unidad territorial. Si el registro no la
   conoce se devuelve el id: es peor un hueco que un id.
@@ -693,14 +848,23 @@ function justificacion({ fuente, suyas, enVentana, datables, ventana, nombresDeC
 export function construirPresencia({
   fuentes = [],
   artefactos = [],
+  exclusionesCanonicas = [],
   clavesEnVentana = new Set(),
   corpus,
   historias,
   nombresDeCandidato = new Map(),
   ventana = null
 }) {
+  /*
+    Todas las piezas canonicas, incluidas las medidas. Con solo
+    analizadas y relacionadas, una fuente con 41 piezas leidas de
+    su feed aparecia con una.
+  */
   const piezasPorClave = new Map(
-    [...corpus.piezas, ...corpus.amplificacion].map((p) => [p.clave, p])
+    [...corpus.piezas, ...corpus.amplificacion, ...(corpus.medidas || [])].map((p) => [
+      p.clave,
+      p
+    ])
   );
 
   const filas = fuentes
@@ -866,18 +1030,43 @@ export function construirPresencia({
     }));
 
   /*
-    Cuando NINGUNA fila tiene recuento de ventana, el primer
-    criterio de orden no discrimina y el ranking lo decide de
-    hecho el corpus completo. Eso no invalida la lista, pero
-    cambia lo que significa y hay que decirlo en la respuesta.
+    -----------------------------------------------------------
+    FUENTES SIN NI UNA PIEZA CANONICA
+
+    PRESENCIA es aparicion en el corpus. Una fuente con CERO
+    piezas canonicas no esta presente, y ordenarla en un ranking
+    de presencia es ruido.
+
+    Aparecen porque tienen una arista hacia un candidato pero
+    todas sus piezas quedaron fuera del corpus canonico —son
+    raices de plataforma como `facebook.com`, donde el emisor es
+    la cuenta y no el dominio—. La regla que el universo ya
+    aplicaba y el ranking no: se declaran aparte, no se ocultan,
+    y sus relaciones siguen contando en Candidatos x Medios.
+    -----------------------------------------------------------
   */
+  const conPiezas = filas.filter((f) => (f.piezasEnCorpus.valor || 0) > 0);
+
+  const sinPiezas = filas.filter((f) => (f.piezasEnCorpus.valor || 0) === 0);
+
   const ordenDegradado =
-    filas.length > 0 && filas.every((f) => f.piezasObservadas.valor === null);
+    conPiezas.length > 0 && conPiezas.every((f) => f.piezasObservadas.valor === null);
 
   return {
     dimension: DIMENSIONES.PRESENCIA,
 
-    ranking: filas,
+    /* Se renumera: el rank tiene que ser consecutivo en la lista mostrada. */
+    ranking: conPiezas.map((f, i) => ({ ...f, rank: i + 1 })),
+
+    fuentesSinPiezasCanonicas: sinPiezas.map((f) => ({
+      dominio: f.dominio,
+      nombre: f.nombre,
+      clase: f.clase,
+      candidatosMencionados: f.candidatosMencionados.valor,
+
+      motivo:
+        "Tiene aristas observadas hacia candidatos pero ninguna pieza en el corpus canonico. Presencia es aparicion en el corpus: sin piezas no hay presencia que ordenar. Sus relaciones siguen contando en Candidatos x Medios."
+    })),
 
     ordenDegradado,
 
@@ -890,19 +1079,18 @@ export function construirPresencia({
       residuo del metodo de recoleccion y el analista debe saber
       que parte de su corpus lo es.
     */
-    artefactosDeRecoleccion: artefactos.map((f) => ({
-      dominio: f.dominio,
-      tipoEnCatalogo: f.catalogo.tipo,
-      piezasObservadas: f.piezasObservadas,
+    /*
+      Los artefactos se declaran desde DOS sitios y se funden.
 
-      clase: f.esInfraestructura ? "INFRAESTRUCTURA" : "AGREGADOR",
-
-      claseEtiqueta: f.esInfraestructura
-        ? "Infraestructura"
-        : "Agregador / redirector",
-
-      motivoDeExclusion: motivoDeExclusion(f)
-    })),
+      MEDIA-CORPUS-INTEGRATION-01 excluye sus piezas al construir
+      el corpus canonico, asi que muchos ya no llegan a ser
+      «fuentes» y desaparecerian de esta lista. Desaparecer es lo
+      unico que no puede pasar: el analista tiene derecho a saber
+      que parte de su corpus es residuo del metodo, y ahora
+      ademas con el recuento de PIEZAS excluidas, no solo de
+      dominios.
+    */
+    artefactosDeRecoleccion: fusionarArtefactos(artefactos, exclusionesCanonicas),
 
     /*
       El titulo que la pantalla debe usar. Se decide en el

@@ -648,20 +648,90 @@ test("la serie longitudinal se declara y NO se calcula momentum", () => {
 
   const b = series.find((s) => s.mediaEntityId === "media:b");
 
+  /*
+    CORREGIDO EN MEDIA-CORPUS-INTEGRATION-01.
+
+    Esta prueba afirmaba que dos snapshots cualesquiera bastaban
+    para una serie longitudinal, y era el defecto que habia que
+    corregir: el gate anterior reporto «14/14 series listas»
+    teniendo 4 de 14 activos medidos, porque contaba como serie
+    dos registros que solo guardaban un ESTADO.
+
+    La misma ausencia registrada dos veces no es una serie.
+  */
   assert.equal(a.snapshotCount, 2);
 
-  assert.equal(a.readyForLongitudinal, true);
+  assert.equal(a.snapshotsSoloEstado, 2);
+
+  assert.equal(a.readyForLongitudinal, false, "sin metricas no hay serie analitica");
+
+  assert.equal(a.readyForVolumeSeries, false, "y sin contenido tampoco de volumen");
+
+  assert.match(a.motivo, /misma ausencia dos veces/);
 
   assert.equal(b.readyForLongitudinal, false);
 
-  assert.match(b.motivo, /NO calcula momentum/);
-
-  /* Ni una cifra de tendencia. */
+  /* Ni una cifra de tendencia, en ninguna serie. */
   series.forEach((s) => {
     assert.equal(s.momentum, undefined);
 
     assert.equal(s.tendencia, undefined);
+
+    assert.equal(s.variacion, undefined);
+
+    assert.match(s.prohibido, /NO calcula Media Momentum/);
   });
+});
+
+
+test("dos snapshots CON CONTENIDO son serie de volumen, no de rendimiento", () => {
+  const series = preparacionLongitudinal([
+    {
+      mediaEntityId: "media:a",
+      canal: "website",
+      observedAt: "2026-09-01T10:00:00.000Z",
+      publicacionesObservadas: 10
+    },
+    {
+      mediaEntityId: "media:a",
+      canal: "website",
+      observedAt: "2026-09-02T10:00:00.000Z",
+      publicacionesObservadas: 12
+    }
+  ]);
+
+  const a = series[0];
+
+  assert.equal(a.snapshotsConContenido, 2);
+
+  assert.equal(a.readyForVolumeSeries, true);
+
+  /* Un feed entrega piezas, no cifras: no habilita serie analitica. */
+  assert.equal(a.readyForLongitudinal, false);
+
+  assert.match(a.motivo, /VOLUMEN/);
+});
+
+
+test("dos snapshots CON METRICAS si habilitan serie analitica", () => {
+  const series = preparacionLongitudinal([
+    {
+      mediaEntityId: "media:a",
+      canal: "x",
+      observedAt: "2026-09-01T10:00:00.000Z",
+      metricas: { disponibles: ["followers"] }
+    },
+    {
+      mediaEntityId: "media:a",
+      canal: "x",
+      observedAt: "2026-09-02T10:00:00.000Z",
+      metricas: { disponibles: ["followers"] }
+    }
+  ]);
+
+  assert.equal(series[0].snapshotsConMetricas, 2);
+
+  assert.equal(series[0].readyForLongitudinal, true);
 });
 
 

@@ -964,6 +964,52 @@ function limitacionesDe(medicion) {
 
 
 /*
+-----------------------------------------------------------
+CLASES DE SNAPSHOT — correccion de MEDIA-SOURCE-MEASUREMENT-01
+
+Ese gate reporto «28 snapshots, 14/14 series listas para
+longitudinal» teniendo solo 4 de 14 activos medidos. Las dos
+cifras no podian ser ciertas a la vez, y la equivocada era la
+segunda: se conto como serie cualquier par de snapshots,
+incluidos los que solo guardaban un ESTADO.
+
+Un snapshot que dice REQUIERE_CREDENCIAL dos dias seguidos no
+es una serie temporal: es la misma ausencia registrada dos
+veces. Tratarlo como serie habilitaria un momentum calculado
+sobre nada.
+
+    METRIC_BEARING     trae metricas observadas
+    CONTENT_BEARING    trae publicaciones, sin metricas
+    TECHNICAL_STATUS   solo un estado
+
+Solo METRIC_BEARING sostiene una serie longitudinal ANALITICA.
+CONTENT_BEARING sostiene una serie de VOLUMEN, que es util y no
+es lo mismo, y se declara aparte en lugar de mezclarse.
+-----------------------------------------------------------
+*/
+export const CLASES_SNAPSHOT = Object.freeze({
+  METRIC_BEARING: "METRIC_BEARING_SNAPSHOT",
+  CONTENT_BEARING: "CONTENT_BEARING_SNAPSHOT",
+  TECHNICAL_STATUS: "TECHNICAL_STATUS_SNAPSHOT"
+});
+
+
+export function claseDeSnapshot(s) {
+  const metricas = s?.metricas?.disponibles;
+
+  if (Array.isArray(metricas) && metricas.length > 0) {
+    return CLASES_SNAPSHOT.METRIC_BEARING;
+  }
+
+  if ((s?.publicacionesObservadas || 0) > 0) {
+    return CLASES_SNAPSHOT.CONTENT_BEARING;
+  }
+
+  return CLASES_SNAPSHOT.TECHNICAL_STATUS;
+}
+
+
+/*
 ===========================================================
 RESUMEN Y PREPARACION LONGITUDINAL
 ===========================================================
@@ -1055,6 +1101,7 @@ export function preparacionLongitudinal(snapshots = []) {
         mediaEntityId: s.mediaEntityId,
         plataforma: canal,
         snapshotCount: 0,
+        porClase: {},
         firstObservedAt: s.observedAt,
         latestObservedAt: s.observedAt
       });
@@ -1064,25 +1111,56 @@ export function preparacionLongitudinal(snapshots = []) {
 
     g.snapshotCount += 1;
 
+    const clase = claseDeSnapshot(s);
+
+    g.porClase[clase] = (g.porClase[clase] || 0) + 1;
+
     if (s.observedAt < g.firstObservedAt) g.firstObservedAt = s.observedAt;
 
     if (s.observedAt > g.latestObservedAt) g.latestObservedAt = s.observedAt;
   });
 
-  return [...porClave.values()].map((g) => ({
-    ...g,
+  return [...porClave.values()].map((g) => {
+    const conMetricas = g.porClase[CLASES_SNAPSHOT.METRIC_BEARING] || 0;
+
+    const conContenido = g.porClase[CLASES_SNAPSHOT.CONTENT_BEARING] || 0;
+
+    const soloEstado = g.porClase[CLASES_SNAPSHOT.TECHNICAL_STATUS] || 0;
 
     /*
-      Dos puntos no son una serie, pero son la condicion minima
-      para que exista una. Con uno solo no hay nada que comparar.
+      La condicion es DOS snapshots CON METRICAS. Dos snapshots
+      de estado son la misma ausencia registrada dos veces.
     */
-    readyForLongitudinal: g.snapshotCount >= 2,
+    const listaAnalitica = conMetricas >= 2;
 
-    motivo:
-      g.snapshotCount >= 2
-        ? "Hay al menos dos observaciones: existe serie con la que comparar."
-        : "Una sola observacion. No hay serie, y este gate NO calcula momentum."
-  }));
+    return {
+      ...g,
+
+      snapshotsConMetricas: conMetricas,
+      snapshotsConContenido: conContenido,
+      snapshotsSoloEstado: soloEstado,
+
+      readyForLongitudinal: listaAnalitica,
+
+      /*
+        Serie de VOLUMEN: cuantas piezas publico, no como
+        rindieron. Es util y no es lo mismo, asi que se declara
+        en su propio campo.
+      */
+      readyForVolumeSeries: conContenido >= 2,
+
+      motivo: listaAnalitica
+        ? `${conMetricas} snapshots con metricas observadas: existe serie analitica.`
+        : conContenido >= 2
+          ? `${conContenido} snapshots con contenido y ninguno con metricas: hay serie de VOLUMEN, no de rendimiento. Un feed entrega piezas, no cifras.`
+          : soloEstado >= 2
+            ? `${soloEstado} snapshots que solo registran un ESTADO. La misma ausencia dos veces no es una serie.`
+            : "Una sola observacion. No hay serie que comparar.",
+
+      /* Se repite en cada fila a proposito. */
+      prohibido: "Este gate NO calcula Media Momentum."
+    };
+  });
 }
 
 

@@ -1436,6 +1436,16 @@ export function MediaIntelligenceVista({
                   <Cifra etiqueta="Piezas en el corpus" m={home.resumen.piezasEnCorpus} />
                   <Cifra etiqueta="Piezas analizadas" m={home.resumen.piezasAnalizadas} />
                   <Cifra etiqueta="Piezas relacionadas" m={home.resumen.piezasRelacionadas} />
+
+                  {/*
+                    MEDIA-CORPUS-INTEGRATION-01. Sin esta tarjeta el
+                    resumen mostraba «1 analizada · 3 relacionadas»
+                    sobre un corpus de 103 piezas: las 90 leídas de
+                    los activos de los medios quedaban invisibles.
+                  */}
+                  {home.resumen.piezasMedidas ? (
+                    <Cifra etiqueta="Piezas medidas" m={home.resumen.piezasMedidas} />
+                  ) : null}
                   <Cifra etiqueta="Contenidos observados" m={home.resumen.contenidosObservados} />
                   <Cifra etiqueta="Fuentes distintas" m={home.resumen.fuentesDistintas} />
                   <Cifra etiqueta="Medios" m={home.resumen.medios} />
@@ -1495,6 +1505,66 @@ export function MediaIntelligenceVista({
                   </table>
                 </div>
               </Seccion>
+
+              {home.cobertura?.reconciliacion ? (
+                <Seccion
+                  icono={ShieldCheck}
+                  titulo="Cómo se formó este corpus"
+                  nota="Las piezas llegan por tres rutas y se reconcilian: una misma nota vista dos veces es una sola pieza, y dos medios que publican lo mismo siguen siendo dos."
+                >
+                  <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                    <Cifra
+                      etiqueta="Entradas"
+                      m={{ valor: home.cobertura.reconciliacion.entradas, estado: null }}
+                    />
+                    <Cifra
+                      etiqueta="Piezas canónicas"
+                      m={{ valor: home.cobertura.reconciliacion.canonicas, estado: null }}
+                    />
+                    <Cifra
+                      etiqueta="Duplicadas fundidas"
+                      m={{
+                        valor:
+                          home.cobertura.reconciliacion.exactDuplicates +
+                          home.cobertura.reconciliacion.probableDuplicates,
+                        estado: null,
+                        nota: "Misma URL o mismo titular en el mismo dominio."
+                      }}
+                    />
+                    <Cifra
+                      etiqueta="Republicaciones"
+                      m={{
+                        valor: home.cobertura.reconciliacion.republications,
+                        estado: null,
+                        nota: "Mismo titular en otro dominio. NO se funden: son dos publicaciones."
+                      }}
+                    />
+                    <Cifra
+                      etiqueta="Excluidas"
+                      m={{
+                        valor: home.cobertura.reconciliacion.excluidas,
+                        estado: null,
+                        nota: "Artefactos, plataformas, feeds de comentarios e identidades en conflicto."
+                      }}
+                    />
+                  </div>
+
+                  {home.cobertura.procedencias?.length ? (
+                    <div style={{ marginTop: "14px" }}>
+                      <div style={ETIQUETA}>Rutas de observación</div>
+
+                      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "8px" }}>
+                        {home.cobertura.procedencias.map((r) => (
+                          <Chip
+                            key={r.ruta}
+                            texto={`${r.ruta.replace(/_/g, " ").toLowerCase()} · ${r.piezas}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </Seccion>
+              ) : null}
 
               <Seccion
                 icono={AlertTriangle}

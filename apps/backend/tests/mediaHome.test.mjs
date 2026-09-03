@@ -738,7 +738,28 @@ test("un agregador no entra en el ranking de fuentes y se declara aparte", async
 
   assert.ok(artefacto, "y tampoco puede ocultarse: es residuo de nuestro metodo");
 
-  assert.equal(artefacto.tipoEnCatalogo, "agregador");
+  /*
+    MEDIA-CORPUS-INTEGRATION-01 cambio de donde sale este dato, y
+    la assercion se hace mas fuerte, no mas debil.
+
+    Antes google.com llegaba a ser una FUENTE y se movia a la
+    lista de artefactos, asi que traia `tipoEnCatalogo`. Ahora el
+    corpus canonico excluye sus PIEZAS antes de construir
+    fuentes, asi que ya no es una fuente: llega por la via de las
+    exclusiones, con su motivo y con el RECUENTO DE PIEZAS
+    excluidas, que antes no existia.
+
+    Lo que no puede cambiar es que siga clasificado como
+    agregador y que se sepa cuanto excluyo.
+  */
+  assert.match(artefacto.claseEtiqueta, /Agregador/);
+
+  assert.ok(
+    artefacto.piezasExcluidas >= 1,
+    "el recuento de piezas excluidas tiene que constar"
+  );
+
+  assert.match(artefacto.motivoDeExclusion, /redirector|agregador/i);
 });
 
 
@@ -963,9 +984,19 @@ test("un balanceador de AWS no puede aparecer como medio", async () => {
 
   assert.ok(artefacto, "y tampoco se oculta: la evidencia no se borra");
 
-  assert.equal(artefacto.clase, "INFRAESTRUCTURA");
+  /*
+    El motivo puede llegar por dos vias desde
+    MEDIA-CORPUS-INTEGRATION-01 —como fuente artefacto o como
+    pieza excluida del corpus canonico— y las dos lo etiquetan
+    como infraestructura. Se comprueba la etiqueta, que es lo
+    estable, y el motivo, que es lo que explica la exclusion.
+  */
+  assert.match(
+    artefacto.claseEtiqueta || artefacto.clase,
+    /Infraestructura|INFRAESTRUCTURA/
+  );
 
-  assert.match(artefacto.motivoDeExclusion, /balanceador de carga o una CDN/);
+  assert.match(artefacto.motivoDeExclusion, /balanceador|CDN/i);
 });
 
 

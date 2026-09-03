@@ -146,7 +146,31 @@ function filaPublicacion({ projectId, tenantId, entidad, activo, publicacion, ob
     fechaHecho: publicacion.publishedAt || null,
     fechaDeteccion: observedAt,
 
-    entidad: clave,
+    /*
+      -------------------------------------------------------
+      CLAVE CON PREFIJO — corregido en MEDIA-CORPUS-INTEGRATION-01
+
+      Sin el prefijo, esta fila y la de una PIEZA ANALIZADA de la
+      misma URL producian la MISMA `claveEntidad`: el Lake la
+      compone con tenant + proyecto + tipoEntidad + entidad, y no
+      incluye el submotor.
+
+      Consecuencia: la publicacion medida se convertia en una
+      version nueva de la pieza analizada, y una lectura con
+      `soloVigentes` dejaba de ver la pieza —con su emisor, sus
+      metricas y su amplificacion—. No se perdia el dato, pero
+      desaparecia de las lecturas, que es peor porque no se nota.
+
+      Con el prefijo son dos entidades distintas del Lake, cada
+      una con su historia, y es el CORPUS CANONICO el que las
+      reconcilia en una sola pieza conservando las dos rutas. Que
+      es donde debe decidirse.
+
+      Las filas escritas antes del prefijo siguen leyendose: el
+      filtro es por submotor y clase, no por la forma de la clave.
+      -------------------------------------------------------
+    */
+    entidad: `pub:${clave}`,
     tipoEntidad: TIPOS_ENTIDAD.PUBLICACION,
 
     datos: {
@@ -410,7 +434,18 @@ export async function leerPublicaciones({ projectId, tenantId, lake = {} } = {})
         r?.linaje?.submotor === SUBMOTOR_MEDICION &&
         r?.datos?.clase === "publicacion_de_medio"
     )
-    .map((r) => ({ ...r.datos, canonicalUrl: r.urlCanonica, clave: r.entidad }));
+    .map((r) => ({
+      ...r.datos,
+      canonicalUrl: r.urlCanonica,
+
+      /*
+        La clave se devuelve SIN el prefijo `pub:`: es la clave
+        canonica de la publicacion, y es la que el corpus usa
+        para reconciliar. El prefijo es un detalle de la clave
+        del Lake y no debe salir de aqui.
+      */
+      clave: String(r.entidad || "").replace(/^pub:/, "")
+    }));
 }
 
 
