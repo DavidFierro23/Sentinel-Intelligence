@@ -208,11 +208,40 @@ comparación byte a byte del contenido recuperado contra el original
 
 ## 14. Checksum
 
-`CHECKSUM_VERIFIED = SÍ` para la prueba sintética (verificado antes de
-descifrar, como exige el propio diseño del script). Para el paquete REAL de
-secretos: **pendiente** — no existe todavía, porque su creación es una
-acción que el usuario decidió ejecutar él mismo, con su propia passphrase,
-fuera de esta sesión (ver punto 16).
+`CHECKSUM_VERIFIED = SÍ` para la prueba sintética. **Actualizado tras la
+certificación real** (continuación de este gate, misma fecha): el usuario
+creó y subió el paquete real
+(`sentinel-secrets-20260903T223600Z.tar.gpg` +
+`.sha256`) con su propia passphrase, en su propia terminal. Se verificó
+después, en una sesión de certificación aparte:
+
+- **`REMOTE_OBJECTS_PRESENT = SÍ`** — ambos objetos confirmados en
+  `r2-sentinel:sentinel-backups/secrets/` (1062 bytes el `.tar.gpg`, 65
+  bytes el `.sha256`).
+- **`CHECKSUM_REAL_PACKAGE = PASS`** — se descargó una copia independiente
+  a un directorio temporal fuera del repo y su SHA-256 recalculado
+  coincidió exactamente con el `.sha256` remoto
+  (`aa4ab693824d15389349880ef9e128a0d70a1b0caa13c7a21f48907b8ca2226e`).
+- **`REAL_DECRYPT_TEST = PASS`** — `gpg --decrypt` invocó `pinentry-w32`
+  (diálogo nativo de Windows, ya presente con Git for Windows, sin instalar
+  nada); el propietario introdujo su passphrase directamente en ese
+  diálogo. Ninguna herramienta de automatización la recibió, la vio, ni la
+  registró en ningún log. Exit code 0.
+- **`RECOVERY_STRUCTURE = PASS`** — el paquete descifrado contiene
+  `sentinel-secrets/.env` (presente, no vacío, 13 líneas de variable)
+  y `sentinel-secrets/VARIABLE_COUNT.txt` (contenido: `13`) — coincide
+  exactamente con las 13 variables auditadas en el punto 2 de este
+  documento. Se verificó únicamente presencia/conteo/estructura; **ningún
+  valor de ninguna variable fue leído ni impreso** durante la
+  verificación.
+- **`PLAINTEXT_CLEANUP = PASS`** — el `.tar` descifrado, el directorio
+  extraído (con el `.env` en texto plano) y la copia local del `.tar.gpg`
+  se borraron con `shred -u -z` (sobrescritura antes de borrar) al
+  finalizar, y se confirmó la ausencia del directorio temporal tanto desde
+  la vista Unix (`/tmp`) como desde la ruta real de Windows
+  (`%LOCALAPPDATA%\Temp`).
+- El objeto original en R2 **no se tocó**: se relistó después de la prueba
+  y su tamaño/timestamp son idénticos a antes de la descarga.
 
 ## 15. Cleanup
 
@@ -225,11 +254,9 @@ persistente del sistema.
 
 ## 16. Riesgos
 
-1. **El paquete real de secretos todavía no existe offsite.** El mecanismo
-   está listo y probado, pero hasta que el usuario ejecute
-   `create-secret-recovery-package.sh` + `upload-secret-package.sh` con su
-   propia passphrase, `SECRET_RECOVERY` no puede certificarse en SÍ pleno
-   (ver punto 14 de esta lista y el veredicto final).
+1. ~~El paquete real de secretos todavía no existe offsite.~~ **Resuelto**:
+   el usuario lo creó y subió con su propia passphrase; certificado en el
+   punto 14 (`sentinel-secrets-20260903T223600Z.tar.gpg`).
 2. **La passphrase, una vez creada, vive únicamente en la memoria del
    usuario y en el gestor de contraseñas que elija.** Si se pierde, el
    paquete cifrado es irrecuperable — es el trade-off correcto (nadie más
@@ -265,28 +292,25 @@ corto de Graph API Explorer (~1 hora), pero **no se verificó en vivo**.
 emisión o expiración almacenado junto al token en `.env` ni en código. No se
 cambió, ni se intentó renovar, el token en este gate.
 
-## 18-19-20-21-22-23-24-25. Estados finales
+## 18-25. Estados finales
 
-Ver reporte final más abajo — se listan ahí para evitar duplicar la misma
-tabla dos veces en el documento.
+| Estado | Valor |
+|---|---|
+| CODE_OFFSITE | ver reporte de gate de código más reciente (sin cambio en esta certificación, que no tocó git más que este documento) |
+| DATA_OFFSITE | SÍ |
+| SCHEDULED_BACKUP | SÍ |
+| **SECRET_RECOVERY** | **SÍ** — las cinco condiciones del criterio de certificación se cumplieron: `REMOTE_OBJECTS_PRESENT=SÍ`, `CHECKSUM_REAL_PACKAGE=PASS`, `REAL_DECRYPT_TEST=PASS`, `RECOVERY_STRUCTURE=PASS`, `PLAINTEXT_CLEANUP=PASS` |
+| RESTORE_TESTED | SÍ (datos; certificado en gate anterior) |
+| DB_BACKUP | PENDIENTE |
+| DB_PITR | PENDIENTE |
+| OBJECT_DURABILITY | PARCIAL (sin cambio) |
+| **DISASTER_RECOVERY_READY** | **NO** — `DB_BACKUP`/`DB_PITR` siguen sin existir porque PostgreSQL no está desplegado; certificar secretos no sustituye a certificar la base de datos |
 
 ## 26. Próximo gate recomendado
 
-1. **El usuario ejecuta, en su propia terminal:**
-   ```
-   cd apps/backend
-   bash scripts/secrets/create-secret-recovery-package.sh
-   bash scripts/secrets/upload-secret-package.sh
-   ```
-   con su propia passphrase (gpg la pedirá dos veces), y la guarda de
-   inmediato en su gestor de contraseñas. Solo entonces `SECRET_RECOVERY`
-   pasa de `PARCIAL` a `SÍ`.
-2. Confirmar en un gate breve de verificación que el paquete real subido es
-   descifrable (con la passphrase real, sin que Claude Code la vea —
-   verificación que el propio usuario ejecuta y solo reporta PASS/FAIL).
-3. Gate de higiene: confirmar y eliminar `GOOGLE_API_KEY`/`GOOGLE_CX` si se
+1. Gate de higiene: confirmar y eliminar `GOOGLE_API_KEY`/`GOOGLE_CX` si se
    confirma que están muertas, y decidir sobre `.env.bak` en disco.
-4. Bucket Lock sobre `sentinel-backups/secrets/` (ya diseñado en
+2. Bucket Lock sobre `sentinel-backups/secrets/` (ya diseñado en
    `SENTINEL-DATA-PERSISTENCE-01`, no activado todavía).
-5. Cuando exista PostgreSQL: `DB_BACKUP`/`DB_PITR`, únicos componentes que
+3. Cuando exista PostgreSQL: `DB_BACKUP`/`DB_PITR`, únicos componentes que
    faltan para poder evaluar `DISASTER_RECOVERY_READY` de verdad.
