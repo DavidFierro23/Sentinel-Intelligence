@@ -5,6 +5,7 @@ import DimensionesStrip from "../src/candidato/DimensionesStrip";
 import ComparacionEstrategica from "../src/candidato/ComparacionEstrategica";
 import SeccionesNav from "../src/candidato/SeccionesNav";
 import SeccionEnPreparacion from "../src/candidato/SeccionEnPreparacion";
+import MatrizPlataformas from "../src/candidato/MatrizPlataformas";
 
 import {
   DIMENSIONES,
@@ -18,7 +19,8 @@ import {
   identidadDeActivo,
   corroboracionDeActivo,
   cambioDeInteligencia,
-  momentumDeProyecto
+  momentumDeProyecto,
+  ayudaDeMedicion
 } from "../src/candidato/dimensionesEstrategicas";
 
 import { SECCIONES, seccionPorId } from "../src/candidato/secciones";
@@ -922,6 +924,450 @@ if (real) {
       .every((p, i, arr) => p > 0 && (i === 0 || p > arr[i - 1]))
   );
 }
+
+
+/*
+===========================================================
+X · LA MATRIZ CANONICA DE LAS CINCO PLATAFORMAS
+CANDIDATE-STRATEGIC-UX-01B
+===========================================================
+
+Lo que fallo la certificacion visual de 01: la unica tabla de
+la pantalla tenia las columnas escritas a mano para X y
+YouTube, y Facebook/Instagram/TikTok llegaban en el payload sin
+pintarse nunca.
+
+El fixture reproduce la forma REAL del endpoint, incluida la
+medicion huerfana de YouTube.
+===========================================================
+*/
+
+console.log("\n== X · MATRIZ DE CINCO PLATAFORMAS ==");
+
+const celda = (estado, extra = {}) => ({
+  plataforma: extra.plataforma || "facebook",
+  identidad: {
+    estado: extra.identidad || "ANALYST_CONFIRMED",
+    porActivo: [],
+    conflictos: extra.conflictos || [],
+    tieneConflicto: (extra.conflictos || []).length > 0
+  },
+  medicion: { estado, motivo: extra.motivo || null },
+  activos: extra.activos || [],
+  activosTotal: extra.activosTotal ?? (extra.activos || []).length,
+  activosCubiertos: extra.activosCubiertos ?? 0,
+  metrica: extra.metrica ?? null,
+  snapshots: extra.snapshots ?? 0,
+  medicionesHuerfanas: extra.huerfanas ?? null
+});
+
+const COBERTURA_3_DE_5 = {
+  medidas: 3,
+  parciales: 0,
+  resueltas: 5,
+  objetivo: 5,
+  expresionMedidas: "3 de 5 medidas",
+  expresionResueltas: "5 de 5 resueltas",
+  porcentaje: null,
+  noEs: "Resueltas NO significa medidas."
+};
+
+const MATRIZ = {
+  ok: true,
+  proyectoId: "alcaldia-cuenca-2027-piloto",
+  plataformas: ["facebook", "instagram", "tiktok", "x", "youtube"],
+  totalCeldas: 10,
+  celdasResueltas: 10,
+  distribucion: { MEDIDO: 6, PARCIAL: 1, NO_SOPORTADO: 2, IDENTIDAD_INSUFICIENTE: 1 },
+  limitaciones: [
+    {
+      id: "ACCOUNT_ID_SIN_CASAR",
+      celdasAfectadas: 1,
+      texto:
+        "Hay celdas con medición persistida cuyo accountId no coincide con ningún activo de la ficha."
+    },
+    {
+      id: "DISCOVERY_NO_PERSISTIDO",
+      texto:
+        "No se persiste evidencia de que un discovery se haya ejecutado por plataforma."
+    }
+  ],
+  candidatos: [
+    {
+      candidateId: "paul-carrasco-carpio",
+      nombre: "Paúl Carrasco Carpio",
+      cobertura: COBERTURA_3_DE_5,
+      celdas: {
+        facebook: celda("MEDIDO", {
+          plataforma: "facebook",
+          activos: [{ accountId: "facebook:a" }, { accountId: "facebook:b" }],
+          activosCubiertos: 2,
+          metrica: {
+            nombre: "seguidores",
+            valor: 12400,
+            accountId: "facebook:a",
+            provider: "scrapecreators",
+            capturedAt: "2026-09-01T00:00:00.000Z",
+            activosConMetrica: 2
+          },
+          snapshots: 4
+        }),
+        instagram: celda("MEDIDO", {
+          plataforma: "instagram",
+          activos: [{ accountId: "instagram:a" }],
+          activosCubiertos: 1,
+          metrica: {
+            nombre: "seguidores",
+            valor: 3500,
+            accountId: "instagram:a",
+            activosConMetrica: 1
+          },
+          snapshots: 2
+        }),
+        tiktok: celda("MEDIDO", {
+          plataforma: "tiktok",
+          activos: [{ accountId: "tiktok:a" }],
+          activosCubiertos: 1,
+          metrica: {
+            nombre: "seguidores",
+            valor: 519300,
+            accountId: "tiktok:a",
+            activosConMetrica: 1
+          },
+          snapshots: 1
+        }),
+        /* Identidad corroborada, medicion sin via: los dos ejes discrepan. */
+        x: celda("NO_SOPORTADO", {
+          plataforma: "x",
+          identidad: "SYSTEM_VERIFIED",
+          activos: [{ accountId: "x:a" }],
+          activosTotal: 3,
+          motivo: "no existe via oficial ni de proveedor conocida"
+        }),
+        /* Y aqui la medicion huerfana real del piloto. */
+        youtube: celda("NO_SOPORTADO", {
+          plataforma: "youtube",
+          activos: [{ accountId: "youtube:canal" }],
+          activosTotal: 1,
+          snapshots: 1,
+          huerfanas: {
+            total: 1,
+            accountIds: ["youtube:@canal"],
+            activosDeLaFicha: ["youtube:canal"],
+            motivo:
+              "Existe medición persistida cuyo accountId no coincide con ningún activo de la ficha."
+          }
+        })
+      }
+    },
+    {
+      candidateId: "yaku-perez",
+      nombre: "Yaku Perez",
+      cobertura: {
+        ...COBERTURA_3_DE_5,
+        parciales: 1
+      },
+      celdas: {
+        facebook: celda("PARCIAL", {
+          plataforma: "facebook",
+          activos: [{ accountId: "facebook:y1" }, { accountId: "facebook:y2" }],
+          activosCubiertos: 1,
+          motivo: "1 de 2 activos medidos; el resto no",
+          metrica: {
+            nombre: "seguidores",
+            valor: 531000,
+            accountId: "facebook:y1",
+            activosConMetrica: 1
+          },
+          snapshots: 2
+        }),
+        instagram: celda("MEDIDO", {
+          plataforma: "instagram",
+          activos: [{ accountId: "instagram:y" }],
+          activosTotal: 2,
+          activosCubiertos: 2,
+          metrica: {
+            nombre: "seguidores",
+            valor: 83233,
+            accountId: "instagram:y",
+            activosConMetrica: 2
+          },
+          snapshots: 3
+        }),
+        tiktok: celda("MEDIDO", {
+          plataforma: "tiktok",
+          activos: [{ accountId: "tiktok:y" }],
+          activosCubiertos: 1,
+          metrica: {
+            nombre: "seguidores",
+            valor: 519300,
+            accountId: "tiktok:y",
+            activosConMetrica: 1
+          },
+          snapshots: 2
+        }),
+        x: celda("MEDIDO", {
+          plataforma: "x",
+          activos: [{ accountId: "x:y" }],
+          activosCubiertos: 1,
+          metrica: {
+            nombre: "seguidores",
+            valor: 131305,
+            accountId: "x:y",
+            activosConMetrica: 1
+          },
+          snapshots: 1
+        }),
+        youtube: celda("IDENTIDAD_INSUFICIENTE", {
+          plataforma: "youtube",
+          identidad: "NO_ASSET_CONFIRMED",
+          motivo: "no hay semilla de identidad"
+        })
+      }
+    }
+  ]
+};
+
+const matriz = renderToStaticMarkup(<MatrizPlataformas matriz={MATRIZ} />);
+
+const matrizTexto = sinTags(matriz);
+
+t(
+  "X · las CINCO plataformas aparecen como cabecera de columna",
+  ["Facebook", "Instagram", "TikTok", "YouTube"].every((p) =>
+    new RegExp(`>\\s*${p}\\s*<`).test(matriz)
+  ) && />\s*X\s*</.test(matriz)
+);
+
+t(
+  "X · Facebook, Instagram y TikTok están presentes — el fallo que se corrige",
+  matriz.includes("Facebook") &&
+    matriz.includes("Instagram") &&
+    matriz.includes("TikTok")
+);
+
+t(
+  "X · hay una celda por candidato y plataforma",
+  MATRIZ.candidatos.every((c) => MATRIZ.plataformas.every((p) => !!c.celdas[p]))
+);
+
+t(
+  "X · cada celda trae un estado explícito, ninguna undefined ni null",
+  MATRIZ.candidatos.every((c) =>
+    MATRIZ.plataformas.every((p) => {
+      const e = c.celdas[p].medicion.estado;
+
+      return typeof e === "string" && e.length > 0;
+    })
+  )
+);
+
+t(
+  "X · el recuento de celdas sale del payload, no de una constante en la UI",
+  matriz.includes("10 de 10 celdas resueltas")
+);
+
+t(
+  "X · los estados se muestran traducidos, no como enum",
+  matriz.includes("Medido") &&
+    matriz.includes("Parcial") &&
+    matriz.includes("Sin vía disponible") &&
+    matriz.includes("Identidad insuficiente")
+);
+
+t(
+  "X · ningún estado se escapa como enum crudo",
+  (matrizTexto.match(/\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b/g) || []).length === 0
+);
+
+
+/*
+===========================================================
+Y · IDENTIDAD ≠ MEDICION, EN LA MISMA CELDA
+===========================================================
+*/
+
+console.log("\n== Y · DOS EJES POR CELDA ==");
+
+t(
+  "Y · la celda muestra el eje de identidad junto al de medición",
+  matriz.includes("Referencia confirmada por analista") &&
+    matriz.includes("Corroborada por Sentinel")
+);
+
+t(
+  "Y · identidad confirmada con medición sin vía NO se degrada a sin cuenta",
+  MATRIZ.candidatos[0].celdas.youtube.identidad.estado === "ANALYST_CONFIRMED" &&
+    MATRIZ.candidatos[0].celdas.youtube.medicion.estado !== "SIN_CUENTA" &&
+    !matrizTexto.includes("No existe una cuenta válida consolidada")
+);
+
+t(
+  "Y · cada estado del contrato de cierre tiene explicación",
+  [
+    "MEDIDO",
+    "PARCIAL",
+    "SIN_CUENTA",
+    "NO_SOPORTADO",
+    "REQUIERE_PROVEEDOR",
+    "REQUIERE_CREDENCIAL",
+    "BLOQUEADO",
+    "IDENTIDAD_INSUFICIENTE",
+    "IDENTITY_CONFLICT"
+  ].every((e) => typeof ayudaDeMedicion(e) === "string")
+);
+
+t(
+  "Y · la explicación de identidad insuficiente niega la lectura fácil",
+  ayudaDeMedicion("IDENTIDAD_INSUFICIENTE").includes(
+    "No significa que el candidato no tenga cuenta"
+  )
+);
+
+t(
+  "Y · «sin cuenta» y «identidad insuficiente» no significan lo mismo",
+  ayudaDeMedicion("SIN_CUENTA") !== ayudaDeMedicion("IDENTIDAD_INSUFICIENTE")
+);
+
+
+/*
+===========================================================
+Z · MISSING NO ES CERO · COBERTURA · LEGADO
+===========================================================
+*/
+
+console.log("\n== Z · MISSING, COBERTURA Y LEGADO ==");
+
+t(
+  "Z · una métrica ausente pinta una raya",
+  matriz.includes("—")
+);
+
+/*
+  El cero tiene que ser EL VALOR COMPLETO, no el ultimo digito
+  de otro numero: «12.400 seguidores» acaba en cero y no es un
+  cero. La primera version de esta prueba fallaba por eso.
+*/
+t(
+  "Z · no aparece «0 seguidores» ni «0 suscriptores» en ninguna celda",
+  !/(^|[^\d.,])0\s*(seguidores|suscriptores)/.test(matrizTexto)
+);
+
+/*
+  Y la comprobacion de fondo: ninguna celda sin metrica puede
+  haber pintado un numero. Si `metrica` es null, lo que se ve es
+  una raya.
+*/
+t(
+  "Z · toda celda sin métrica queda como raya y ninguna inventa un valor",
+  MATRIZ.candidatos.every((c) =>
+    MATRIZ.plataformas.every((p) => {
+      const m = c.celdas[p].metrica;
+
+      return m === null || (typeof m.valor === "number" && m.valor > 0);
+    })
+  )
+);
+
+t(
+  "Z · YouTube nombra suscriptores donde hay dato, nunca seguidores",
+  MATRIZ.candidatos.every((c) => {
+    const m = c.celdas.youtube.metrica;
+
+    return m === null || m.nombre === "suscriptores";
+  })
+);
+
+t(
+  "Z · la cobertura distingue medidas de resueltas",
+  matriz.includes("3 de 5 medidas") && matriz.includes("5 de 5 resueltas")
+);
+
+t(
+  "Z · no se afirma «5 de 5 medidas» para quien tiene 3",
+  !matriz.includes("5 de 5 medidas")
+);
+
+t(
+  "Z · la cobertura no se expresa en porcentaje",
+  MATRIZ.candidatos.every((c) => c.cobertura.porcentaje === null)
+);
+
+t(
+  "Z · la medición que no casa se declara en lugar de descartarse en silencio",
+  matriz.includes("medición sin activo que case")
+);
+
+t(
+  "Z · las limitaciones que declara el backend se muestran",
+  matriz.includes("accountId") && matriz.includes("discovery")
+);
+
+t(
+  "Z · se declara que las columnas no se suman",
+  matrizTexto.includes("no se suman")
+);
+
+t(
+  "Z · el disclaimer electoral acompaña a la matriz",
+  matriz.includes("No representa intención de voto")
+);
+
+t(
+  "Z · ninguna fila lleva barra de progreso",
+  (matriz.match(/width:\s*(\d+(\.\d+)?)%/g) || []).every((w) => w.includes("100%"))
+);
+
+t(
+  "Z · el orden de las filas es el declarado, no un ranking por celdas medidas",
+  matriz.indexOf("Paúl Carrasco Carpio") < matriz.indexOf("Yaku Perez")
+);
+
+/*
+  §14. La tabla heredada sigue existiendo —sus columnas de
+  originales frente a republicaciones son datos reales que no
+  estan en ningun otro sitio— pero deja de titularse «Línea
+  base digital» y de ser la comparacion principal.
+*/
+t(
+  "Z · la tabla X/YouTube ya no se titula «Línea base digital · T0»",
+  !fuente.includes("Línea base digital · T0")
+);
+
+t(
+  "Z · su título acota el alcance a X y YouTube",
+  fuente.includes("Línea base comparable disponible para X y YouTube")
+);
+
+t(
+  "Z · y declara que no es toda la presencia digital",
+  fuente.includes("No representa toda la presencia digital del candidato")
+);
+
+t(
+  "Z · la matriz de cinco plataformas se monta antes que la tabla heredada",
+  fuente.indexOf("MatrizPlataformas matriz={matrizPlataformas}") <
+    fuente.indexOf("BaselineT0Panel datos={lineaBase}")
+);
+
+t(
+  "Z · la matriz se carga con el proyecto, no tras pulsar un botón",
+  fuente.includes("matriz-plataformas") && fuente.includes("setMatrizPlataformas")
+);
+
+t(
+  "Z · sin payload la matriz no inventa nada",
+  renderToStaticMarkup(<MatrizPlataformas matriz={null} />) === ""
+);
+
+t(
+  "Z · un proyecto sin candidatos lo dice en lugar de mostrar una tabla vacía",
+  renderToStaticMarkup(
+    <MatrizPlataformas
+      matriz={{ ok: true, plataformas: MATRIZ.plataformas, candidatos: [] }}
+    />
+  ).includes("Ningún candidato observado")
+);
 
 
 /*

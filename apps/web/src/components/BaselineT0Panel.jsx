@@ -1,6 +1,7 @@
 import { AlertTriangle, Info } from "lucide-react";
 
 import CandidatePhoto from "./CandidatePhoto";
+import { textoDeEstado } from "../workspace/estados";
 
 /*
 ===========================================================
@@ -129,7 +130,24 @@ export default function BaselineT0Panel({ datos, onCerrar }) {
               <th style={th} title="Vídeos observados">YT víd</th>
               <th style={th} title="Reproducciones observadas en YouTube">YT vistas</th>
 
-              <th style={{ ...th, textAlign: "center" }}>Cobertura</th>
+              {/*
+                DECIA «Cobertura» a secas, y el numero era
+                `cobertura.medidas/objetivo` — 5/5 para Paul
+                Carrasco. Se leia como «cinco de cinco
+                plataformas medidas», y la matriz canonica dice
+                que dos de sus cinco no tienen medicion
+                utilizable.
+
+                La diferencia es que esta cifra cuenta
+                PLATAFORMAS CON PUBLICACIONES OBSERVADAS, que es
+                otra pregunta. Se nombra por lo que cuenta.
+              */}
+              <th
+                style={{ ...th, textAlign: "center" }}
+                title="Plataformas en las que se observaron publicaciones. No es lo mismo que plataformas medidas: el estado operacional por activo está en la matriz de las cinco plataformas."
+              >
+                Con publicaciones
+              </th>
             </tr>
           </thead>
 
@@ -162,7 +180,7 @@ export default function BaselineT0Panel({ datos, onCerrar }) {
                           }}
                           title={c.comparabilidad?.motivo}
                         >
-                          {c.comparabilidad?.estado?.toLowerCase().replace(/_/g, " ")}
+                          {textoDeEstado(c.comparabilidad?.estado)}
                         </div>
                       </div>
                     </div>
@@ -189,14 +207,19 @@ export default function BaselineT0Panel({ datos, onCerrar }) {
                   <Celda valor={y?.rendimientoDeOriginales?.viewsTotal} />
 
                   <td style={{ padding: "7px 8px", textAlign: "center" }}>
+                    {/*
+                      El color iba por tramos —verde con dos o
+                      mas plataformas, ambar con una— y ese
+                      umbral era un resto de cuando solo X y
+                      YouTube eran legibles.
+
+                      Se queda en un tono neutro: un semaforo
+                      sobre cuantas plataformas alcanzamos a
+                      observar se lee como un semaforo sobre el
+                      candidato, y no mide eso.
+                    */}
                     <span
-                      style={pill(
-                        c.cobertura?.medidas >= 2
-                          ? "#22C55E"
-                          : c.cobertura?.medidas === 1
-                            ? "#F59E0B"
-                            : "var(--sentinel-texto-tenue)"
-                      )}
+                      style={pill("var(--sentinel-texto-suave)")}
                       title={c.cobertura?.noEs}
                     >
                       {c.cobertura?.medidas}/{c.cobertura?.objetivo}
@@ -240,9 +263,17 @@ export default function BaselineT0Panel({ datos, onCerrar }) {
 
       {/* Estado histórico: T0 no tiene contra qué compararse. */}
       <div style={{ ...caja, marginTop: "9px" }}>
-        <div style={{ color: "var(--sentinel-texto-suave)", fontSize: "10.5px" }}>
-          Estado histórico ·{" "}
-          <span style={{ fontFamily: "monospace" }}>{datos.momentum?.estado}</span>
+        {/*
+          Pintaba el enum crudo —HISTORICO_INSUFICIENTE— en
+          monospace. El valor tecnico se conserva en el `title`
+          para quien audita, igual que en el resto del workspace,
+          y lo que se lee es la frase.
+        */}
+        <div
+          style={{ color: "var(--sentinel-texto-suave)", fontSize: "10.5px" }}
+          title={datos.momentum?.estado || undefined}
+        >
+          Estado histórico · {textoDeEstado(datos.momentum?.estado) || "sin determinar"}
         </div>
 
         <div style={{ ...tenue, marginTop: "5px" }}>{datos.momentum?.motivo}</div>

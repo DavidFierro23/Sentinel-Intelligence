@@ -45,6 +45,7 @@ import { fechaLocal } from "../services/identidadCandidato";
 */
 import DimensionesStrip from "../candidato/DimensionesStrip";
 import ComparacionEstrategica from "../candidato/ComparacionEstrategica";
+import MatrizPlataformas from "../candidato/MatrizPlataformas";
 import SeccionesNav from "../candidato/SeccionesNav";
 import SeccionEnPreparacion from "../candidato/SeccionEnPreparacion";
 import { SECCION_POR_DEFECTO, seccionPorId } from "../candidato/secciones";
@@ -667,6 +668,16 @@ export default function ProjectsModule() {
   */
   const [intelPorCandidato, setIntelPorCandidato] = useState({});
 
+  /*
+    MATRIZ CANONICA DE PLATAFORMAS — CANDIDATE-STRATEGIC-UX-01B.
+
+    Los 7 candidatos x 5 plataformas con su estado operacional.
+    Se carga con el proyecto porque es la respuesta principal de
+    la pantalla, y porque tambien se arma desde el Lake sin salir
+    a la red.
+  */
+  const [matrizPlataformas, setMatrizPlataformas] = useState(null);
+
   /* Seccion abierta dentro de Candidate — §17. */
   const [seccion, setSeccion] = useState(SECCION_POR_DEFECTO);
 
@@ -746,6 +757,10 @@ export default function ProjectsModule() {
         pedir(`/${id}/cobertura-meta`)
           .then((m) => setActivosMeta(m))
           .catch(() => setActivosMeta(null));
+
+        pedir(`/${id}/matriz-plataformas`)
+          .then((m) => setMatrizPlataformas(m))
+          .catch(() => setMatrizPlataformas(null));
 
         setIntelPorCandidato({});
 
@@ -1760,6 +1775,52 @@ export default function ProjectsModule() {
         <SeccionEnPreparacion seccion={seccionPorId(seccion)} />
       )}
 
+      {/*
+        ================================================
+        MATRIZ CANONICA DE PLATAFORMAS — 01B §1, §9, §15
+        ================================================
+
+        VA PRIMERA, y es el arreglo central de este gate.
+
+        La certificacion visual de 01 fallo aqui: la unica tabla
+        de la pantalla era la de `BaselineT0Panel`, con columnas
+        escritas a mano para X y YouTube. Facebook, Instagram y
+        TikTok llegaban en el payload y no se pintaban, asi que
+        Candidate Intelligence parecia medir dos plataformas.
+
+        Las cinco tienen que ser visibles sin navegar a ningun
+        sitio, y esta es la primera cosa que se ve al abrir el
+        proyecto.
+      */}
+
+      <div
+        style={{
+          marginTop: "22px",
+          display: seccion === "resumen" ? "block" : "none"
+        }}
+      >
+        <div style={etiqueta}>
+          <Users size={13} />
+          Presencia por plataforma · {(matrizPlataformas?.candidatos || []).length}{" "}
+          candidatos × {(matrizPlataformas?.plataformas || []).length} plataformas
+        </div>
+
+        <div
+          style={{
+            color: "var(--sentinel-texto-tenue)",
+            fontSize: "10.5px",
+            lineHeight: 1.7,
+            marginTop: "-6px",
+            marginBottom: "10px"
+          }}
+        >
+          Qué activos tenemos resueltos y cuáles podemos medir. Arriba de cada
+          celda, si podemos medirla; debajo, de quién es.
+        </div>
+
+        <MatrizPlataformas matriz={matrizPlataformas} />
+      </div>
+
       {/* CANDIDATOS */}
 
       <div
@@ -2515,7 +2576,7 @@ export default function ProjectsModule() {
       */}
 
 
-      {/* LÍNEA BASE DIGITAL T0 — P-CAND-BENCH-01 */}
+      {/* REDES — la matriz de las cinco, y debajo lo comparable de X/YT */}
 
       <div
         style={{
@@ -2524,8 +2585,45 @@ export default function ProjectsModule() {
         }}
       >
         <div style={etiqueta}>
+          <Users size={13} />
+          Estado operacional de las cinco plataformas
+        </div>
+
+        <MatrizPlataformas matriz={matrizPlataformas} />
+
+        {/*
+          ================================================
+          LA TABLA HEREDADA, RELEGADA Y ACOTADA — §14
+          ================================================
+
+          No se elimina: sus columnas —originales frente a
+          republicaciones, vistas y me gusta de las originales—
+          son informacion real y no esta en ningun otro sitio.
+
+          Lo que cambia es que deja de ser LA comparacion y deja
+          de titularse «Línea base digital», que sonaba a la
+          medida completa del candidato. Su titulo dice ahora
+          exactamente de que plataformas habla y que no es toda
+          la presencia digital.
+        */}
+        <div style={{ ...etiqueta, marginTop: "26px" }}>
           <BarChart3 size={13} />
-          Línea base digital · T0
+          Línea base comparable disponible para X y YouTube
+        </div>
+
+        <div
+          style={{
+            color: "var(--sentinel-texto-tenue)",
+            fontSize: "10.5px",
+            lineHeight: 1.7,
+            marginTop: "-6px",
+            marginBottom: "10px"
+          }}
+        >
+          Métricas de publicación históricamente comparables, que hoy solo
+          existen para estas dos plataformas.{" "}
+          <strong>No representa toda la presencia digital del candidato</strong>
+          : para eso está la matriz de arriba.
         </div>
 
         {verLineaBase && lineaBase ? (

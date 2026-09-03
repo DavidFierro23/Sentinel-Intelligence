@@ -60,7 +60,10 @@ export const ESTADOS = Object.freeze({
   REQUIERE_CREDENCIAL: { texto: "Requiere credencial", tono: "aviso" },
   REQUIERE_PROVEEDOR: { texto: "Requiere proveedor", tono: "aviso" },
   BLOQUEADO: { texto: "Bloqueado por la fuente", tono: "aviso" },
+  BLOQUEADO_PROVEEDOR: { texto: "Bloqueado en el proveedor", tono: "aviso" },
   NO_SOPORTADO: { texto: "Sin vía disponible", tono: "neutro" },
+  ERROR_PROVEEDOR: { texto: "Error del proveedor", tono: "aviso" },
+  ERROR_OFICIAL: { texto: "Error de la vía oficial", tono: "aviso" },
 
   /* --- todavia no existe --- */
   EN_PREPARACION: { texto: "En preparación", tono: "neutro" },
@@ -70,8 +73,23 @@ export const ESTADOS = Object.freeze({
 
   /* --- exige una persona --- */
   CONFLICTO_IDENTIDAD: { texto: "Conflicto de identidad", tono: "alerta" },
+  IDENTITY_CONFLICT: { texto: "Conflicto de identidad", tono: "alerta" },
   NO_CLASIFICADO: { texto: "Pendiente de clasificación", tono: "aviso" },
-  IDENTIDAD_INSUFICIENTE: { texto: "Identidad insuficiente", tono: "alerta" }
+
+  /*
+    IDENTIDAD_INSUFICIENTE pasa de `alerta` a `aviso` en
+    CANDIDATE-STRATEGIC-UX-01B.
+
+    Significa que no hay semilla de identidad para esa
+    plataforma: ni referencia del analista ni evidencia de
+    discovery. Es un «no lo sabemos», no un conflicto.
+
+    En rojo, y repetido en 5 de las 35 celdas de la matriz, se
+    leia como un problema del candidato. El rojo queda reservado
+    para lo que de verdad exige una decision humana: dos
+    atribuciones incompatibles.
+  */
+  IDENTIDAD_INSUFICIENTE: { texto: "Identidad insuficiente", tono: "aviso" }
 });
 
 

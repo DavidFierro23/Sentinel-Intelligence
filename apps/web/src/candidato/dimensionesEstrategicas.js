@@ -526,6 +526,37 @@ export const IDENTIDAD = Object.freeze({
     tono: "neutro",
     explica: "Encontrada por el motor y atribuida al candidato."
   },
+
+  /*
+    Los cuatro estados de `socialBenchmarkMatrix.IDENTITY_STATES`.
+    Se nombran aqui, junto a los anteriores, para que el
+    vocabulario de identidad siga viviendo en un solo sitio: la
+    matriz de plataformas usa esta taxonomia y la ficha usaba la
+    de arriba.
+  */
+  SYSTEM_VERIFIED: {
+    texto: "Corroborada por Sentinel",
+    tono: "bien",
+    explica: "Al menos una fuente independiente la sostiene."
+  },
+  DISCOVERED: {
+    texto: "Descubierta por Sentinel",
+    tono: "neutro",
+    explica:
+      "La encontró el discovery automático y nadie la ha confirmado todavía."
+  },
+  NO_ASSET_CONFIRMED: {
+    texto: "Sin activo confirmado",
+    tono: "aviso",
+    explica:
+      "No hay referencia del analista ni evidencia de discovery para esta plataforma: no hay semilla de identidad."
+  },
+  IDENTITY_CONFLICT: {
+    texto: "Conflicto de identidad",
+    tono: "alerta",
+    explica: "Dos atribuciones incompatibles. Exige decisión humana."
+  },
+
   CONFLICT: {
     texto: "Conflicto de identidad",
     tono: "alerta",
@@ -537,6 +568,44 @@ export const IDENTIDAD = Object.freeze({
     explica: "No hay base suficiente para atribuirla."
   }
 });
+
+
+/*
+===========================================================
+QUE SIGNIFICA CADA ESTADO DE MEDICION — §24
+===========================================================
+
+La explicacion va en el `title` de la celda. Son los estados
+reales de `operationalClosure.ESTADOS_CIERRE`, no una lista
+inventada: si el cierre gana un estado nuevo y no esta aqui, la
+celda sigue mostrando su frase generica en lugar de mentir.
+===========================================================
+*/
+export const AYUDA_MEDICION = Object.freeze({
+  MEDIDO: "Sentinel dispone de medición observable para este activo.",
+  PARCIAL:
+    "Hay medición, pero no de todos los activos de esta plataforma. Falta algo, no está completo.",
+  SIN_CUENTA:
+    "No existe una cuenta válida consolidada para esta plataforma.",
+  NO_SOPORTADO:
+    "No existe vía conocida y probada —oficial ni de proveedor— para medir esta plataforma en este proyecto.",
+  REQUIERE_PROVEEDOR:
+    "La identidad es suficiente y hay un proveedor técnicamente capaz. No se ha medido por decisión de presupuesto, no por imposibilidad.",
+  REQUIERE_CREDENCIAL:
+    "La medición existe pero requiere una credencial que Sentinel no tiene.",
+  BLOQUEADO: "La fuente bloquea la lectura de este activo.",
+  IDENTIDAD_INSUFICIENTE:
+    "No hay referencia del analista ni evidencia de discovery para esta plataforma: no hay semilla de identidad. No significa que el candidato no tenga cuenta.",
+  IDENTITY_CONFLICT:
+    "Activo excluido por conflicto de identidad revisado por una persona. No se mide ni cuenta como cobertura.",
+  ERROR_PROVEEDOR: "El proveedor devolvió un error en el último intento.",
+  ERROR_OFICIAL: "La vía oficial devolvió un error en el último intento."
+});
+
+
+export function ayudaDeMedicion(estado) {
+  return AYUDA_MEDICION[estado] || null;
+}
 
 
 export const CORROBORACION = Object.freeze({

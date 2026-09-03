@@ -73,6 +73,12 @@ import { matrizDeCapacidades } from "../services/intelligence/socialCapabilityMa
 /* P-CAND-BENCH-01 */
 import { lineaBaseT0 } from "../services/intelligence/candidateBaseline.js";
 
+/*
+  Read model de la matriz canonica. Reutiliza las funciones de
+  cierre certificadas sin tocarlas.
+*/
+import { matrizDePlataformasDelProyecto } from "../services/intelligence/candidatePlatformMatrix.js";
+
 import {
   activosDeCandidato,
   crearDeclaracionDeTipo,
@@ -1190,6 +1196,43 @@ ganador: hay observaciones por plataforma, con su cobertura y su
 comparabilidad declaradas.
 -----------------------------------------------------------
 */
+/*
+-----------------------------------------------------------
+MATRIZ CANONICA DE PLATAFORMAS — CANDIDATE-STRATEGIC-UX-01B
+
+Los 7 candidatos x 5 plataformas = 35 celdas, con el estado
+operacional que certifico P-CAND-OPERATIONAL-CLOSURE-01.
+
+Existe porque esa taxonomia vivia en dos funciones puras que
+NINGUNA ruta llamaba —solo su test unitario—, asi que la
+interfaz no tenia como mostrarla y acabo mostrando la de
+`/linea-base`, que responde a otra pregunta.
+
+Solo lee. No observa, no persiste y no consume cuota.
+-----------------------------------------------------------
+*/
+router.get("/:proyectoId/matriz-plataformas", async (req, res) => {
+  const { proyectoId } = req.params;
+
+  try {
+    const contenido = await contenidoDeProyecto(proyectoId);
+
+    if (!contenido?.proyecto) {
+      return res.status(404).json({ error: `no existe el proyecto ${proyectoId}` });
+    }
+
+    const r = await matrizDePlataformasDelProyecto({
+      projectId: proyectoId,
+      candidatos: contenido.candidatos || []
+    });
+
+    res.json(r);
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo al armar la matriz de plataformas" });
+  }
+});
+
+
 router.get("/:proyectoId/linea-base", async (req, res) => {
   const { proyectoId } = req.params;
 
