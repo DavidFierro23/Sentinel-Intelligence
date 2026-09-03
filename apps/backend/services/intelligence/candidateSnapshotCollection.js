@@ -100,7 +100,15 @@ export function categoriaDeResultado(resultado = {}, { identityState = null } = 
 
   if (estado === "CUENTA_NO_RESUELTA") return CATEGORIAS_RESULTADO.SKIPPED_NO_ACCOUNT;
 
-  if (estado === "NO_SOPORTADO_PERSONAL") {
+  /*
+    NO_SOPORTADO_PERSONAL (Instagram personal) y REQUIERE_PPCA
+    (Facebook de tercero sin Page Public Content Access) son la
+    MISMA figura para efectos de la corrida: la via oficial no
+    alcanza, pero el proveedor si podria -P-CAND-OPERATIONAL-
+    CLOSURE-01-. PPCA nunca se trata como "sin cuenta": la Pagina
+    existe, la via esta cerrada por una aprobacion pendiente.
+  */
+  if (estado === "NO_SOPORTADO_PERSONAL" || estado === "REQUIERE_PPCA") {
     /*
       Identidad DISCOVERED (no analista, no corroborada por
       Sentinel) y la unica via que queda es un proveedor de pago:
@@ -167,6 +175,7 @@ export async function observarYPersistirCandidato(proyectoId, candidatoId, opcio
     plataformas = PLATAFORMAS_COLECCION,
     maximoPublicaciones = 5,
     proveedorInstagram = null,
+    proveedorFacebook = null,
     conflictosConocidos = new Set(),
     fetchImpl
   } = opciones;
@@ -216,8 +225,10 @@ export async function observarYPersistirCandidato(proyectoId, candidatoId, opcio
     plataformas,
     idParaBusinessDiscovery: contextoMeta.idParaBusinessDiscovery,
     cuentasPropias: contextoMeta.cuentasPropias,
+    paginasPropias: contextoMeta.paginasPropias || [],
     tiposDeActivo,
     proveedorInstagram,
+    proveedorFacebook,
     fetchImpl
   });
 
@@ -304,6 +315,7 @@ export async function collectCandidateSnapshots(projectId, opciones = {}) {
     plataformas = PLATAFORMAS_COLECCION,
     maximoPublicaciones = 5,
     proveedorInstagram = null,
+    proveedorFacebook = null,
     conflictosConocidos = new Set(),
     candidatosFiltro = null,
     fetchImpl
@@ -368,6 +380,7 @@ export async function collectCandidateSnapshots(projectId, opciones = {}) {
       plataformas,
       maximoPublicaciones,
       proveedorInstagram,
+      proveedorFacebook,
       conflictosConocidos,
       fetchImpl
     });

@@ -62,6 +62,9 @@ import { capacidad, ESTADOS_CAPACIDAD } from "./socialCapabilityMatrix.js";
 */
 import { observarInstagramConFallback } from "./instagramProviderFallback.js";
 
+/* P-CAND-OPERATIONAL-CLOSURE-01. Mismo patron que Instagram. */
+import { observarFacebookConFallback } from "./facebookProviderFallback.js";
+
 
 export const ESTADOS_OBSERVACION_REAL = Object.freeze({
   /* Se pidio y se obtuvieron publicaciones. */
@@ -136,7 +139,19 @@ export const ESTADOS_OBSERVACION_REAL = Object.freeze({
     No cuenta como MEDIDO_OFICIAL en ningun sitio: son
     procedencias distintas y no se funden.
   */
-  MEDIDO_PROVEEDOR: "MEDIDO_PROVEEDOR"
+  MEDIDO_PROVEEDOR: "MEDIDO_PROVEEDOR",
+
+  /*
+    P-CAND-OPERATIONAL-CLOSURE-01. La Pagina de Facebook de un
+    tercero existe y la via oficial la ve, pero Page Public
+    Content Access no esta aprobado. Reutiliza el literal que
+    `socialSourceRouting.js` ya tenia declarado en
+    `OFICIAL_NO_PUEDE` desde antes de que existiera esta funcion:
+    no es un estado nuevo, es la primera vez que algo lo produce
+    de verdad. Abre el fallback de proveedor igual que
+    NO_SOPORTADO_PERSONAL lo hace para Instagram.
+  */
+  REQUIERE_PPCA: "REQUIERE_PPCA"
 });
 
 
@@ -1124,6 +1139,189 @@ export async function observarInstagram(entrada = {}) {
 
 /*
 ===========================================================
+OBSERVAR FACEBOOK — P-CAND-OPERATIONAL-CLOSURE-01
+===========================================================
+
+ROOT CAUSE que este gate cierra: `observarCandidato` nunca tuvo
+rama para Facebook. Todo lo medido de Facebook en gates
+anteriores (BENCH-02, SNAPSHOTS-01) se hizo con scripts sueltos
+que llamaban directo a `pedirAlProveedor`, fuera de este archivo
+y por tanto fuera de cualquier operacion repetible.
+
+La infraestructura oficial YA EXISTIA y no se toca aqui, solo se
+conecta: `paginasQueAdministramos` y `paginaDeTercero`
+(`instagramAdapter.js`, que a pesar del nombre aloja tambien las
+funciones de Facebook porque ambas viven en `graph.facebook.com`
+y comparten credencial).
+
+LA DISTINCION QUE ESTA FUNCION NO PUEDE PERDER
+-----------------------------------------------------------
+
+Igual que en `observarInstagram`: una Pagina PROPIA y una de
+TERCERO devuelven la misma forma de respuesta cuando la llamada
+tiene exito. Solo se distinguen cruzando el `pageId`/`username`
+contra `paginasPropias` (de `me/accounts`), nunca por la
+respuesta en si.
+
+PPCA NO ES "SIN CUENTA"
+-----------------------------------------------------------
+
+Leer la Pagina de un tercero sin Page Public Content Access
+aprobado falla con un error de permisos (Meta lo devuelve como
+403 o `OAuthException` de permisos, nunca como "no existe"). Ese
+fallo es la MISMA razon estructural que ya tiene nombre en
+`socialSourceRouting.js`: `REQUIERE_PPCA`, que abre el fallback de
+proveedor exactamente como `NO_SOPORTADO_PERSONAL` lo hace para
+Instagram personal. Confundirlo con `CUENTA_NO_RESUELTA` diria
+«no encontramos la Pagina» cuando la verdad es «la Pagina existe
+y esta via no llega sin una aprobacion que no depende de
+nosotros».
+
+PERFILES PERSONALES DE FACEBOOK
+-----------------------------------------------------------
+
+Un perfil personal (`FACEBOOK_PROFILE`) nunca es medible, ni
+oficial ni por proveedor: Meta no expone metricas publicas de
+perfiles personales por ninguna via, y scrapearlos violaria los
+terminos de cualquier proveedor serio. Se declara
+`CAPACIDAD_NO_DISPONIBLE` sin intentar nada, igual que ya se hace
+para otras incapacidades estructurales.
+===========================================================
+*/
+export async function observarFacebook(entrada = {}) {
+  const {
+    candidateId = null,
+    projectId = null,
+    cuenta = null,
+    paginasPropias = [],
+    observedAt = new Date().toISOString(),
+    fetchImpl = undefined,
+    assetType = null
+  } = entrada;
+
+  const traza = { plataformaId: "facebook", llamadas: [], unidadesConsumidas: 0 };
+
+  const registrar = (endpoint, r) => {
+    traza.llamadas.push({
+      endpoint,
+      estado: r?.estado || "ERROR",
+      unidades: r?.llamadas ?? 0,
+      httpStatus: r?.httpStatus ?? null,
+      codigoMeta: r?.codigo ?? null,
+      motivo: r?.motivo || null
+    });
+    traza.unidadesConsumidas += r?.llamadas ?? 0;
+  };
+
+  const salida = (estado, extra = {}) => ({
+    estado,
+    plataformaId: "facebook",
+    candidateId,
+    accountId: cuenta?.id || null,
+    canal: null,
+    publicaciones: [],
+    traza,
+    ...extra
+  });
+
+  if (!cuenta?.handle) {
+    return salida(ESTADOS_OBSERVACION_REAL.CUENTA_NO_RESUELTA, {
+      motivo: "la cuenta del expediente no trae handle"
+    });
+  }
+
+  if (assetType === "FACEBOOK_PROFILE") {
+    return salida(ESTADOS_OBSERVACION_REAL.CAPACIDAD_NO_DISPONIBLE, {
+      procedenciaDelEstado: "DECLARADA",
+      assetType,
+      motivo:
+        `@${cuenta.handle} esta declarada como perfil personal de Facebook. Meta no expone metricas publicas de perfiles personales por ninguna via, oficial ni de proveedor. No se pide: la respuesta ya consta.`
+    });
+  }
+
+  const limpio = String(cuenta.handle).trim().replace(/^@+/, "").toLowerCase();
+
+  const propia = (paginasPropias || []).find((p) => {
+    const username = String(p.username || "").trim().replace(/^@+/, "").toLowerCase();
+    return username === limpio || String(p.pageId || "") === limpio;
+  });
+
+  const { paginaDeTercero } = await import("../ingest/adapters/instagramAdapter.js");
+
+  const r = await paginaDeTercero(propia ? propia.pageId || limpio : limpio, fetchImpl ? { fetch: fetchImpl } : {});
+
+  registrar("GET graph.facebook.com/{page}", r);
+
+  if (r.estado === "SIN_CREDENCIAL") {
+    return salida(ESTADOS_OBSERVACION_REAL.NO_EJECUTABLE, {
+      motivo: r.motivo || "falta el token de Facebook Login"
+    });
+  }
+
+  if (r.estado === "CREDENCIAL_RECHAZADA") {
+    return salida(ESTADOS_OBSERVACION_REAL.CREDENCIAL_RECHAZADA, { motivo: r.motivo });
+  }
+
+  if (r.estado === "CREDENCIAL_EXPIRADA") {
+    return salida(ESTADOS_OBSERVACION_REAL.CREDENCIAL_EXPIRADA, { motivo: r.motivo });
+  }
+
+  /*
+    PERMISO_INSUFICIENTE / PROHIBIDO son exactamente la firma de
+    "esta Pagina existe, la vemos, pero PPCA no esta aprobado".
+    Nunca CUENTA_NO_RESUELTA -eso mentiria sobre por que fallo-.
+    Solo se clasifica asi para un TERCERO: si la propia Pagina
+    (`propia` es verdad) fallara con esto, seria un problema
+    nuestro de permisos de token, no de PPCA -se deja como
+    PERMISOS_INSUFICIENTES sin abrir fallback, porque abrir
+    proveedor para medir nuestra propia Pagina no tiene sentido-.
+  */
+  if (r.estado === "PERMISO_INSUFICIENTE" || r.estado === "PROHIBIDO") {
+    if (!propia) {
+      return salida(ESTADOS_OBSERVACION_REAL.REQUIERE_PPCA, {
+        motivo:
+          `@${cuenta.handle} existe pero requiere Page Public Content Access, que no esta aprobado. No es "sin cuenta": es una via oficial cerrada por una aprobacion pendiente de Meta.`
+      });
+    }
+    return salida(ESTADOS_OBSERVACION_REAL.PERMISOS_INSUFICIENTES, { motivo: r.motivo });
+  }
+
+  if (r.estado !== "OK") {
+    return salida(ESTADOS_OBSERVACION_REAL.ERROR, { motivo: r.motivo || "fallo no clasificado" });
+  }
+
+  const p = r.pagina || {};
+
+  const canal = {
+    pageId: p.id ?? null,
+    displayName: p.name ?? null,
+    username: p.username ?? null,
+    url: p.link ?? null,
+    estadisticasPublicas: {
+      followers: p.followers_count ?? null,
+      fans: p.fan_count ?? null
+    }
+  };
+
+  return salida(ESTADOS_OBSERVACION_REAL.OBSERVADA, {
+    canal,
+    procedenciaDelEstado: "MEDIDA",
+    assetType,
+    esPropia: !!propia,
+
+    alcanceDeLaMedicion: propia ? "MEDIDO_PROPIO_AUTORIZADO" : "MEDIDO_TERCERO",
+    notaAlcance: propia
+      ? "El token administra esta Pagina: la consulta fue sobre un activo propio. NO demuestra acceso a terceros."
+      : "Pagina que no administramos y que la via oficial SI alcanzo -caso raro sin PPCA, normalmente solo ocurre con Paginas con visibilidad ampliada-.",
+
+    notaIdentidad:
+      "La observacion NO altera la resolucion de identidad. Que una Pagina se pueda leer no dice de quien es."
+  });
+}
+
+
+/*
+===========================================================
 OBSERVAR LO QUE SE PUEDA DE UN CANDIDATO
 ===========================================================
 
@@ -1172,7 +1370,16 @@ export async function observarCandidato(entrada = {}) {
       ya existe y esta probada en `socialProviderClient.js`.
       -----------------------------------------------------------
     */
-    proveedorInstagram = null
+    proveedorInstagram = null,
+
+    /*
+      Analogo a `proveedorInstagram`, mismo contrato de dos capas
+      -P-CAND-OPERATIONAL-CLOSURE-01-. `paginasPropias` viaja
+      junto porque `observarFacebook` la necesita SIEMPRE (con o
+      sin proveedor) para distinguir propia de tercero.
+    */
+    proveedorFacebook = null,
+    paginasPropias = []
   } = entrada;
 
   const resultados = [];
@@ -1197,6 +1404,92 @@ export async function observarCandidato(entrada = {}) {
             : cap.nota,
         capacidad: cap
       });
+
+      continue;
+    }
+
+    if (cuenta.plataformaId === "facebook") {
+      const r = await observarFacebook({
+        candidateId,
+        projectId,
+        cuenta,
+        paginasPropias,
+        assetType: tiposDeActivo[cuenta.id] || null,
+        observedAt,
+        fetchImpl
+      });
+
+      unidades += r.traza?.unidadesConsumidas || 0;
+
+      let resultado = r;
+
+      /*
+        FALLBACK DE PROVEEDOR PARA FACEBOOK, SOLO CON OPT-IN.
+        Mismo diseno que Instagram: `observarFacebookConFallback`
+        decide internamente si `REQUIERE_PPCA` abre la via de
+        proveedor -reutiliza `fuenteParaActivo`, no se repite esa
+        logica aqui-.
+      */
+      if (proveedorFacebook) {
+        const fb = await observarFacebookConFallback({
+          cuenta,
+          resultadoOficial: r,
+          proveedorId: proveedorFacebook.id || "scrapecreators",
+          entorno: proveedorFacebook.entorno,
+          fetchImpl: proveedorFacebook.fetchImpl ?? fetchImpl
+        });
+
+        unidades += fb.llamadas || 0;
+
+        if (fb.usoFallback) {
+          resultado = {
+            plataformaId: "facebook",
+            candidateId,
+            accountId: cuenta?.id || null,
+
+            estado: ESTADOS_OBSERVACION_REAL.MEDIDO_PROVEEDOR,
+            canal: null,
+            canalProveedor: fb.perfil,
+            publicaciones: [],
+
+            sourceKind: fb.marca?.sourceKind || null,
+            provider: fb.marca?.providerName || null,
+            measurementStatus: fb.marca?.measurementStatus || null,
+            datoLicenciadoPorLaPlataforma:
+              fb.marca?.datoLicenciadoPorLaPlataforma ?? false,
+
+            resultadoOficial: r,
+            estadoOficialConservado:
+              fb.decision?.estadoOficialConservado || r.estado,
+
+            observedAt,
+
+            traza: {
+              plataformaId: "facebook",
+              llamadas: [
+                ...(r.traza?.llamadas || []),
+                {
+                  endpoint: (proveedorFacebook.id || "scrapecreators") + ":facebook:perfil",
+                  estado: "OK",
+                  unidades: fb.llamadas || 0
+                }
+              ],
+              unidadesConsumidas: (r.traza?.unidadesConsumidas || 0) + (fb.llamadas || 0)
+            },
+
+            motivo:
+              "la via oficial devolvio " + r.estado + "; medido por proveedor de respaldo."
+          };
+        } else if (fb.proveedorError) {
+          resultado = {
+            ...r,
+            proveedorIntentado: true,
+            proveedorError: fb.proveedorError
+          };
+        }
+      }
+
+      resultados.push(resultado);
 
       continue;
     }

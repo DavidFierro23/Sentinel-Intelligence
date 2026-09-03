@@ -59,12 +59,20 @@ export const ESTADOS_CONTEXTO_META = Object.freeze({
 
 
 /*
-  Las plataformas que necesitan este contexto. Hoy solo
-  Instagram: Facebook de terceros esta cerrado por PPCA y no se
-  pide, asi que anadirlo aqui gastaria una llamada para una via
-  que no esta abierta.
+  Las plataformas que necesitan este contexto.
+
+  Instagram: para `business_discovery`, como siempre.
+
+  Facebook -P-CAND-OPERATIONAL-CLOSURE-01-: NO para leer terceros
+  -eso sigue cerrado por PPCA y no se abre pidiendo este
+  contexto- sino para saber que Paginas administramos
+  (`paginasPropias`), la misma llamada `me/accounts` que ya se
+  hacia para Instagram. Sin esto, `observarFacebook` no puede
+  distinguir una Pagina propia de una de tercero y arriesgaria
+  el mismo falso positivo que este archivo ya evita para
+  Instagram.
 */
-const REQUIEREN_CONTEXTO = ["instagram"];
+const REQUIEREN_CONTEXTO = ["instagram", "facebook"];
 
 
 export async function contextoMetaDeObservacion(entrada = {}) {
@@ -77,6 +85,7 @@ export async function contextoMetaDeObservacion(entrada = {}) {
   const vacio = {
     idParaBusinessDiscovery: null,
     cuentasPropias: [],
+    paginasPropias: [],
     llamadas: 0
   };
 
@@ -133,10 +142,19 @@ export async function contextoMetaDeObservacion(entrada = {}) {
     .filter(Boolean)
     .map((h) => String(h).trim().replace(/^@+/, "").toLowerCase());
 
+  /*
+    Paginas de Facebook que administramos, tal cual las devuelve
+    `paginasQueAdministramos` -pageId/nombre/username-. Es lo que
+    `observarFacebook` necesita para distinguir propia de tercero
+    sin repetir la llamada a `me/accounts`.
+  */
+  const paginasPropias = r.paginas || [];
+
   if (!r.idParaBusinessDiscovery) {
     return {
       ...vacio,
       cuentasPropias,
+      paginasPropias,
       estado: ESTADOS_CONTEXTO_META.SIN_VINCULO_INSTAGRAM,
       llamadas: r.llamadas || 0,
       motivo: r.requisitoDelVinculo
@@ -148,6 +166,7 @@ export async function contextoMetaDeObservacion(entrada = {}) {
 
     idParaBusinessDiscovery: r.idParaBusinessDiscovery,
     cuentasPropias,
+    paginasPropias,
 
     llamadas: r.llamadas || 0,
     paginasAdministradas: (r.paginas || []).length,

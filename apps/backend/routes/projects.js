@@ -1357,6 +1357,16 @@ router.post("/:proyectoId/candidatos/:candidatoId/observar", async (req, res) =>
         ? { id: "scrapecreators", entorno: process.env }
         : null;
 
+    /*
+      P-CAND-OPERATIONAL-CLOSURE-01. Mismo opt-in en dos capas que
+      Instagram: el cliente lo pide, el servidor decide si de
+      verdad sale a la red.
+    */
+    const proveedorFacebook =
+      req.body?.proveedorFacebook === true
+        ? { id: "scrapecreators", entorno: process.env }
+        : null;
+
     const r = await observarCandidato({
       candidateId: candidatoId,
       projectId: proyectoId,
@@ -1366,9 +1376,11 @@ router.post("/:proyectoId/candidatos/:candidatoId/observar", async (req, res) =>
 
       idParaBusinessDiscovery: contextoMeta.idParaBusinessDiscovery,
       cuentasPropias: contextoMeta.cuentasPropias,
+      paginasPropias: contextoMeta.paginasPropias || [],
       tiposDeActivo,
 
-      proveedorInstagram
+      proveedorInstagram,
+      proveedorFacebook
     });
 
     /*
