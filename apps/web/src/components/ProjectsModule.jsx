@@ -7,7 +7,6 @@ import {
   Landmark,
   Play,
   BarChart3,
-  Info,
   Loader2,
   Check,
   MoreHorizontal,
@@ -21,16 +20,44 @@ import {
 import CandidateIdentityCard from "./CandidateIdentityCard";
 
 /*
-  El MISMO componente que pinta la fotografia en la ficha. Se
-  reutiliza a proposito: dos componentes distintos para la misma
-  imagen acabarian mostrando cosas distintas.
+  `CandidatePhoto` ya no se importa aqui: la unica pantalla de
+  este modulo que pintaba una fotografia fuera de la ficha era
+  la comparacion, y ahora vive en `ComparacionEstrategica`, que
+  usa EL MISMO componente. Sigue habiendo uno solo.
 */
-import CandidatePhoto from "./CandidatePhoto";
 
 import BaselineT0Panel from "./BaselineT0Panel";
 import CandidateIdentityForm from "./CandidateIdentityForm";
 import AccountIntelligencePanel from "./AccountIntelligencePanel";
-import { METRICA, fechaLocal } from "../services/identidadCandidato";
+/*
+  `METRICA` se consume ahora donde corresponde: en la ficha de
+  identidad, que es el segundo nivel. Este modulo usa
+  `COBERTURA_DE_DATOS`, que nombra el mismo indicador sin
+  volverlo a definir.
+*/
+import { fechaLocal } from "../services/identidadCandidato";
+
+/*
+  CANDIDATE-STRATEGIC-UX-01. Las seis dimensiones estrategicas y
+  la comparacion por dimension. El traductor NO calcula nada
+  nuevo: lee campos que `/linea-base` y `/inteligencia` ya
+  devolvian y que esta ficha no consumia.
+*/
+import DimensionesStrip from "../candidato/DimensionesStrip";
+import ComparacionEstrategica from "../candidato/ComparacionEstrategica";
+import SeccionesNav from "../candidato/SeccionesNav";
+import SeccionEnPreparacion from "../candidato/SeccionEnPreparacion";
+import { SECCION_POR_DEFECTO, seccionPorId } from "../candidato/secciones";
+import {
+  dimensionesDeCandidato,
+  coberturaDeDatos,
+  COBERTURA_DE_DATOS,
+  DISCLAIMER,
+  PLATAFORMAS_PRINCIPALES,
+  ETIQUETA_PLATAFORMA,
+  activosAdicionales,
+  NOTA_ACTIVOS_ADICIONALES
+} from "../candidato/dimensionesEstrategicas";
 
 /*
 ===========================================================
@@ -133,13 +160,14 @@ function contarProyectos(n) {
 }
 
 
-function colorCobertura(p) {
-  if (p >= 90) return "#22C55E";
-  if (p >= 70) return "#0B5FFF";
-  if (p >= 50) return "#F59E0B";
-  if (p >= 30) return "#F97316";
-  return "#EF4444";
-}
+/*
+  `colorCobertura` vivia aqui: pintaba de verde al candidato con
+  mas expediente documentado y de rojo al que tenia menos.
+
+  Se elimina con el ranking que la usaba (§8). Un semaforo sobre
+  la completitud de nuestro propio trabajo se leia como un
+  semaforo sobre el candidato.
+*/
 
 /*
 -----------------------------------------------------------
@@ -606,8 +634,41 @@ export default function ProjectsModule() {
   /* Account Intelligence — fase 1. */
   const [inteligencia, setInteligencia] = useState(null);
 
-  /* Linea base T0. Se pide solo cuando se abre: no sale a la red al pintar. */
+  /*
+    LINEA BASE T0.
+
+    CANDIDATE-STRATEGIC-UX-01 la pasa a carga automatica. Antes
+    se pedia solo al pulsar un boton al final de la pagina, y
+    ahi estaba el defecto de producto: la inteligencia
+    estrategica —estado por plataforma, comparabilidad,
+    momentum— quedaba enterrada, mientras «Solidez 68/100» era
+    el titular de cada ficha.
+
+    Se puede cargar sin pensarlo porque se ARMA DESDE EL LAKE:
+    ~25 ms medidos, cero peticiones externas, cero cuota.
+  */
   const [lineaBase, setLineaBase] = useState(null);
+
+  /* El panel detallado sigue siendo opcional; el dato ya no. */
+  const [verLineaBase, setVerLineaBase] = useState(false);
+
+  /*
+    Activos por candidato: distingue las cinco plataformas de la
+    metodologia de los activos adicionales declarados —LinkedIn,
+    web—. Tambien local.
+  */
+  const [activosMeta, setActivosMeta] = useState(null);
+
+  /*
+    Account Intelligence por candidato. Se guarda por id porque
+    conversacion, medios y territorio se calculan por candidato
+    y no vienen en la linea base. NO se precarga: son ~400 KB por
+    candidato y el analista mira de uno en uno.
+  */
+  const [intelPorCandidato, setIntelPorCandidato] = useState({});
+
+  /* Seccion abierta dentro de Candidate — §17. */
+  const [seccion, setSeccion] = useState(SECCION_POR_DEFECTO);
 
   const [fotoIntentos, setFotoIntentos] = useState(null);
 
@@ -668,6 +729,29 @@ export default function ProjectsModule() {
         setActores(j.actores || []);
 
         fijarProyectoEnUrl(id);
+
+        /*
+          LA VISTA ESTRATEGICA SE CARGA CON EL PROYECTO.
+
+          Las dos peticiones leen del Lake y no salen a la red.
+          Van despues de pintar candidatos y cada una falla por
+          separado: si la linea base falla, la lista de
+          candidatos sigue en pantalla con sus dimensiones en
+          «sin calcular», que es la verdad.
+        */
+        pedir(`/${id}/linea-base`)
+          .then((b) => setLineaBase(b))
+          .catch(() => setLineaBase(null));
+
+        pedir(`/${id}/cobertura-meta`)
+          .then((m) => setActivosMeta(m))
+          .catch(() => setActivosMeta(null));
+
+        setIntelPorCandidato({});
+
+        setVerLineaBase(false);
+
+        setSeccion(SECCION_POR_DEFECTO);
       } catch (e) {
         setAviso(e.message);
 
@@ -1005,6 +1089,13 @@ export default function ProjectsModule() {
       );
 
       setInteligencia(j);
+
+      /*
+        La misma respuesta alimenta las dimensiones de la ficha.
+        Se guarda por id para no volver a pedirla: es la peticion
+        mas pesada del modulo (~400 KB) y ya la tenemos.
+      */
+      setIntelPorCandidato((prev) => ({ ...prev, [candidatoId]: j }));
     } catch (e) {
       setAviso(e.message);
     } finally {
@@ -1092,6 +1183,8 @@ export default function ProjectsModule() {
       const j = await pedir(`/${proyecto.id}/linea-base`);
 
       setLineaBase(j);
+
+      setVerLineaBase(true);
     } catch (e) {
       setAviso(e.message);
     } finally {
@@ -1532,13 +1625,52 @@ export default function ProjectsModule() {
      VISTA DEL PROYECTO
      ============================================================= */
 
-  const comparables = candidatos
+  /*
+    =============================================================
+    LA VISTA ESTRATEGICA — CANDIDATE-STRATEGIC-UX-01
+    =============================================================
+
+    Tres lecturas por candidato, cada una de su fuente:
+
+      linea base      estado por plataforma, comparabilidad
+      cobertura-meta  activos, y cuales quedan fuera de la matriz
+      inteligencia    conversacion, medios, territorio, historico
+
+    Ninguna se combina con otra en un numero.
+  */
+  const baseDe = (id) =>
+    (lineaBase?.candidatos || []).find((b) => b.candidateId === id) || null;
+
+  const activosDe = (id) =>
+    (activosMeta?.porCandidato || []).find((a) => a.candidateId === id) || null;
+
+  const dimensionesDe = (c) =>
+    dimensionesDeCandidato({
+      base: baseDe(c.id),
+      inteligencia: intelPorCandidato[c.id] || null,
+      momentum: lineaBase?.momentum || null
+    });
+
+  /*
+    SIN `sort`, Y ES DELIBERADO.
+
+    Lo que habia aqui ordenaba por cobertura descendente y
+    pintaba una barra de progreso por tramos de color. El
+    disclaimer decia que no era un ranking; la forma decia lo
+    contrario, y la forma gana.
+
+    El orden es el que declaro el analista.
+  */
+  const filasComparacion = candidatos
+    .filter((c) => baseDe(c.id))
     .map((c) => ({
-      ...c,
-      cobertura: c.resumen?.huellaDigital ?? c.cobertura ?? null,
-      cuentas: c.resumen?.cuentas ?? c.cuentas ?? 0
-    }))
-    .filter((c) => c.cobertura != null);
+      candidateId: c.id,
+      nombre: c.nombre,
+      foto: c.foto || null,
+      comparabilidad: baseDe(c.id)?.comparabilidad || null,
+      dimensiones: dimensionesDe(c),
+      coberturaDeDatos: coberturaDeDatos(c)
+    }));
 
   const actoresActivos = actores.filter((a) => a.incluirEnComparativo);
 
@@ -1602,9 +1734,40 @@ export default function ProjectsModule() {
         </div>
       )}
 
+      {/*
+        DISCLAIMER — §18.
+
+        Visible y sin alarmismo: es una precision metodologica,
+        no una advertencia de peligro. Va arriba, una vez, en
+        lugar de repetirse en cada bloque.
+      */}
+      <div
+        style={{
+          color: "var(--sentinel-texto-tenue)",
+          fontSize: "10.5px",
+          lineHeight: 1.7,
+          marginTop: "10px"
+        }}
+      >
+        {DISCLAIMER}
+      </div>
+
+      {/* SUBNAVEGACION — §17 */}
+
+      <SeccionesNav seccion={seccion} onSeleccionar={setSeccion} />
+
+      {seccionPorId(seccion).estado === "EN_PREPARACION" && (
+        <SeccionEnPreparacion seccion={seccionPorId(seccion)} />
+      )}
+
       {/* CANDIDATOS */}
 
-      <div style={{ marginTop: "26px" }}>
+      <div
+        style={{
+          marginTop: "26px",
+          display: seccion === "resumen" ? "block" : "none"
+        }}
+      >
         <div style={etiqueta}>
           <Users size={13} />
           Candidatos ({candidatos.length})
@@ -1656,9 +1819,23 @@ export default function ProjectsModule() {
                   ESTADO PERSISTENTE. Viene del backend, derivado de
                   que exista expediente. Si ya se investigo, el boton
                   principal deja de invitar a investigar.
+
+                  DECIA «Investigación completada» — §19.
+
+                  Y eso era enganoso, porque Candidate ya no hace una
+                  investigacion que termina: hace observacion
+                  longitudinal. El backend sigue reobservando cuentas
+                  y acumulando snapshots despues de ese estado, asi
+                  que «completada» sugeria que Sentinel habia dejado
+                  de mirar.
+
+                  El estado real que sostiene el dato es «hay
+                  expediente inicial y la observacion continua». Se
+                  dice asi.
                 */}
                 {c.estadoInvestigacion === "completada" && (
                   <span
+                    title="Existe expediente inicial y la observación continúa: Sentinel sigue reobservando estas cuentas."
                     style={{
                       color: "#22C55E",
                       fontSize: "10.5px",
@@ -1667,7 +1844,7 @@ export default function ProjectsModule() {
                       padding: "3px 10px"
                     }}
                   >
-                    ● Investigación completada
+                    ● Observación activa
                   </span>
                 )}
 
@@ -1697,37 +1874,22 @@ export default function ProjectsModule() {
                   )}
 
                 {/*
-                  LA METRICA, CON SU NOMBRE Y SU LIMITE.
+                  AQUI ESTABA «Solidez 68/100» — §1 y §7.
 
-                  Antes era un «42 %» suelto junto al nombre de un
-                  candidato, y en rojo cuando era bajo. Asi se lee
-                  como respaldo o como caida, y no mide ninguna de
-                  las dos cosas: mide cuanto expediente hay
-                  documentado. Se nombra y se acota.
+                  Era el unico numero grande de la ficha, en cian,
+                  junto al nombre del candidato. Un estratega leia
+                  «68 % de algo» y la pregunta inevitable era «¿eso
+                  significa que este candidato esta mejor?».
+
+                  No significa eso. Mide cuanto expediente digital
+                  observable tiene Sentinel: es un indicador de
+                  NUESTRO trabajo, no del candidato.
+
+                  El calculo NO se toca. Baja al segundo nivel de la
+                  ficha, con el nombre «Cobertura de datos» y su
+                  aclaracion. Lo que ocupa este sitio ahora son las
+                  seis dimensiones estrategicas.
                 */}
-                {(c.resumen?.huellaDigital ?? c.cobertura) != null && (
-                  <span
-                    title={METRICA.aclaracion}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "baseline",
-                      gap: "5px",
-                      color: "var(--sentinel-texto-suave)",
-                      fontSize: "10.5px"
-                    }}
-                  >
-                    {METRICA.abreviado}
-                    <strong
-                      style={{
-                        color: "var(--sentinel-cyan)",
-                        fontFamily: "monospace",
-                        fontSize: "14px"
-                      }}
-                    >
-                      {c.resumen?.huellaDigital ?? c.cobertura}/100
-                    </strong>
-                  </span>
-                )}
 
                 <button
                   className="sentinel-boton"
@@ -1754,7 +1916,7 @@ export default function ProjectsModule() {
                   title={
                     c.estadoInvestigacion === "completada"
                       ? "Vuelve a consultar los proveedores y consume cuota"
-                      : "Lanza la investigación"
+                      : "Lanza la primera observación del candidato"
                   }
                   style={{
                     marginLeft: "auto",
@@ -1772,13 +1934,45 @@ export default function ProjectsModule() {
                   ) : (
                     <>
                       <Play size={12} />
+                      {/*
+                        DECIA «Actualizar investigación» — §20.
+
+                        Lo que ejecuta este boton es una nueva
+                        OBSERVACION: vuelve a leer las cuentas y
+                        escribe snapshots nuevos. El comportamiento
+                        del backend no cambia; la etiqueta pasa a
+                        decir lo que hace.
+                      */}
                       {c.estadoInvestigacion === "completada"
-                        ? "Actualizar investigación"
-                        : "Investigar candidato"}
+                        ? "Actualizar observación"
+                        : "Observar candidato"}
                     </>
                   )}
                 </button>
               </div>
+
+              {/*
+                ================================================
+                PRIMER NIVEL: QUE ESTA PASANDO — §3 y §16
+                ================================================
+
+                Las seis dimensiones, inmediatamente debajo del
+                nombre. Este es el sitio que ocupaba «Solidez
+                68/100».
+
+                Presencia, cambio y momentum salen de la linea
+                base, que ya esta cargada. Conversacion, medios y
+                territorio se calculan por candidato, asi que
+                hasta que se abra su inteligencia aparecen como
+                «sin calcular» —no como «sin datos», que seria
+                afirmar algo que no hemos mirado—.
+              */}
+              <DimensionesStrip
+                dimensiones={dimensionesDe(c)}
+                onVerEvidencias={
+                  intelPorCandidato[c.id] ? () => abrirInteligencia(c.id) : null
+                }
+              />
 
               {/* CUENTA DE REFERENCIA */}
               {(c.cuentasReferencia || []).length > 0 && (
@@ -1814,20 +2008,104 @@ export default function ProjectsModule() {
                 </div>
               )}
 
-              {c.resumen && (
+              {/*
+                ================================================
+                SEGUNDO NIVEL: LO TECNICO — §7, §16 y §21
+                ================================================
+
+                Todo lo que describe el estado de NUESTRO
+                expediente, junto y en gris. Incluye la cobertura
+                de datos, que es de donde venia el «68 %».
+              */}
+              {(c.resumen || activosDe(c.id)) && (
                 <div
                   style={{
-                    color: "var(--sentinel-texto-suave)",
-                    fontSize: "11px",
-                    marginTop: "10px",
-                    lineHeight: 1.65
+                    marginTop: "12px",
+                    paddingTop: "10px",
+                    borderTop: "1px solid var(--sentinel-borde)",
+                    display: "flex",
+                    gap: "16px",
+                    flexWrap: "wrap",
+                    alignItems: "baseline",
+                    color: "var(--sentinel-texto-tenue)",
+                    fontSize: "10.5px",
+                    lineHeight: 1.7
                   }}
                 >
-                  +{c.resumen.cuentas} cuentas · +{c.resumen.medios} medios · +
-                  {c.resumen.evidenciasWeb} evidencias web
-                  {c.resumen.actualizadoEn
-                    ? ` · última actualización ${String(c.resumen.actualizadoEn).slice(0, 10)}`
-                    : ""}
+                  {/*
+                    ACTIVOS POR PLATAFORMA — §5.
+
+                    Un candidato puede tener N activos por
+                    plataforma y encontrar uno no cierra el
+                    discovery. Se muestran por plataforma en lugar
+                    de un total, porque «9 activos» esconde que
+                    dos de ellos son de Facebook.
+
+                    Y 7 cuentas NO es mejor candidato: es solo mas
+                    superficie observable.
+                  */}
+                  {activosDe(c.id) && (
+                    <span title="Activos observados en las cinco plataformas de la metodología. Un candidato puede tener varios por plataforma.">
+                      {PLATAFORMAS_PRINCIPALES.map((p) => {
+                        const n = (activosDe(c.id).porPlataforma?.[p] || []).length;
+
+                        return n ? `${ETIQUETA_PLATAFORMA[p]} ${n}` : null;
+                      })
+                        .filter(Boolean)
+                        .join(" · ") || "sin activos en las plataformas principales"}
+                    </span>
+                  )}
+
+                  {/*
+                    ACTIVOS ADICIONALES — §21.
+
+                    LinkedIn y la web existen y NO se borran. Pero
+                    van aparte: no tienen medicion equivalente, asi
+                    que sumarlos a la matriz de cinco plataformas
+                    daria una cobertura que nadie ha medido.
+                  */}
+                  {activosDe(c.id) &&
+                    activosAdicionales(activosDe(c.id).porPlataforma).length > 0 && (
+                      <span
+                        title={NOTA_ACTIVOS_ADICIONALES}
+                        style={{ color: "var(--sentinel-texto-suave)" }}
+                      >
+                        adicionales:{" "}
+                        {activosAdicionales(activosDe(c.id).porPlataforma)
+                          .map((a) => `${a.etiqueta} ${a.activos}`)
+                          .join(" · ")}
+                      </span>
+                    )}
+
+                  {c.resumen?.evidenciasWeb != null && (
+                    <span>{c.resumen.evidenciasWeb} evidencias web</span>
+                  )}
+
+                  {c.resumen?.actualizadoEn && (
+                    <span title={c.resumen.actualizadoEn}>
+                      última observación{" "}
+                      {fechaLocal(c.resumen.actualizadoEn, proyecto)}
+                    </span>
+                  )}
+
+                  {/*
+                    COBERTURA DE DATOS. El mismo calculo que antes
+                    se llamaba «Solidez» y ocupaba el titular:
+                    ahora es una linea gris entre los datos
+                    tecnicos, con su aclaracion en el `title` y en
+                    el pie de la seccion.
+                  */}
+                  {coberturaDeDatos(c) != null && (
+                    <span
+                      title={`${COBERTURA_DE_DATOS.nombre}: ${COBERTURA_DE_DATOS.explicacion}`}
+                      style={{ marginLeft: "auto", whiteSpace: "nowrap" }}
+                    >
+                      {COBERTURA_DE_DATOS.nombre}{" "}
+                      <strong style={{ fontFamily: "monospace", fontWeight: 500 }}>
+                        {coberturaDeDatos(c)}%
+                      </strong>
+                    </span>
+                  )}
                 </div>
               )}
 
@@ -1955,7 +2233,12 @@ export default function ProjectsModule() {
 
       {/* ACTORES DE REFERENCIA */}
 
-      <div style={{ marginTop: "30px" }}>
+      <div
+        style={{
+          marginTop: "30px",
+          display: seccion === "resumen" ? "block" : "none"
+        }}
+      >
         <div style={etiqueta}>
           <Landmark size={13} />
           Actores de referencia — opcional
@@ -2169,138 +2452,84 @@ export default function ProjectsModule() {
         )}
       </div>
 
-      {/* COMPARACIÓN — candidato vs candidato */}
+      {/* COMPARACIÓN — candidato vs candidato, dimensión por dimensión */}
 
-      <div style={{ marginTop: "30px" }}>
+      <div
+        style={{
+          marginTop: "30px",
+          display: seccion === "comparacion" ? "block" : "none"
+        }}
+      >
         <div style={etiqueta}>
           <BarChart3 size={13} />
           Comparación de candidatos
         </div>
 
-        {comparables.length < 2 ? (
-          <div style={{ ...caja, color: "var(--sentinel-texto-tenue)", fontSize: "12px" }}>
-            Disponible cuando haya al menos dos candidatos investigados.
-            {comparables.length === 1 ? " Hay uno." : ""}
-          </div>
-        ) : (
-          <div style={caja}>
-            {comparables
-              .slice()
-              .sort((a, b) => (b.cobertura || 0) - (a.cobertura || 0))
-              .map((c) => (
-                <div
-                  key={c.id}
-                  style={{
-                    marginBottom: "12px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "11px"
-                  }}
-                >
-                  {/*
-                    LA MISMA fotografia que la ficha individual.
-                    `c.foto` es el campo persistido del candidato:
-                    esta pantalla lo CONSUME, no lo copia ni lo
-                    vuelve a guardar. Si se cambia en «Editar
-                    identidad», aqui aparece la nueva al recargar.
+        <div
+          style={{
+            color: "var(--sentinel-texto-tenue)",
+            fontSize: "10.5px",
+            lineHeight: 1.7,
+            marginTop: "-6px",
+            marginBottom: "10px"
+          }}
+        >
+          Dimensión por dimensión. No hay una cifra única por candidato ni un
+          orden de posición.
+        </div>
 
-                    `CandidatePhoto` valida la URL antes de
-                    pintarla y cae a iniciales si no es una imagen
-                    o si la carga falla: la ausencia de foto no
-                    puede romper la comparacion.
-                  */}
-                  <CandidatePhoto
-                    foto={c.foto || null}
-                    nombre={c.nombre}
-                    tamano={42}
-                    radio="50%"
-                  />
-
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        color: "var(--sentinel-texto)",
-                        fontSize: "12.5px",
-                        gap: "10px"
-                      }}
-                    >
-                      <span
-                        style={{
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap"
-                        }}
-                      >
-                        {c.nombre}
-                      </span>
-
-                      <span style={{ fontFamily: "monospace", whiteSpace: "nowrap" }}>
-                        {c.cobertura}% · {c.cuentas} cuentas
-                      </span>
-                    </div>
-
-                    <div
-                      style={{
-                        height: "6px",
-                        background: "var(--sentinel-borde)",
-                        borderRadius: "3px",
-                        marginTop: "5px"
-                      }}
-                    >
-                      <div
-                        style={{
-                          height: "100%",
-                          width: `${c.cobertura}%`,
-                          background: colorCobertura(c.cobertura),
-                          borderRadius: "3px"
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
-
-            <div
-              style={{
-                display: "flex",
-                gap: "9px",
-                alignItems: "flex-start",
-                color: "#FCD34D",
-                fontSize: "10.5px",
-                lineHeight: 1.65,
-                marginTop: "6px",
-                paddingTop: "10px",
-                borderTop: "1px solid var(--sentinel-borde)"
-              }}
-            >
-              <Info size={13} style={{ flexShrink: 0, marginTop: "2px" }} />
-
-              <span>
-                Estas cifras miden completitud de investigación y presencia
-                digital documentada. No son intención de voto, ni aprobación, ni
-                probabilidad electoral, y no hay «mejor» ni «peor» candidato en
-                estos datos.
-              </span>
-            </div>
-          </div>
-        )}
+        <ComparacionEstrategica filas={filasComparacion} />
       </div>
+
+      {/*
+        =============================================================
+        LO QUE HABIA AQUI — §8
+        =============================================================
+
+        Una lista de candidatos ordenada por `cobertura`
+        descendente, con barra de progreso y color por tramos
+        (verde >=70, ambar >=50, rojo <30):
+
+            Juan Cristóbal Lloret  68%  ████████████
+            Pedro Palacios         68%  ████████████
+            Yaku Pérez             63%  ███████████
+            Paúl Carrasco          40%  ███████
+
+        Funcionaba como ranking politico. Llevaba disclaimer, pero
+        el orden y la barra decian otra cosa, y eso es lo que se
+        lee primero.
+
+        Ademas lo que ordenaba la lista era la completitud del
+        expediente: Lloret salia arriba porque se le habia
+        observado 22 veces contra 1 de Palacios. Es decir, la
+        posicion medía cuanto trabajo habiamos hecho nosotros.
+
+        `colorCobertura` desaparece con ella: era la funcion que
+        pintaba de rojo a los candidatos peor documentados.
+
+        No se sustituye por otro indice compuesto. Hoy no hay
+        metodologia que lo sostenga, y el propio backend ya se
+        niega a producirlo: `presencia.indice` llega con
+        `disponible:false` y cinco requisitos sin cumplir.
+        =============================================================
+      */}
+
 
       {/* LÍNEA BASE DIGITAL T0 — P-CAND-BENCH-01 */}
 
-      <div style={{ marginTop: "26px" }}>
+      <div
+        style={{
+          marginTop: "26px",
+          display: seccion === "redes" ? "block" : "none"
+        }}
+      >
         <div style={etiqueta}>
           <BarChart3 size={13} />
           Línea base digital · T0
         </div>
 
-        {lineaBase ? (
-          <BaselineT0Panel
-            datos={lineaBase}
-            onCerrar={() => setLineaBase(null)}
-          />
+        {verLineaBase && lineaBase ? (
+          <BaselineT0Panel datos={lineaBase} onCerrar={() => setVerLineaBase(false)} />
         ) : (
           <div style={caja}>
             <div
@@ -2310,18 +2539,29 @@ export default function ProjectsModule() {
                 lineHeight: 1.7
               }}
             >
-              Lo observado en X y YouTube por candidato, con su cobertura de
-              medición. Se arma desde lo ya persistido:{" "}
-              <strong>no consume cuota de ningún proveedor</strong>.
+              {/*
+                DECIA «Lo observado en X y YouTube» — §4.
+
+                Se quedo escrito cuando esas eran las dos
+                plataformas legibles. El backend mide las cinco
+                desde hace varios gates —`PLATAFORMAS_OBJETIVO` en
+                `candidateBaseline.js`— y la frase seguia
+                describiendo una limitacion que ya no existe.
+              */}
+              Lo observado por candidato en Facebook, Instagram, TikTok, X y
+              YouTube, plataforma por plataforma. Se arma desde lo ya
+              persistido: <strong>no consume cuota de ningún proveedor</strong>.
             </div>
 
             <button
               className="sentinel-boton"
-              onClick={abrirLineaBase}
+              onClick={() =>
+                lineaBase ? setVerLineaBase(true) : abrirLineaBase()
+              }
               disabled={ocupado === "linea-base"}
               style={{ marginTop: "10px", fontSize: "11px" }}
             >
-              {ocupado === "linea-base" ? "Cargando…" : "Ver línea base digital"}
+              {ocupado === "linea-base" ? "Cargando…" : "Ver detalle por plataforma"}
             </button>
           </div>
         )}
@@ -2330,7 +2570,12 @@ export default function ProjectsModule() {
       {/* ANÁLISIS SECUNDARIO — solo si hay actores activados */}
 
       {actoresActivos.length > 0 && (
-        <div style={{ marginTop: "30px" }}>
+        <div
+          style={{
+            marginTop: "30px",
+            display: seccion === "comparacion" ? "block" : "none"
+          }}
+        >
           <div style={etiqueta}>
             <BarChart3 size={13} />
             Análisis secundario · actor ↔ candidatos

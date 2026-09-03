@@ -572,10 +572,31 @@ LA METRICA NO ES POLITICA
 
 bloque("la métrica se nombra y se acota");
 
-await t("tiene nombre técnico, no «huella» a secas", () => {
+/*
+  FIXTURE ACTUALIZADO EN CANDIDATE-STRATEGIC-UX-01.
+
+  Este test fijaba `nombre === "Solidez del expediente"` y
+  `abreviado === "Solidez"`. Los dos cambian a proposito, y el
+  motivo es lo que pasaba al leerlo en pantalla: abreviado a
+  «Solidez» junto al nombre de un candidato y con un numero
+  grande al lado, se leia como solidez DEL CANDIDATO. La
+  pregunta que generaba era «¿68 % de que? ¿este va mejor?».
+
+  El invariante que importa NO era el nombre concreto: era que
+  la metrica se nombre por lo que mide y acote lo que no mide.
+  Eso se conserva y se refuerza —ahora tambien tiene que negar
+  el desempeno electoral—.
+
+  La formula sigue intacta: cambia el nombre, no el calculo.
+*/
+await t("se nombra por lo que mide, no por el candidato", () => {
+  const n = ui.METRICA.nombre;
+
   return (
-    ui.METRICA.nombre === "Solidez del expediente" &&
-    ui.METRICA.abreviado === "Solidez"
+    n === "Cobertura de datos" &&
+    ui.METRICA.abreviado === "Cobertura de datos" &&
+    /* Y no vuelve a nombrarse por una propiedad de la persona. */
+    !/solidez|fuerza|apoyo|respaldo/i.test(n)
   );
 });
 
@@ -585,7 +606,9 @@ await t("declara explícitamente lo que NO mide", () => {
   return (
     a.includes("No representa intención de voto") &&
     a.includes("popularidad") &&
-    a.includes("apoyo ciudadano")
+    a.includes("apoyo ciudadano") &&
+    /* Anadido por el gate: la lectura que mas se repetia. */
+    a.includes("No mide desempeño electoral")
   );
 });
 

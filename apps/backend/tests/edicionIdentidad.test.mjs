@@ -679,9 +679,18 @@ await t("T25b: lo persistido sigue en UTC", async () => {
 });
 
 await t("la métrica sigue sin ser política", () => {
+  /*
+    El nombre cambia en CANDIDATE-STRATEGIC-UX-01 —de «Solidez
+    del expediente» a «Cobertura de datos»— y el motivo esta en
+    `identidadCandidato.js`. Lo que este test protege no es la
+    cadena, es que la metrica no se lea como una propiedad
+    politica del candidato: eso se conserva y se comprueba mejor
+    que antes.
+  */
   return (
-    ui.METRICA.nombre === "Solidez del expediente" &&
-    ui.METRICA.aclaracion.includes("No representa intención de voto")
+    ui.METRICA.nombre === "Cobertura de datos" &&
+    ui.METRICA.aclaracion.includes("No representa intención de voto") &&
+    !/intención de voto|aprobación|popularidad|apoyo/i.test(ui.METRICA.nombre)
   );
 });
 

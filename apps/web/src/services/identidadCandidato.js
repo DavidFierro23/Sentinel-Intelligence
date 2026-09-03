@@ -199,11 +199,35 @@ que son 40 de los 100 puntos.
 La formula NO se toca aqui. Lo que cambia es como se presenta.
 -----------------------------------------------------------
 */
+/*
+-----------------------------------------------------------
+CANDIDATE-STRATEGIC-UX-01 — DE «SOLIDEZ» A «COBERTURA DE DATOS»
+
+La formula sigue intacta. Cambia el nombre, y el motivo es lo
+que pasaba al leerlo en pantalla.
+
+«Solidez del expediente» describe correctamente lo que mide,
+pero abreviado a «Solidez» junto al nombre de un candidato y
+con un numero grande al lado, se leia como solidez DEL
+CANDIDATO. Un estratega preguntaba «¿68 % de que? ¿este va
+mejor?».
+
+«Cobertura de datos» no admite esa lectura: nombra un
+indicador de lo que Sentinel tiene, no una propiedad de la
+persona. Es el mismo cambio de encuadre que Media ya habia
+hecho al separar cobertura de medicion de presencia observada.
+
+El nombre vive en un solo sitio a proposito: esta constante la
+consumen la ficha de identidad y la comparacion, y tenerlo
+duplicado fue lo que permitio que el «68 %» apareciera en dos
+formatos distintos.
+-----------------------------------------------------------
+*/
 export const METRICA = Object.freeze({
-  nombre: "Solidez del expediente",
-  abreviado: "Solidez",
+  nombre: "Cobertura de datos",
+  abreviado: "Cobertura de datos",
   aclaracion:
-    "Esta métrica refleja amplitud y corroboración del expediente digital observado. No representa intención de voto, popularidad ni apoyo ciudadano.",
+    "Indica cuánto del expediente digital observable dispone Sentinel. No mide desempeño electoral. No representa intención de voto, aprobación, popularidad ni apoyo ciudadano.",
   componentes: [
     "Cobertura de plataformas (40)",
     "Solidez de la mejor correspondencia (30)",
