@@ -267,6 +267,32 @@ export function normalizarPost(item, contexto = {}) {
 
   const ev = normalizarEvidencia(bruto, {
     providerId: ID,
+
+    /*
+      PROCEDENCIA DE CONSULTA — TERRITORIAL-COLLECTOR-EXPANSION-01
+
+      Faltaba. `buscarMenciones` ya recibia `queryType` y
+      `queryLabel` del colector y los tiraba aqui: no llegaban a
+      `normalizarEvidencia`, que es quien construye
+      `provenance`. Resultado medido: las 47 evidencias de X del
+      corpus se persistieron con `queryLabel: null`, mientras las
+      21 de YouTube si lo traian, porque su adapter si los pasa.
+
+      No se puede auditar de que consulta salio una pieza si la
+      consulta no viaja con ella.
+
+      Es aditivo: si el llamador no los pasa —como hace Candidate
+      sobre cuentas conocidas, donde no hay consulta— quedan en
+      null igual que antes.
+
+      Y la regla que no cambia: esto es TRAZABILIDAD, no
+      geografia. La consulta nunca entra en las senales
+      territoriales.
+    */
+    query: contexto.query || null,
+    queryType: contexto.queryType || null,
+    queryLabel: contexto.queryLabel || null,
+
     observedAt: contexto.observedAt || null,
     politicaAlmacenamiento: POLITICAS_ALMACENAMIENTO.EXTRACTO,
     conservarBruto: false
@@ -584,6 +610,11 @@ export async function buscarMenciones(consulta, opciones = {}) {
 
         return normalizarPost(it, {
           observedAt: opciones.observedAt || null,
+
+          /* Se propaga la procedencia de la consulta hasta la evidencia. */
+          query: consulta,
+          queryType: opciones.queryType || null,
+          queryLabel: opciones.queryLabel || null,
 
           /*
             `userId` es lo que hace que `normalizarPost` emita
