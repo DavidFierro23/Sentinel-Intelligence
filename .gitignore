@@ -19,3 +19,10 @@ coverage/
 # Knowledge Lake — datos locales, no se versionan
 apps/backend/data/
 data/knowledge-lake/
+
+# Logs del wrapper de backup programado — operativos, locales,
+# nunca contienen secretos pero tampoco pertenecen al historial
+apps/backend/scripts/backup/logs/
+
+# Staging temporal del backup offsite (se regenera en cada corrida)
+apps/backend/.backup-staging/
