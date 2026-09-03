@@ -16,6 +16,8 @@ import x from "../services/ingest/adapters/xAdapter.js";
 import {
   indiceDeAmbito,
   clasificarAlcance,
+  resumirAlcance,
+  esTerminoAmbiguo,
   ALCANCES
 } from "../services/territorial/territorialScope.js";
 
@@ -702,6 +704,102 @@ t("el inventario de adapters declara X con su variable y su estado", () => {
     ax.requiereCredencial === true &&
     ax.variableEntorno === "X_BEARER_TOKEN" &&
     ax.presupuestoPorPasada === 1
+  );
+});
+
+
+/* =========================================================
+   6-bis. AMBIGÜEDAD DEL TOPÓNIMO
+   TERRITORIAL-SOCIAL-BENCHMARK-01
+   ========================================================= */
+
+console.log("\n--- Ambigüedad de «cuenca» ---\n");
+
+t("«cuenca» se reconoce como término ambiguo; «azuay» no", () =>
+  esTerminoAmbiguo("cuenca") &&
+  esTerminoAmbiguo("Cuenca") &&
+  esTerminoAmbiguo("Baños") &&
+  !esTerminoAmbiguo("azuay") &&
+  !esTerminoAmbiguo("tomebamba"));
+
+t("una atribución que descansa SOLO en «cuenca» se marca frágil", () => {
+  const c = clasificarAlcance({
+    evidencia: { domain: "x:1", summary: "El problema del agua en La Habana y la cuenca sur" },
+    ubicacion: {
+      unidadId: CUENCA,
+      razones: ['toponimo "Cuenca" presente en el texto (+40)']
+    },
+    indice: INDICE
+  });
+
+  return (
+    c.senalAmbigua === true &&
+    c.corroboradoPorOtroAnclaje === false &&
+    /SOLO en un término/i.test(c.advertenciaAmbiguedad || "")
+  );
+});
+
+t("con un segundo anclaje del territorio, la atribución NO se marca frágil", () => {
+  const c = clasificarAlcance({
+    evidencia: { domain: "x:2", summary: "Concejales de Cuenca, Azuay, fiscalizan el tranvía" },
+    ubicacion: {
+      unidadId: CUENCA,
+      razones: ['toponimo "Cuenca" presente en el texto (+40)']
+    },
+    indice: INDICE
+  });
+
+  return c.senalAmbigua === true && c.corroboradoPorOtroAnclaje === true && !c.advertenciaAmbiguedad;
+});
+
+t("un topónimo NO ambiguo no dispara la advertencia", () => {
+  const c = clasificarAlcance({
+    evidencia: { domain: "x:3", summary: "Obras en Machángara" },
+    ubicacion: {
+      unidadId: CUENCA,
+      razones: ['toponimo "Machángara" presente en el texto (+40)']
+    },
+    indice: INDICE
+  });
+
+  return c.senalAmbigua === false && !c.advertenciaAmbiguedad;
+});
+
+t("la atribución NO se revierte: marcarla no es descartarla", () => {
+  const c = clasificarAlcance({
+    evidencia: { domain: "x:1", summary: "cuenca hidrográfica del Jujuy" },
+    ubicacion: { unidadId: CUENCA, razones: ['toponimo "Cuenca" presente en el texto (+40)'] },
+    indice: INDICE
+  });
+
+  /*
+    Se mantiene atribuible a proposito: la regla evidente
+    —exigir corroboracion— rechazaba tambien contenido genuino
+    de Cuenca. Se declara la fragilidad y se deja la decision a
+    un gate de desambiguacion.
+  */
+  return c.alcance === ALCANCES.TERRITORIO_EXPLICITO && c.territorioAtribuible === true;
+});
+
+t("el resumen cuenta aparte las atribuciones frágiles", () => {
+  const fragil = clasificarAlcance({
+    evidencia: { domain: "x:1", summary: "la cuenca del rio en Pucon" },
+    ubicacion: { unidadId: CUENCA, razones: ['toponimo "Cuenca" presente en el texto (+40)'] },
+    indice: INDICE
+  });
+
+  const solida = clasificarAlcance({
+    evidencia: { domain: "x:2", summary: "Cuenca, Azuay: nuevo tranvia" },
+    ubicacion: { unidadId: CUENCA, razones: ['toponimo "Cuenca" presente en el texto (+40)'] },
+    indice: INDICE
+  });
+
+  const r = resumirAlcance([fragil, solida]);
+
+  return (
+    r.atribuidasSoloPorTerminoAmbiguo === 1 &&
+    r.atribuiblesAlTerritorio === 2 &&
+    r.declaraciones.some((d) => /t[eé]rmino ambiguo/i.test(d))
   );
 });
 

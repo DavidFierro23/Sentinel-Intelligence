@@ -89,6 +89,104 @@ export function esAtribuible(alcance) {
 
 
 /*
+===========================================================
+TERMINOS TERRITORIALES AMBIGUOS
+TERRITORIAL-SOCIAL-BENCHMARK-01
+===========================================================
+
+«Cuenca» es tres cosas a la vez:
+
+    el canton de Azuay
+    una ciudad de España
+    un SUSTANTIVO COMUN del castellano: cuenca hidrografica,
+    cuenca de un rio, cuenca minera
+
+Con prensa ecuatoriana esto no molestaba: el corpus RSS lo
+publican medios de Ecuador y el contexto resuelve. Al abrir la
+busqueda social se rompio, y se midio.
+
+DE 55 EVIDENCIAS SOCIALES UBICADAS, 25 SE ATRIBUYERON
+UNICAMENTE POR ESTA PALABRA, sin ningun otro anclaje. Entre
+ellas, contenido de Lambayeque (Peru), Pucon (Chile), La Habana
+(Cuba), Jujuy (Argentina), Nuevo Leon (Mexico), Uruguay y
+Castilla-La Mancha. Una hablaba literalmente de que «cuenca» es
+un termino tecnico.
+
+POR QUE ESTO NO CORRIGE LA ATRIBUCION
+-----------------------------------------------------------
+
+Porque la correccion evidente no funciona. Se probo exigir un
+segundo anclaje —Azuay, Ecuador, una parroquia, una institucion
+del canton— y esa regla RECHAZA tambien contenido genuino de
+Cuenca: Unsion TV hablando de la Policia en centros educativos,
+WRadioEc sobre fotorradares, la feria de El Arenal. Ninguno
+repite «Azuay» porque no le hace falta a su audiencia.
+
+Cambiar un falso positivo medido por un falso negativo sin medir
+seria peor. Asi que aqui NO se decide: **se declara**.
+
+La atribucion se mantiene y viaja marcada. Un consumidor puede
+contar aparte lo que descansa solo en la palabra ambigua, y la
+desambiguacion real —contexto del emisor, pais de la fuente,
+coocurrencia de toponimos— es un gate propio con su diseño.
+
+Un error visible se puede corregir. Uno silencioso, no.
+===========================================================
+*/
+
+/*
+  Terminos que son a la vez toponimo del territorio y palabra de
+  uso general u otro lugar. La lista es corta y explicita: no se
+  deduce de nada.
+*/
+const TERMINOS_AMBIGUOS = Object.freeze(["cuenca", "valle", "banos", "baños", "victoria"]);
+
+
+export function esTerminoAmbiguo(termino) {
+  return TERMINOS_AMBIGUOS.includes(
+    String(termino || "")
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .toLowerCase()
+      .trim()
+  );
+}
+
+
+/*
+  ¿La atribucion descansa SOLO en un termino ambiguo?
+
+  Se mira la razon que dio el resolutor: si el unico toponimo que
+  encontro es ambiguo y el texto no trae ningun otro anclaje del
+  territorio, la atribucion es fragil y se dice.
+*/
+const RE_TOPONIMO_EN_RAZON = /toponimo\s+"([^"]+)"/i;
+
+export function evaluarAmbiguedad({ razones = [], texto = "" } = {}) {
+  const encontrados = razones
+    .map((r) => (String(r).match(RE_TOPONIMO_EN_RAZON) || [])[1])
+    .filter(Boolean);
+
+  if (encontrados.length === 0) return { ambigua: false, terminos: [], corroborado: null };
+
+  const todosAmbiguos = encontrados.every((t) => esTerminoAmbiguo(t));
+
+  if (!todosAmbiguos) return { ambigua: false, terminos: encontrados, corroborado: true };
+
+  /*
+    Anclajes que corroboran sin ser el termino ambiguo. Se
+    comprueban sobre el texto de la pieza, no sobre la consulta:
+    la consulta nunca demuestra territorio.
+  */
+  const corroborado = /azuay|ecuador|tomebamba|yanuncay|machangara|etapa|emov|emac|prefectura|alcald[ií]a de cuenca|municipio de cuenca/i.test(
+    String(texto || "")
+  );
+
+  return { ambigua: true, terminos: encontrados, corroborado };
+}
+
+
+/*
 -----------------------------------------------------------
 INDICE DE AMBITO POR FUENTE
 
@@ -138,10 +236,32 @@ export function clasificarAlcance({ evidencia = {}, ubicacion = null, indice = n
 
   /* --- A --- */
   if (ubicacion?.unidadId) {
+    /*
+      La atribucion se mantiene y se MARCA si descansa solo en un
+      termino ambiguo. Ver la cabecera: aqui no se decide, se
+      declara.
+    */
+    const amb = evaluarAmbiguedad({
+      razones: ubicacion.razones || [],
+      texto: [evidencia.titulo, evidencia.title, evidencia.descripcion, evidencia.summary]
+        .filter(Boolean)
+        .join(" ")
+    });
+
     return {
       alcance: ALCANCES.TERRITORIO_EXPLICITO,
       etiqueta: ETIQUETAS[ALCANCES.TERRITORIO_EXPLICITO],
       territorioAtribuible: true,
+
+      /* Fragilidad declarada de ESTA atribucion. */
+      senalAmbigua: amb.ambigua,
+      terminosDeLaAtribucion: amb.terminos,
+      corroboradoPorOtroAnclaje: amb.corroborado,
+
+      advertenciaAmbiguedad: amb.ambigua && !amb.corroborado
+        ? "La atribución descansa SOLO en un término que es a la vez topónimo del cantón, otra ciudad y sustantivo común. Medido: 25 de 55 evidencias sociales cayeron aquí, varias de otros países. No usar esta pieza como prueba territorial sin revisión."
+        : null,
+
 
       unidadId: ubicacion.unidadId,
       nivel: ubicacion.nivel || ubicacion.resolucion || null,
@@ -231,9 +351,20 @@ export function resumirAlcance(clasificadas = []) {
 
   const atribuibles = conteo[ALCANCES.TERRITORIO_EXPLICITO];
 
+  /*
+    Cuantas de las atribuidas descansan SOLO en un termino
+    ambiguo. Sin esta cifra, «155 con territorio explicito» se
+    lee como 155 comprobadas.
+  */
+  const soloAmbiguo = clasificadas.filter(
+    (c) => c.senalAmbigua === true && c.corroboradoPorOtroAnclaje === false
+  ).length;
+
   return {
     total,
     porAlcance: conteo,
+
+    atribuidasSoloPorTerminoAmbiguo: soloAmbiguo,
 
     /*
       La cifra honesta: cuantas piezas se pueden contar en el
@@ -254,6 +385,7 @@ export function resumirAlcance(clasificadas = []) {
       "Solo las piezas con territorio EXPLÍCITO se cuentan en el cantón. Una nota de un medio local sin topónimo NO se atribuye a Cuenca: eso sería inventar geografía.",
       "«Fuente local · territorio no demostrado» es una pista sobre la fuente, no sobre el contenido. Sirve para priorizar lectura humana, no para afirmar dónde pasó algo.",
       "Un medio nacional en el universo se observa porque su feed es legible, no porque cubra el cantón. Su cobertura de Azuay NO está medida.",
+      "Una atribución que descansa SOLO en un término ambiguo —«cuenca» es también otra ciudad y un sustantivo común— viaja marcada. Medido en la búsqueda social: 25 de 55, con contenido de Perú, Chile, Cuba, Argentina, México y España. La atribución se mantiene y se declara frágil; desambiguarla es un gate propio.",
       "Estas cuatro cifras suman el corpus. Si no sumaran, alguna pieza se habría descartado en silencio."
     ]
   };
