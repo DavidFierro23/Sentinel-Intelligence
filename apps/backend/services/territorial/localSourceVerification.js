@@ -195,6 +195,123 @@ export function entidadDe(dominio) {
 
 /*
 ===========================================================
+ANCLAJE LOCAL VERIFICABLE
+TERRITORIAL-LOCAL-MEDIA-DISCOVERY-03
+===========================================================
+
+El gate anterior corroboro 16 dominios y todos por la misma
+via: `.gob.ec` bajo `cuenca` o `azuay`, o territorio ya
+declarado en el universo. Resultado: 5 instituciones, 3
+universidades, 2 medios, **cero organizaciones y cero
+comunidad**.
+
+No es que no existan. Es que una camara de comercio, una
+fundacion o un colectivo cultural no tienen dominio
+institucional inequivoco, y la unica regla disponible las
+dejaba fuera. La ausencia era del metodo, no del territorio.
+
+QUE CUENTA COMO ANCLAJE
+-----------------------------------------------------------
+
+El codigo telefonico. En Ecuador el 07 —o `+593 7`— cubre
+Azuay, Canar y Morona Santiago. Un sitio que publica un
+telefono con ese prefijo Y menciona Cuenca declara su
+ubicacion de una forma que no se falsifica por accidente:
+nadie pone el prefijo de Azuay sin estar ahi.
+
+Tambien cuenta una direccion con via y ciudad, o la formula
+«Cuenca - Ecuador» del pie de pagina.
+
+Lo que NO cuenta, y sigue sin contar: que el nombre o el
+dominio contengan «cuenca».
+
+POR QUE NO BASTA EL TEXTO SOLO
+-----------------------------------------------------------
+
+`ayuntamiento.cuenca.es` habla de Cuenca en todas sus
+paginas. Por eso el anclaje se exige JUNTO a la ausencia de
+TLD extranjero y junto a una mencion de Azuay o Ecuador.
+Tres senales combinadas, no una.
+===========================================================
+*/
+
+/*
+  Prefijo telefonico de Azuay. `07` a secas es demasiado
+  generico —aparece en fechas y precios—, asi que se exige la
+  forma internacional o el parentesis de marcacion nacional.
+*/
+const RE_TELEFONO_AZUAY = /\+593[\s]?\(?7\)?[\s]?\d{6,7}|\(0?7\)[\s]?\d{6,7}/;
+
+const RE_DIRECCION = /\b(calle|av[.]?|avenida|ciudadela|sector|parroquia|barrio)\b[^.]{3,60}\bcuenca\b/i;
+
+const RE_PIE_ECUATORIANO = /cuenca[\s]*[-,][\s]*(azuay|ecuador)|cuenca,[\s]*azuay/i;
+
+
+export function anclajeLocalDe(textoDelSitio = "") {
+  const t = String(textoDelSitio || "");
+
+  const anclas = [];
+
+  if (RE_TELEFONO_AZUAY.test(t)) anclas.push("TELEFONO_CON_PREFIJO_DE_AZUAY");
+
+  if (RE_DIRECCION.test(t)) anclas.push("DIRECCION_POSTAL_EN_CUENCA");
+
+  if (RE_PIE_ECUATORIANO.test(t)) anclas.push("DECLARA_CUENCA_AZUAY_O_ECUADOR");
+
+  return anclas;
+}
+
+
+/*
+  Familia deducida de como se describe la propia fuente. Se
+  buscan formas juridicas y descriptores de oficio, no
+  palabras sueltas: «camara de comercio» corrobora, «comercio»
+  no.
+*/
+const PATRONES_DE_FAMILIA = Object.freeze([
+  {
+    familia: "MEDIOS_LOCALES",
+    naturaleza: "MEDIA",
+    re: /\b(diario|peri[\u00f3o]dico|radio|radiodifusi[\u00f3o]n|televisi[\u00f3o]n|noticiero|medio digital|portal de noticias|periodismo|redacci[\u00f3o]n)\b/i
+  },
+  {
+    familia: "ORGANIZACIONES",
+    naturaleza: "OTHER",
+    re: /\b(c[\u00e1a]mara de (comercio|industrias|turismo|la construcci[\u00f3o]n)|colegio de (arquitectos|ingenieros|abogados|m[\u00e9e]dicos|periodistas)|federaci[\u00f3o]n|gremio|sindicato|asociaci[\u00f3o]n de|fundaci[\u00f3o]n|corporaci[\u00f3o]n civil|organizaci[\u00f3o]n no gubernamental)\b/i
+  },
+  {
+    familia: "CULTURA_COMUNIDAD",
+    naturaleza: "OTHER",
+    re: /\b(colectivo|casa cultural|centro cultural|galer[\u00edi]a|museo|teatro|festival|orquesta|club deportivo|liga (deportiva|barrial)|junta parroquial|comit[\u00e9e] barrial)\b/i
+  },
+  {
+    familia: "UNIVERSIDAD_ACADEMIA",
+    naturaleza: "ACADEMIC",
+    re: /\b(universidad|facultad|instituto de investigaci[\u00f3o]n|observatorio|revista cient[\u00edi]fica)\b/i
+  },
+  {
+    familia: "INSTITUCIONAL_PUBLICO",
+    naturaleza: "INSTITUTIONAL",
+    re: /\b(gad municipal|municipio de|alcald[\u00edi]a|prefectura|empresa p[\u00fau]blica|ministerio|secretar[\u00edi]a nacional)\b/i
+  }
+]);
+
+
+export function familiaPorTexto(textoDelSitio = "") {
+  const t = String(textoDelSitio || "");
+
+  for (const p of PATRONES_DE_FAMILIA) {
+    const m = t.match(p.re);
+
+    if (m) return { familia: p.familia, naturaleza: p.naturaleza, evidencia: m[0] };
+  }
+
+  return { familia: null, naturaleza: null, evidencia: null };
+}
+
+
+/*
+===========================================================
 CLASIFICAR LA LOCALIDAD DE UNA FUENTE
 ===========================================================
 
@@ -300,12 +417,63 @@ export function clasificarLocalidad({
     /azuay[\s,–-]*ecuador/i.test(texto) ||
     /(cuenca)[^.]{0,40}(ecuador)/i.test(texto);
 
-  if (declaraCuenca && RE_ECUADOR.test(d)) {
-    razones.push("el propio sitio declara Cuenca/Azuay junto a Ecuador, y el dominio es ecuatoriano");
+  const anclas = anclajeLocalDe(texto);
+
+  const porTexto = familiaPorTexto(texto);
+
+  /*
+    TRES senales combinadas para corroborar una fuente sin
+    dominio institucional: menciona Cuenca con Azuay o Ecuador,
+    trae un anclaje fisico verificable —telefono con prefijo de
+    Azuay o direccion en Cuenca— y no es TLD extranjero, que ya
+    se descarto en el paso 2.
+
+    Una sola de las tres no basta: `ayuntamiento.cuenca.es`
+    cumple la primera en todas sus paginas.
+  */
+  const anclajeFuerte = anclas.some(
+    (a) => a === "TELEFONO_CON_PREFIJO_DE_AZUAY" || a === "DIRECCION_POSTAL_EN_CUENCA"
+  );
+
+  if (declaraCuenca && anclajeFuerte) {
+    razones.push(
+      `el sitio declara Cuenca junto a Azuay o Ecuador y trae anclaje verificable: ${anclas.join(", ")}`
+    );
+
+    if (porTexto.familia) razones.push(`se describe a si misma como «${porTexto.evidencia}»`);
+
+    return decidir(
+      LOCALIDAD.LOCAL_CORROBORADA,
+      porTexto.familia || FAMILIAS_LOCALES.OTROS_LOCALES,
+      porTexto.naturaleza || NATURALEZA.OTHER
+    );
+  }
+
+  /*
+    El sitio lo declara pero no hay anclaje verificable: probable.
+
+    Aqui habia un defecto propio. Esta rama exigia `RE_ECUADOR`,
+    asi que un medio local en `.com` no podia ser ni probable y
+    caia al final con el motivo «sin senal de Ecuador ni de
+    Cuenca», que era FALSO: el sitio si las declara.
+
+    Lo delato `elnuevotiempo.com` —periodismo digital de Cuenca—
+    y lo confirma `lavozdeltomebamba.com`, que es un medio local
+    corroborado y tambien `.com`. El TLD no decide la localidad.
+
+    El TLD extranjero ya se descarto en el paso 2, asi que aqui
+    no puede colarse la Cuenca de Espana.
+  */
+  if (declaraCuenca) {
+    razones.push("el propio sitio declara Cuenca junto a Azuay o Ecuador");
+    razones.push("sin anclaje fisico verificable: no se corrobora, queda probable");
+
+    if (porTexto.familia) razones.push(`se describe a si misma como «${porTexto.evidencia}»`);
+
     return decidir(
       LOCALIDAD.LOCAL_PROBABLE,
-      FAMILIAS_LOCALES.OTROS_LOCALES,
-      NATURALEZA.OTHER
+      porTexto.familia || FAMILIAS_LOCALES.OTROS_LOCALES,
+      porTexto.naturaleza || NATURALEZA.OTHER
     );
   }
 
@@ -331,7 +499,19 @@ export function clasificarLocalidad({
     return decidir(LOCALIDAD.NO_RESOLUBLE, null, NATURALEZA.OTHER);
   }
 
-  razones.push("sin señal de Ecuador ni de Cuenca");
+  /*
+    Ultimo caso: ni dominio ecuatoriano, ni el sitio declara
+    Cuenca con Azuay o Ecuador, ni hay anclaje.
+
+    Nota medida en este gate: muchos sitios locales reales son
+    aplicaciones renderizadas en cliente y su HTML servido trae
+    entre el 0,2 % y el 3,2 % de texto. Que aqui no haya senal
+    puede significar que el sitio no la publica en servidor, no
+    que la fuente no sea local.
+  */
+  razones.push(
+    "ni el dominio ni el HTML servido declaran Cuenca con Azuay o Ecuador, y no hay anclaje verificable"
+  );
   return decidir(LOCALIDAD.AMBIGUA, null, NATURALEZA.OTHER);
 }
 
