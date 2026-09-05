@@ -34,10 +34,37 @@ RAW DATA -> METRICA POR PLATAFORMA -> log1p (si aplica) ->
 NORMALIZACION (min-max relativo al proyecto) -> SUBDIMENSION ->
 DIMENSION -> IPDO. Nunca se suman unidades distintas antes de
 normalizar.
+
+===========================================================
+CANDIDATE-IPDO-CROSS-PLATFORM-MAPPING-03
+===========================================================
+
+Repara el CONTRACT_MISMATCH certificado por
+CANDIDATE-IPDO-INPUT-AUDIT-02 (commit b22853e): el engagement/
+attention de publicaciones ahora pasa por
+`contentMetricsCanonical.js` (LIKES ∪ REACTIONS, COMMENTS_COUNT,
+SHARES ∪ REPOSTS, VIEWS) en vez de leer literalmente "likes"/
+"comments" -que ignoraba `reactions`/`commentsCount` de Facebook/
+Instagram(scrapecreators)/TikTok-. Los PESOS y la FORMULA no
+cambian: 0.25/0.40/0.35, igual que IPDO_V1. Este gate es una
+reparacion de mapeo, no una nueva version de metodologia -por eso
+`IPDO_METHOD_VERSION` no cambia de numero mayor, solo se anota el
+parche-.
+
+Tambien canonicaliza `accountId` de snapshots ANTES de agruparlos
+por activo (reutilizando `resolverIdentidadCanonica`,
+P-CAND-SNAPSHOTS-01) para cerrar un riesgo latente de doble conteo:
+sin esto, un snapshot legacy (`x:JuanCVegaEC`) y uno nuevo
+(`x:juancvegaec`) del MISMO activo real se tratarian como dos
+activos distintos y sus seguidores se sumarian por error si algun
+dia coexisten observaciones con ambos formatos.
 ===========================================================
 */
 
-export const IPDO_METHOD_VERSION = "IPDO_V1";
+import { resolverIdentidadCanonica } from "./accountIdentity.js";
+import { engagementDePublicacion, attentionDePublicacion } from "./contentMetricsCanonical.js";
+
+export const IPDO_METHOD_VERSION = "IPDO_V1.1";
 
 /*
   Pesos globales. HIPOTESIS METODOLOGICA, no verdad universal.
@@ -188,15 +215,23 @@ export function extraerInsumosCandidato({
       (s) =>
         (s.platform === plataforma || s.plataformaId === plataforma) &&
         ESTADOS_MEDIDOS_SNAPSHOT.has(s.estado) &&
-        !conflictosConocidos.has(s.accountId)
+        !conflictosConocidos.has(resolverIdentidadCanonica(s.accountId))
     );
     if (!snapsPlataforma.length) { audienciaPorPlataforma[plataforma] = null; continue; }
 
-    // ultimo snapshot real por accountId (no confundir con el mas viejo)
+    /*
+      Ultimo snapshot real por activo -CANONICALIZADO antes de
+      agrupar (P-CAND-IPDO-CROSS-PLATFORM-MAPPING-03). Sin esto, un
+      accountId legacy (`x:JuanCVegaEC`) y su forma canonica
+      (`x:juancvegaec`) del MISMO activo real se tratarian como dos
+      activos distintos y sus seguidores se sumarian dos veces si
+      algun dia coexisten snapshots en ambos formatos.
+    */
     const ultimoPorActivo = new Map();
     for (const s of snapsPlataforma) {
-      const prev = ultimoPorActivo.get(s.accountId);
-      if (!prev || new Date(s.capturedAt) > new Date(prev.capturedAt)) ultimoPorActivo.set(s.accountId, s);
+      const clave = resolverIdentidadCanonica(s.accountId);
+      const prev = ultimoPorActivo.get(clave);
+      if (!prev || new Date(s.capturedAt) > new Date(prev.capturedAt)) ultimoPorActivo.set(clave, s);
     }
     const followersValidos = [...ultimoPorActivo.values()]
       .map((s) => s.followers)
@@ -207,11 +242,23 @@ export function extraerInsumosCandidato({
       : null;
   }
 
-  /* ---------- ACTIVIDAD / ENGAGEMENT / ATTENTION (publicaciones, ultima observacion por metrica) ---------- */
+  /*
+    ---------- ACTIVIDAD / ENGAGEMENT / ATTENTION ----------
+    Reutiliza `contentMetricsCanonical.js` (P-CAND-IPDO-CROSS-
+    PLATFORM-MAPPING-03): reconoce LIKES ∪ REACTIONS,
+    COMMENTS_COUNT, SHARES ∪ REPOSTS y VIEWS por su nombre real de
+    origen (`sourceMetric`), sin condicionales ad-hoc por
+    plataforma aqui. `fuentesEngagement`/`fuentesAttention`
+    preservan que senal real alimento el total, para que la
+    explicacion pueda decir "reacciones de Facebook" y no "likes"
+    cuando la fuente real fueron reacciones.
+  */
   const postCount = publicaciones.length;
 
   let totalEngagement = null;
   let totalAttention = null;
+  const fuentesEngagement = [];
+  const fuentesAttention = [];
 
   if (postCount > 0) {
     let sumaEngagement = 0;
@@ -221,29 +268,19 @@ export function extraerInsumosCandidato({
 
     for (const pub of publicaciones) {
       const metricas = pub.metricas || [];
-      const ultimaDe = (nombre) => {
-        const deEsaMetrica = metricas.filter((m) => m.metrica === nombre && m.value != null);
-        if (!deEsaMetrica.length) return null;
-        return deEsaMetrica.reduce((a, b) => (new Date(b.observedAt) > new Date(a.observedAt) ? b : a)).value;
-      };
 
-      /*
-        ENGAGEMENT = respuesta directa a la pieza: likes/reacciones
-        + comentarios + reposts/shares. NUNCA views: eso es
-        ATTENTION, unidad distinta (seccion 8/24 anti-double-counting).
-      */
-      const likes = ultimaDe("likes");
-      const comments = ultimaDe("comments");
-      const reposts = ultimaDe("reposts") ?? ultimaDe("shares");
-      if (likes != null || comments != null || reposts != null) {
-        sumaEngagement += (likes || 0) + (comments || 0) + (reposts || 0);
+      const eng = engagementDePublicacion(metricas);
+      if (eng) {
+        sumaEngagement += eng.total;
         huboEngagementReal = true;
+        fuentesEngagement.push(...eng.fuentes.map((f) => ({ ...f, platformId: pub.platformId })));
       }
 
-      const views = ultimaDe("views");
-      if (views != null) {
-        sumaAttention += views;
+      const att = attentionDePublicacion(metricas);
+      if (att) {
+        sumaAttention += att.total;
         huboAttentionReal = true;
+        fuentesAttention.push({ ...att.fuente, platformId: pub.platformId });
       }
     }
 
@@ -259,6 +296,30 @@ export function extraerInsumosCandidato({
   const planoConversacion = (conversacion?.planos || []).find((p) => p.clave === "conversacion");
   const publicConversation = (conversacion?.total || 0) > 0 ? planoConversacion?.piezasObservadas ?? null : null;
 
+  /*
+    ---------- COBERTURA V2: PERFIL != CONTENIDO != INTERACCION ----------
+    Seccion 18 del gate. Por plataforma: PROFILE_MEASURED (hay
+    snapshot real), CONTENT_MEASURED (hay publicaciones
+    persistidas), INTERACTION_MEASURED (esas publicaciones traen al
+    menos una senal canonica real de engagement o attention). Una
+    plataforma puede tener PROFILE=true, CONTENT=false,
+    INTERACTION=false -eso NUNCA cuenta como cobertura completa-.
+  */
+  const platformCoverageDetail = {};
+  for (const plataforma of PLATAFORMAS_IPDO) {
+    const profileMeasured = audienciaPorPlataforma[plataforma] != null;
+    const pubsDePlataforma = publicaciones.filter((p) => p.platformId === plataforma);
+    const contentMeasured = pubsDePlataforma.length > 0;
+    const interactionMeasured = pubsDePlataforma.some(
+      (p) => engagementDePublicacion(p.metricas || []) != null || attentionDePublicacion(p.metricas || []) != null
+    );
+    platformCoverageDetail[plataforma] = {
+      profileMeasured,
+      contentMeasured,
+      interactionMeasured
+    };
+  }
+
   return {
     candidateId,
     accountCoverageCount: plataformasConActivoValido.size,
@@ -270,7 +331,10 @@ export function extraerInsumosCandidato({
     interactionsPerPost: totalEngagement != null && postCount > 0 ? Number((totalEngagement / postCount).toFixed(2)) : null,
     thirdPartyVolume,
     mediaDiversity,
-    publicConversation
+    publicConversation,
+    fuentesEngagement,
+    fuentesAttention,
+    platformCoverageDetail
   };
 }
 
@@ -395,6 +459,31 @@ export function calcularIPDO(filas = []) {
     const coveragePct = senalesComputables / senalesEsperadas.length;
     const methodologicalCoverage = coveragePct >= 0.75 ? "ALTA" : coveragePct >= 0.4 ? "MEDIA" : "BAJA";
 
+    /*
+      COBERTURA V2 POR DIMENSION — CANDIDATE-IPDO-CROSS-PLATFORM-
+      MAPPING-03, seccion 19-21 del gate. La cobertura ALTA/MEDIA/
+      BAJA de arriba mezclaba las 8 senales en un solo numero; esto
+      la desglosa por dimension para que "perfil disponible" no se
+      confunda con "insumos suficientes para Interaction/Conversation".
+    */
+    const bandaDe = (pct) => (pct >= 0.75 ? "ALTA" : pct >= 0.4 ? "MEDIA" : "BAJA");
+    const presenceSenales = [accCov.valor, audienciaCombo.valor];
+    const interactionSenales = [act.valor, eng.valor, att.valor];
+    const conversationSenales = [tpv.valor, md.valor, pc.valor];
+    const pctDe = (arr) => arr.filter((v) => v != null).length / arr.length;
+
+    const coverageV2 = {
+      presence: bandaDe(pctDe(presenceSenales)),
+      interaction: bandaDe(pctDe(interactionSenales)),
+      conversation: bandaDe(pctDe(conversationSenales)),
+      overall: methodologicalCoverage,
+      /*
+        Perfil != contenido != interaccion, por plataforma -no se
+        colapsa a un solo booleano-.
+      */
+      byPlatform: f.platformCoverageDetail
+    };
+
     const inputsUsed = [];
     const inputsMissing = [];
     const nombraFaltante = (nombre, valor) => (valor == null ? inputsMissing.push(nombre) : inputsUsed.push(nombre));
@@ -422,6 +511,7 @@ export function calcularIPDO(filas = []) {
       },
       methodologicalCoverage,
       methodologicalCoveragePct: Number(coveragePct.toFixed(2)),
+      coverageV2,
       inputsUsed,
       inputsMissing,
       platformCoverage,
@@ -453,7 +543,18 @@ function construirExplicacion({ candidateId, score, presenceCombo, interactionCo
 
   const factoresInteraccion = [];
   if (act.valor != null) factoresInteraccion.push(`${f.postCount} publicaciones observadas`);
-  if (eng.valor != null) factoresInteraccion.push(`${f.totalEngagement} interacciones observadas (likes+comentarios+reposts)${f.interactionsPerPost != null ? `, ${f.interactionsPerPost} por publicacion` : ""}`);
+  if (eng.valor != null) {
+    /*
+      Semantica preservada -P-CAND-IPDO-CROSS-PLATFORM-MAPPING-03-:
+      si la fuente real fue "reactions" (Facebook), la explicacion
+      dice "reacciones", nunca "likes". Se listan los tipos de
+      senal canonica realmente presentes, no un texto fijo.
+    */
+    const tiposPresentes = [...new Set((f.fuentesEngagement || []).map((s) => s.canonicalMetric))];
+    const ETIQUETA = { LIKES: "me gusta", REACTIONS: "reacciones", COMMENTS_COUNT: "comentarios", SHARES: "shares", REPOSTS: "reposts" };
+    const descripcion = tiposPresentes.map((t) => ETIQUETA[t] || t).join("+") || "interacciones";
+    factoresInteraccion.push(`${f.totalEngagement} ${descripcion} observados${f.interactionsPerPost != null ? `, ${f.interactionsPerPost} por publicacion` : ""}`);
+  }
   if (att.valor != null) factoresInteraccion.push(`${f.totalAttention} visualizaciones observadas`);
   if (!factoresInteraccion.length) factoresInteraccion.push("sin publicaciones observadas todavia");
 

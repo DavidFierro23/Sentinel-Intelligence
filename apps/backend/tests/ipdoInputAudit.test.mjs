@@ -163,11 +163,11 @@ try {
 
   /* L. IPDO mapping inventory completo */
   bloque("L · inventario de mapeo IPDO completo");
-  await t("L) el extractor de insumos reconoce exactamente estos 4 tipos de metrica por publicacion: likes, comments, reposts/shares, views", async () => {
+  await t("L) [ACTUALIZADO por CANDIDATE-IPDO-CROSS-PLATFORM-MAPPING-03] el mapeo de metricas ahora vive en contentMetricsCanonical.js, no en digitalPresenceIndex.js, y reconoce likes/reactions/comments/commentsCount/shares/reposts/views", async () => {
     const src = await (await import("node:fs")).promises.readFile(
-      new URL("../services/intelligence/digitalPresenceIndex.js", import.meta.url), "utf8"
+      new URL("../services/intelligence/contentMetricsCanonical.js", import.meta.url), "utf8"
     );
-    return ["likes", "comments", "reposts", "shares", "views"].every((m) => src.includes(`"${m}"`));
+    return ["likes", "reactions", "comments", "commentsCount", "shares", "reposts", "views"].every((m) => src.includes(`${m}:`));
   });
 
   /* M. Yaku Conversation=0 trace reproducible */
