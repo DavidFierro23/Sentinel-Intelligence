@@ -176,7 +176,7 @@ test("33 · la matriz declara sus limitaciones en lugar de ocultarlas", async ()
 
   assert.ok(ids.includes("DISCOVERY_NO_PERSISTIDO"));
 
-  assert.ok(ids.includes("CONFLICTOS_NO_PERSISTIDOS"));
+  assert.ok(ids.includes("IDENTITY_EXCLUSION_PERSISTENCE_DEBT"));
 });
 
 
@@ -378,7 +378,443 @@ identidad y de persistencia—, pero tampoco se oculta.
 ===========================================================
 */
 
-test("huerfanas · una medicion cuyo accountId no casa se declara, no se descarta en silencio", () => {
+/*
+===========================================================
+A–F · AGREGACION MULTI-ACTIVO
+CANDIDATE-MULTI-ASSET-UX-RESOLUTION-02
+===========================================================
+
+El defecto: la celda tomaba el snapshot mas reciente de TODA la
+plataforma en lugar de agregar por activo. Con un solo activo
+acertaba por casualidad; con dos, mostraba el del activo
+observado mas tarde y ocultaba el otro.
+===========================================================
+*/
+
+test("A · agrega por activo, NO toma el snapshot global mas reciente", () => {
+  const celda = celdaDePlataforma({
+    plataforma: "instagram",
+    cuentas: [
+      { id: "instagram:grande", handle: "grande", declaradaPorAnalista: true },
+      { id: "instagram:pequena", handle: "pequena", declaradaPorAnalista: true }
+    ],
+    snapshots: [
+      /* El grande se observo ANTES. */
+      {
+        accountId: "instagram:grande",
+        platform: "instagram",
+        estado: "OBSERVADA",
+        followers: 10000,
+        capturedAt: "2026-08-31T00:00:00.000Z"
+      },
+      /* El pequeno se observo DESPUES: antes ganaba y tapaba al otro. */
+      {
+        accountId: "instagram:pequena",
+        platform: "instagram",
+        estado: "MEDIDO_PROVEEDOR",
+        followers: 500,
+        capturedAt: "2026-09-03T00:00:00.000Z"
+      }
+    ]
+  });
+
+  /* El valor NO es el del snapshot mas reciente. */
+  assert.notEqual(celda.metrica.valor, 500);
+
+  /* Ni el del mayor por si solo. */
+  assert.notEqual(celda.metrica.valor, 10000);
+
+  /* Es la suma de los dos activos. */
+  assert.equal(celda.metrica.valor, 10500);
+
+  assert.equal(celda.metrica.metodo, "SUMA_DE_ACTIVOS");
+});
+
+
+test("A · por cada activo se usa SU snapshot mas reciente, no el primero", () => {
+  const celda = celdaDePlataforma({
+    plataforma: "tiktok",
+    cuentas: [{ id: "tiktok:c", declaradaPorAnalista: true }],
+    snapshots: [
+      {
+        accountId: "tiktok:c",
+        platform: "tiktok",
+        estado: "MEDIDO_PROVEEDOR",
+        followers: 100,
+        capturedAt: "2026-08-01T00:00:00.000Z"
+      },
+      {
+        accountId: "tiktok:c",
+        platform: "tiktok",
+        estado: "MEDIDO_PROVEEDOR",
+        followers: 900,
+        capturedAt: "2026-09-01T00:00:00.000Z"
+      }
+    ]
+  });
+
+  assert.equal(celda.metrica.valor, 900);
+
+  assert.equal(celda.metrica.activosConMetrica, 1);
+});
+
+
+test("D · assetCount cuenta activos distintos, no snapshots", () => {
+  const celda = celdaDePlataforma({
+    plataforma: "facebook",
+    cuentas: [
+      { id: "facebook:a", declaradaPorAnalista: true },
+      { id: "facebook:b", declaradaPorAnalista: true }
+    ],
+    snapshots: [
+      { accountId: "facebook:a", platform: "facebook", estado: "OBSERVADA", followers: 10, capturedAt: "2026-09-01T00:00:00.000Z" },
+      { accountId: "facebook:a", platform: "facebook", estado: "OBSERVADA", followers: 20, capturedAt: "2026-09-02T00:00:00.000Z" },
+      { accountId: "facebook:b", platform: "facebook", estado: "OBSERVADA", followers: 30, capturedAt: "2026-09-02T00:00:00.000Z" }
+    ]
+  });
+
+  assert.equal(celda.assetCount, 2);
+
+  assert.equal(celda.snapshots, 3);
+
+  /* 20 (ultimo de A) + 30 (B) = 50. Nunca 10+20+30. */
+  assert.equal(celda.metrica.valor, 50);
+});
+
+
+test("E · el metodo de agregacion se expone, no se adivina", () => {
+  const uno = celdaDePlataforma({
+    plataforma: "x",
+    cuentas: [{ id: "x:solo", declaradaPorAnalista: true }],
+    snapshots: [
+      { accountId: "x:solo", platform: "x", estado: "OBSERVADA", followers: 7 }
+    ]
+  });
+
+  const dos = celdaDePlataforma({
+    plataforma: "x",
+    cuentas: [
+      { id: "x:a", declaradaPorAnalista: true },
+      { id: "x:b", declaradaPorAnalista: true }
+    ],
+    snapshots: [
+      { accountId: "x:a", platform: "x", estado: "OBSERVADA", followers: 7 },
+      { accountId: "x:b", platform: "x", estado: "OBSERVADA", followers: 3 }
+    ]
+  });
+
+  assert.equal(uno.metrica.metodo, "ACTIVO_UNICO");
+
+  assert.equal(dos.metrica.metodo, "SUMA_DE_ACTIVOS");
+
+  assert.equal(uno.metrica.acumulado, false);
+
+  assert.equal(dos.metrica.acumulado, true);
+});
+
+
+test("F · la suma NUNCA se presenta como audiencia unica ni personas", () => {
+  const celda = celdaDePlataforma({
+    plataforma: "instagram",
+    cuentas: [
+      { id: "instagram:a", declaradaPorAnalista: true },
+      { id: "instagram:b", declaradaPorAnalista: true }
+    ],
+    snapshots: [
+      { accountId: "instagram:a", platform: "instagram", estado: "OBSERVADA", followers: 1000 },
+      { accountId: "instagram:b", platform: "instagram", estado: "OBSERVADA", followers: 2000 }
+    ]
+  });
+
+  /* La etiqueta dice que es acumulado y de cuantos activos. */
+  assert.match(celda.metrica.etiqueta, /acumulados entre 2 activos/);
+
+  /* Y niega explicitamente la lectura de personas unicas. */
+  assert.match(celda.metrica.noEs, /NO son personas únicas/);
+
+  assert.match(celda.metrica.noEs, /solaparse/);
+
+  /*
+    Y ningun campo AFIRMATIVO la llama audiencia, alcance ni
+    personas. `noEs` se excluye a proposito: su trabajo es
+    nombrar esas lecturas para negarlas, y comprobarlo sobre el
+    objeto entero daba un falso positivo sobre la propia
+    negacion.
+  */
+  const afirmativos = [
+    celda.metrica.nombre,
+    celda.metrica.etiqueta,
+    celda.metrica.metodo
+  ].join(" ");
+
+  assert.ok(
+    !/audiencia|alcance|personas|únic/i.test(afirmativos),
+    `un campo afirmativo usa vocabulario de audiencia: ${afirmativos}`
+  );
+});
+
+
+test("G · un solo activo conserva el comportamiento anterior", () => {
+  const celda = celdaDePlataforma({
+    plataforma: "tiktok",
+    cuentas: [{ id: "tiktok:unico", handle: "unico", declaradaPorAnalista: true }],
+    snapshots: [
+      {
+        accountId: "tiktok:unico",
+        platform: "tiktok",
+        estado: "MEDIDO_PROVEEDOR",
+        followers: 519300,
+        capturedAt: "2026-09-01T00:00:00.000Z",
+        provider: "scrapecreators"
+      }
+    ]
+  });
+
+  assert.equal(celda.metrica.valor, 519300);
+
+  assert.equal(celda.metrica.acumulado, false);
+
+  /* Sin sufijo «acumulados» cuando hay un solo activo. */
+  assert.ok(!/acumulad/.test(celda.metrica.etiqueta));
+
+  assert.equal(celda.metrica.noEs, null);
+
+  /* Y la procedencia sigue viajando, como antes. */
+  assert.equal(celda.metrica.accountId, "tiktok:unico");
+
+  assert.equal(celda.metrica.provider, "scrapecreators");
+});
+
+
+test("H · un activo sin metrica queda en null y no aporta 0 a la suma", () => {
+  const celda = celdaDePlataforma({
+    plataforma: "facebook",
+    cuentas: [
+      { id: "facebook:medido", declaradaPorAnalista: true },
+      { id: "facebook:sinmedir", declaradaPorAnalista: true }
+    ],
+    snapshots: [
+      { accountId: "facebook:medido", platform: "facebook", estado: "OBSERVADA", followers: 400 },
+      /* Confirma identidad, no mide: no son cero seguidores. */
+      { accountId: "facebook:sinmedir", platform: "facebook", estado: "CUENTA_CONFIRMADA", followers: null }
+    ]
+  });
+
+  assert.equal(celda.metrica.valor, 400);
+
+  assert.equal(celda.metrica.activosConMetrica, 1);
+
+  assert.equal(celda.metrica.activosTotal, 2);
+
+  /* Y el activo sin medir lo declara con null, no con 0. */
+  const sinMedir = celda.activos.find((a) => a.accountId === "facebook:sinmedir");
+
+  assert.equal(sinMedir.metrica.valor, null);
+
+  assert.notEqual(sinMedir.metrica.valor, 0);
+});
+
+
+test("11 · no se mezclan familias metricas ni plataformas", () => {
+  const yt = celdaDePlataforma({
+    plataforma: "youtube",
+    cuentas: [{ id: "youtube:canal", declaradaPorAnalista: true }],
+    snapshots: [
+      { accountId: "youtube:canal", platform: "youtube", estado: "OBSERVADA", followers: 800 },
+      /* Un snapshot de OTRA plataforma no puede entrar. */
+      { accountId: "tiktok:otro", platform: "tiktok", estado: "OBSERVADA", followers: 500000 }
+    ]
+  });
+
+  assert.equal(yt.metrica.valor, 800);
+
+  assert.equal(yt.metrica.nombre, "suscriptores");
+
+  assert.equal(yt.snapshots, 1);
+});
+
+
+/*
+===========================================================
+B–C · EL CASO LLORET, DESDE EL STORE
+===========================================================
+
+Nada hardcodeado: los dos activos, sus valores y la suma se
+leen del Lake. Lo que se fija es la ESTRUCTURA —dos activos
+validos participan y el total es su suma—, no las cifras.
+===========================================================
+*/
+
+test("B · Lloret/Instagram consume los DOS activos validos", async () => {
+  const c = await contenidoDeProyecto(PILOTO);
+
+  const r = await matrizDePlataformasDelProyecto({
+    projectId: PILOTO,
+    candidatos: c.candidatos || []
+  });
+
+  const lloret = r.candidatos.find(
+    (f) => f.candidateId === "juan-cristobal-lloret-valdivieso"
+  );
+
+  assert.ok(lloret, "Lloret tiene que estar en el piloto");
+
+  const ig = lloret.celdas.instagram;
+
+  /* Dos activos distintos, ambos con metrica. */
+  assert.equal(ig.assetCount, 2);
+
+  assert.equal(ig.metrica.activosConMetrica, 2);
+
+  assert.equal(ig.metrica.acumulado, true);
+
+  assert.equal(ig.metrica.metodo, "SUMA_DE_ACTIVOS");
+
+  /* Cada activo trae su propio valor, su fecha y su via. */
+  const conValor = ig.activos.filter((a) => a.metrica?.valor != null);
+
+  assert.equal(conValor.length, 2);
+
+  conValor.forEach((a) => {
+    assert.ok(a.accountId, "cada activo conserva su clave canonica");
+
+    assert.ok(a.accountIdOriginal, "y su id crudo");
+
+    assert.ok(a.metrica.capturedAt, "y cuando se observo");
+
+    assert.ok(a.metrica.provider, "y por que via");
+  });
+
+  /* Las dos vias son distintas: el agregado cruza proveedores. */
+  assert.notEqual(conValor[0].metrica.provider, conValor[1].metrica.provider);
+});
+
+
+test("C · el agregado de Lloret es la suma de sus activos, leida del store", async () => {
+  const c = await contenidoDeProyecto(PILOTO);
+
+  const r = await matrizDePlataformasDelProyecto({
+    projectId: PILOTO,
+    candidatos: c.candidatos || []
+  });
+
+  const ig = r.candidatos.find(
+    (f) => f.candidateId === "juan-cristobal-lloret-valdivieso"
+  ).celdas.instagram;
+
+  const suma = ig.activos
+    .map((a) => a.metrica?.valor)
+    .filter((v) => v != null)
+    .reduce((a, b) => a + b, 0);
+
+  assert.equal(ig.metrica.valor, suma);
+
+  /*
+    Y el defecto que se corrige: el total NO puede ser el valor de
+    un solo activo.
+  */
+  ig.activos.forEach((a) => {
+    if (a.metrica?.valor != null && ig.activos.length > 1) {
+      assert.notEqual(
+        ig.metrica.valor,
+        a.metrica.valor,
+        "el agregado coincide con un solo activo: la suma no se aplico"
+      );
+    }
+  });
+
+  /* La celda queda MEDIDO, no PARCIAL: los dos activos se midieron. */
+  assert.equal(ig.medicion.estado, ESTADOS_CIERRE.MEDIDO);
+});
+
+
+test("C · el piloto tiene varias celdas multi-activo y todas suman", async () => {
+  const c = await contenidoDeProyecto(PILOTO);
+
+  const r = await matrizDePlataformasDelProyecto({
+    projectId: PILOTO,
+    candidatos: c.candidatos || []
+  });
+
+  const agregadas = [];
+
+  for (const fila of r.candidatos) {
+    for (const p of PLATAFORMAS_MATRIZ) {
+      const celda = fila.celdas[p];
+
+      if (celda.metrica?.acumulado) agregadas.push({ fila, p, celda });
+    }
+  }
+
+  assert.ok(agregadas.length > 0, "el piloto tiene celdas multi-activo reales");
+
+  for (const { celda } of agregadas) {
+    const suma = celda.activos
+      .map((a) => a.metrica?.valor)
+      .filter((v) => v != null)
+      .reduce((a, b) => a + b, 0);
+
+    assert.equal(celda.metrica.valor, suma);
+
+    assert.ok(celda.metrica.activosConMetrica > 1);
+
+    assert.match(celda.metrica.etiqueta, /acumulados/);
+  }
+
+  /* Y la matriz lo declara como limitacion, no lo da por obvio. */
+  const lim = (r.limitaciones || []).find(
+    (l) => l.id === "AGREGACION_MULTI_ACTIVO"
+  );
+
+  assert.ok(lim, "la agregacion multi-activo tiene que declararse");
+
+  assert.equal(lim.celdasAfectadas, agregadas.length);
+});
+
+
+test("contrato · el orden de agregacion se declara en la respuesta", async () => {
+  const c = await contenidoDeProyecto(PILOTO);
+
+  const r = await matrizDePlataformasDelProyecto({
+    projectId: PILOTO,
+    candidatos: c.candidatos || []
+  });
+
+  assert.ok(Array.isArray(r.contrato.ordenDeAgregacion));
+
+  assert.equal(r.contrato.ordenDeAgregacion.length, 3);
+
+  /* Y se prohibe explicitamente el defecto corregido. */
+  assert.ok(
+    r.contrato.prohibido.some((x) =>
+      /un solo snapshot de toda la plataforma/i.test(x)
+    )
+  );
+
+  assert.ok(
+    r.contrato.prohibido.some((x) => /audiencia única|alcance|personas/i.test(x))
+  );
+});
+
+
+/*
+  FIXTURES ACTUALIZADOS EN CANDIDATE-MULTI-ASSET-UX-RESOLUTION-02.
+
+  Estas tres pruebas fijaban el comportamiento de las «huerfanas»
+  como invariante: `youtube:@canal` frente a `youtube:canal` daba
+  una medicion inalcanzable y la celda lo declaraba.
+
+  Ese comportamiento ERA EL DEFECTO. Los dos ids son el mismo
+  activo, y `resolverIdentidadCanonica` —la capa que ya usaban
+  IPDO y `projectStore`— lo resolvia desde el principio; esta
+  matriz simplemente no la llamaba.
+
+  Ahora se comprueba lo contrario y es mas fuerte: que el
+  desajuste ARTIFICIAL desaparece, y que un desajuste REAL
+  —una cuenta observada que nadie atribuyo— sigue viendose.
+*/
+
+test("I · el desajuste artificial de accountId se resuelve con la capa canonica", () => {
   const celda = celdaDePlataforma({
     plataforma: "youtube",
     cuentas: [{ id: "youtube:canal", declaradaPorAnalista: true }],
@@ -387,33 +823,118 @@ test("huerfanas · una medicion cuyo accountId no casa se declara, no se descart
     ]
   });
 
-  assert.ok(celda.medicionesHuerfanas);
+  /* Ya no hay huerfana: era el mismo activo escrito de dos formas. */
+  assert.equal(celda.medicionesSinActivo, null);
 
-  assert.deepEqual(celda.medicionesHuerfanas.accountIds, ["youtube:@canal"]);
+  /* Y la medicion se usa, en lugar de quedar inalcanzable. */
+  assert.equal(celda.metrica.valor, 857);
 
-  assert.deepEqual(celda.medicionesHuerfanas.activosDeLaFicha, ["youtube:canal"]);
+  assert.equal(celda.metrica.nombre, "suscriptores");
 
-  /* Y la metrica NO se toma de ella: no se sabe de quien es. */
-  assert.equal(celda.metrica, null);
+  /* El id crudo NO se reescribe: la evidencia se conserva. */
+  assert.equal(celda.activos[0].accountIdOriginal, "youtube:canal");
 });
 
 
-test("huerfanas · sin desajuste el campo queda en null", () => {
+test("I · el alias legacy channelId/handle tambien resuelve", () => {
+  /*
+    `youtube:@paulcarrascocarpio9219` === `youtube:ucxp6...`, el
+    alias revisado a mano que ya vivia en `LEGACY_ACCOUNT_ALIASES`.
+  */
   const celda = celdaDePlataforma({
     plataforma: "youtube",
-    cuentas: [{ id: "youtube:canal", declaradaPorAnalista: true }],
+    cuentas: [
+      { id: "youtube:ucxp6qogn2ksjfcea-izjmdw", declaradaPorAnalista: true }
+    ],
     snapshots: [
-      { accountId: "youtube:canal", platform: "youtube", estado: "OBSERVADA", followers: 857 }
+      {
+        accountId: "youtube:@paulcarrascocarpio9219",
+        platform: "youtube",
+        estado: "OBSERVADA",
+        followers: 15
+      }
     ]
   });
 
-  assert.equal(celda.medicionesHuerfanas, null);
+  assert.equal(celda.medicionesSinActivo, null);
 
-  assert.equal(celda.metrica.valor, 857);
+  assert.equal(celda.metrica.valor, 15);
 });
 
 
-test("huerfanas · el piloto real tiene celdas afectadas y la matriz las cuenta", async () => {
+test("J · el alias NO duplica el mismo activo escrito de dos formas", () => {
+  const celda = celdaDePlataforma({
+    plataforma: "x",
+    cuentas: [
+      { id: "x:JuanCVegaEC", declaradaPorAnalista: true },
+      { id: "x:juancvegaec", descubiertaPorSentinel: true }
+    ],
+    snapshots: [
+      { accountId: "x:juancvegaec", platform: "x", estado: "OBSERVADA", followers: 5000 }
+    ]
+  });
+
+  /* Dos escrituras, UN activo. */
+  assert.equal(celda.assetCount, 1);
+
+  assert.equal(celda.activos.length, 1);
+
+  /* Los dos ids crudos se conservan. */
+  assert.deepEqual(celda.activos[0].idsOriginales, ["x:JuanCVegaEC", "x:juancvegaec"]);
+
+  /* Y los 5.000 seguidores se cuentan UNA vez, no dos. */
+  assert.equal(celda.metrica.valor, 5000);
+
+  assert.equal(celda.metrica.acumulado, false);
+
+  assert.equal(celda.metrica.metodo, "ACTIVO_UNICO");
+});
+
+
+test("K · dos activos realmente distintos siguen siendo distintos", () => {
+  const celda = celdaDePlataforma({
+    plataforma: "instagram",
+    cuentas: [
+      { id: "instagram:cuenta_a", declaradaPorAnalista: true },
+      { id: "instagram:cuenta_b", declaradaPorAnalista: true }
+    ],
+    snapshots: [
+      { accountId: "instagram:cuenta_a", platform: "instagram", estado: "OBSERVADA", followers: 100 },
+      { accountId: "instagram:cuenta_b", platform: "instagram", estado: "OBSERVADA", followers: 200 }
+    ]
+  });
+
+  assert.equal(celda.assetCount, 2);
+
+  assert.equal(celda.metrica.valor, 300);
+
+  assert.equal(celda.metrica.acumulado, true);
+});
+
+
+test("I · una medicion de una cuenta que nadie atribuyo SI se declara", () => {
+  const celda = celdaDePlataforma({
+    plataforma: "instagram",
+    cuentas: [{ id: "instagram:oficial", declaradaPorAnalista: true }],
+    snapshots: [
+      { accountId: "instagram:oficial", platform: "instagram", estado: "OBSERVADA", followers: 500 },
+      /* Esta no esta en la ficha ni canonicalizando. */
+      { accountId: "instagram:desconocida", platform: "instagram", estado: "OBSERVADA", followers: 90000 }
+    ]
+  });
+
+  assert.ok(celda.medicionesSinActivo);
+
+  assert.deepEqual(celda.medicionesSinActivo.accountIds, ["instagram:desconocida"]);
+
+  /* Y sus 90.000 seguidores NO entran en el agregado. */
+  assert.equal(celda.metrica.valor, 500);
+
+  assert.equal(celda.metrica.acumulado, false);
+});
+
+
+test("I · el piloto real ya no tiene desajustes artificiales de accountId", async () => {
   const c = await contenidoDeProyecto(PILOTO);
 
   const r = await matrizDePlataformasDelProyecto({
@@ -422,18 +943,23 @@ test("huerfanas · el piloto real tiene celdas afectadas y la matriz las cuenta"
   });
 
   const afectadas = r.candidatos.flatMap((f) =>
-    PLATAFORMAS_MATRIZ.filter((p) => f.celdas[p].medicionesHuerfanas)
+    PLATAFORMAS_MATRIZ.filter((p) => f.celdas[p].medicionesSinActivo)
   );
 
-  assert.ok(afectadas.length > 0, "el desajuste de accountId existe en el piloto");
-
-  const limitacion = (r.limitaciones || []).find(
-    (l) => l.id === "ACCOUNT_ID_SIN_CASAR"
+  /*
+    Las 4 del gate anterior —2 en YouTube por el `@`/alias y 2 en
+    X por mayusculas— eran todas artificiales y desaparecen.
+  */
+  assert.equal(
+    afectadas.length,
+    0,
+    `siguen habiendo desajustes: ${afectadas.join(", ")}`
   );
 
-  assert.ok(limitacion, "la matriz tiene que declarar el desajuste");
-
-  assert.equal(limitacion.celdasAfectadas, afectadas.length);
+  assert.ok(
+    !(r.limitaciones || []).some((l) => l.id === "MEDICION_SIN_ACTIVO_ATRIBUIDO"),
+    "sin desajustes no debe declararse la limitacion"
+  );
 });
 
 

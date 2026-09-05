@@ -57,6 +57,14 @@ import {
 
 import { cerrarCelda, ESTADOS_CIERRE } from "./operationalClosure.js";
 
+/*
+  LA MISMA capa canonica que usan `digitalPresenceIndex.js` y
+  `projectStore.js`. Se reutiliza a proposito: una segunda
+  normalizacion en paralelo es como aparecen dos verdades para
+  el mismo activo.
+*/
+import { resolverIdentidadCanonica } from "./accountIdentity.js";
+
 
 /*
   Las cinco de la metodologia canonica. Se reexporta la lista de
@@ -95,78 +103,283 @@ export const ETIQUETA_SEGUIDORES = Object.freeze({
 
 
 /*
-  La metrica compacta de una celda: el snapshot mas reciente de un
-  activo VALIDO que traiga un valor real.
+===========================================================
+EL ORDEN DE AGREGACION — CANDIDATE-MULTI-ASSET-UX-RESOLUTION-02
+===========================================================
 
-  Tres reglas:
+LO QUE HACIA MAL
+-----------------------------------------------------------
 
-    solo de activos que casan con la ficha;
-    solo de snapshots con estado de medicion real;
-    `null` cuando no hay valor, nunca 0.
+La version anterior ordenaba TODOS los snapshots de la
+plataforma por fecha y se quedaba con el primero:
+
+    snapshots.filter(...).sort(por fecha desc)[0]
+
+Es decir: «el snapshot mas reciente de la plataforma». Con un
+solo activo da el resultado correcto por casualidad. Con dos, da
+el del activo que se observo mas tarde y descarta el otro.
+
+El caso que lo demostro es Juan Cristobal Lloret en Instagram:
+
+    instagram:jotalloretv        10.822   2026-08-31
+    instagram:lloretvaldivieso      360   2026-09-03  <- ganaba
+
+La celda mostraba 360 y ocultaba 10.822. No es que el numero
+fuera impreciso: es que la plataforma tenia dos activos y la
+celda solo hablaba de uno.
+
+EL ORDEN CORRECTO
+-----------------------------------------------------------
+
+    1. por CADA activo -> su snapshot valido mas reciente
+    2. DESPUES -> agregar los activos
+
+Es exactamente el orden que `digitalPresenceIndex.js` ya usaba
+para IPDO. Esta funcion no inventa una segunda semantica: la
+copia, con la misma canonicalizacion antes de agrupar.
+
+POR QUE SE CANONICALIZA ANTES DE AGRUPAR
+-----------------------------------------------------------
+
+Porque `x:JuanCVegaEC` y `x:juancvegaec` son EL MISMO activo, y
+agrupar por el id crudo los contaria dos veces —o, como pasaba
+aqui, no encontraria la medicion y la celda quedaria sin cubrir
+aunque el dato existiera persistido—.
+
+Se reutiliza `resolverIdentidadCanonica`, la misma capa que usan
+IPDO y `projectStore`. NO se crea una segunda normalizacion, y
+el id crudo se conserva en `accountIdOriginal`: la evidencia
+historica no se reescribe.
+===========================================================
 */
-function metricaDeCelda(plataforma, snapshots, activosValidos) {
-  const ids = new Set(activosValidos.map((a) => a.accountId));
 
-  const candidatas = snapshots
-    .filter((s) => ids.has(s.accountId))
+/*
+  Los activos de la ficha, con su clave canonica calculada y el id
+  original intacto. Dos activos que canonicalizan igual son UNO:
+  se funden y se conservan los dos ids crudos.
+*/
+function normalizarActivos(cuentas = []) {
+  const porClave = new Map();
+
+  for (const c of cuentas) {
+    const clave = resolverIdentidadCanonica(c.id);
+
+    if (!clave) continue;
+
+    const previo = porClave.get(clave);
+
+    if (previo) {
+      /*
+        MISMO activo escrito de dos formas. No se duplica: se
+        registran los dos ids crudos y se conserva la senal de
+        identidad mas fuerte de las dos.
+      */
+      previo.idsOriginales.push(c.id);
+
+      previo.declaradaPorAnalista =
+        previo.declaradaPorAnalista || c.declaradaPorAnalista === true;
+
+      previo.corroboradaPorSentinel =
+        previo.corroboradaPorSentinel || c.corroboradaPorSentinel === true;
+
+      previo.descubiertaPorSentinel =
+        previo.descubiertaPorSentinel || c.descubiertaPorSentinel === true;
+
+      continue;
+    }
+
+    porClave.set(clave, {
+      accountId: clave,
+      accountIdOriginal: c.id,
+      idsOriginales: [c.id],
+      handle: c.handle || null,
+      url: c.url || null,
+      declaradaPorAnalista: c.declaradaPorAnalista === true,
+      descubiertaPorSentinel: c.descubiertaPorSentinel === true,
+      corroboradaPorSentinel: c.corroboradaPorSentinel === true,
+      correspondencia: c.correspondencia ?? null
+    });
+  }
+
+  return [...porClave.values()];
+}
+
+
+/*
+  Los snapshots de una plataforma con su clave canonica. Igual que
+  arriba: se calcula, no se reescribe.
+*/
+function normalizarSnapshots(snapshots = [], plataforma) {
+  return snapshots
+    .filter((s) => s.platform === plataforma || s.plataformaId === plataforma)
+    .map((s) => ({ ...s, claveCanonica: resolverIdentidadCanonica(s.accountId) }));
+}
+
+
+/*
+  UN ACTIVO, UNA METRICA. El snapshot de medicion real mas
+  reciente de ESE activo, o `null`.
+
+  `null` nunca es 0: un snapshot `CUENTA_CONFIRMADA` confirma que
+  la cuenta existe y no mide nada, y eso no son cero seguidores.
+*/
+function metricaDeActivo(activo, snapsPlataforma) {
+  const suyos = snapsPlataforma
+    .filter((s) => s.claveCanonica === activo.accountId)
     .filter((s) => ESTADOS_CON_METRICA.has(s.estado))
-    .filter((s) => s.followers != null)
-    .sort((a, b) => String(b.capturedAt).localeCompare(String(a.capturedAt)));
+    .filter((s) => s.followers != null);
 
-  if (!candidatas.length) return null;
+  if (!suyos.length) {
+    return {
+      accountId: activo.accountId,
+      accountIdOriginal: activo.accountIdOriginal,
+      handle: activo.handle,
+      url: activo.url,
+      valor: null,
+      capturedAt: null,
+      provider: null,
+      estado: null
+    };
+  }
 
-  const s = candidatas[0];
+  const ultimo = suyos.reduce((mejor, s) =>
+    new Date(s.capturedAt) > new Date(mejor.capturedAt) ? s : mejor
+  );
 
   return {
-    nombre: ETIQUETA_SEGUIDORES[plataforma] || "seguidores",
-    valor: Number(s.followers),
-    accountId: s.accountId,
-    capturedAt: s.capturedAt || null,
-    provider: s.provider || null,
-    estado: s.estado || null,
-    /*
-      Cuantos activos de esta celda tienen metrica. Si hay dos
-      cuentas y solo una medida, el numero visible es de UNA, y
-      hay que poder decirlo.
-    */
-    activosConMetrica: new Set(candidatas.map((c) => c.accountId)).size
+    accountId: activo.accountId,
+    accountIdOriginal: activo.accountIdOriginal,
+    handle: activo.handle,
+    url: activo.url,
+    valor: Number(ultimo.followers),
+    capturedAt: ultimo.capturedAt || null,
+    provider: ultimo.provider || null,
+    estado: ultimo.estado || null
+  };
+}
+
+
+export const METODOS_AGREGACION = Object.freeze({
+  ACTIVO_UNICO: "ACTIVO_UNICO",
+  SUMA_DE_ACTIVOS: "SUMA_DE_ACTIVOS"
+});
+
+
+/*
+  LA AGREGACION DE LA PLATAFORMA.
+
+  Se suma dentro de la MISMA plataforma y la MISMA familia
+  metrica. Nunca entre plataformas: un suscriptor de YouTube y un
+  seguidor de TikTok no son la misma unidad, y sumarlos daria una
+  audiencia inventada.
+
+  Y la suma NO son personas. Dos cuentas del mismo candidato
+  comparten seguidores, asi que el total es «seguidores
+  acumulados entre N activos observados», no alcance ni audiencia
+  unica. La etiqueta se construye aqui para que la UI no pueda
+  nombrarlo de otra forma.
+*/
+function agregadoDeCelda(plataforma, snapsPlataforma, activosValidos) {
+  const nombre = ETIQUETA_SEGUIDORES[plataforma] || "seguidores";
+
+  const porActivo = activosValidos.map((a) => metricaDeActivo(a, snapsPlataforma));
+
+  const conValor = porActivo.filter((a) => a.valor != null);
+
+  if (!conValor.length) {
+    return {
+      metrica: null,
+      porActivo
+    };
+  }
+
+  const total = conValor.reduce((suma, a) => suma + a.valor, 0);
+
+  const acumulado = conValor.length > 1;
+
+  const metodo = acumulado
+    ? METODOS_AGREGACION.SUMA_DE_ACTIVOS
+    : METODOS_AGREGACION.ACTIVO_UNICO;
+
+  /*
+    La observacion mas antigua de las que componen el total. Si el
+    agregado mezcla un snapshot de hace una semana con otro de
+    hoy, hay que poder decirlo.
+  */
+  const fechas = conValor.map((a) => a.capturedAt).filter(Boolean).sort();
+
+  return {
+    metrica: {
+      nombre,
+
+      valor: total,
+
+      metodo,
+
+      acumulado,
+
+      activosConMetrica: conValor.length,
+
+      activosTotal: activosValidos.length,
+
+      /* La frase exacta que puede leerse en pantalla. */
+      etiqueta: acumulado
+        ? `${total.toLocaleString("es-EC")} ${nombre} acumulados entre ${conValor.length} activos observados`
+        : `${total.toLocaleString("es-EC")} ${nombre}`,
+
+      noEs: acumulado
+        ? "Suma de cuentas distintas del mismo candidato. Los seguidores pueden solaparse entre cuentas: NO son personas únicas, ni alcance, ni audiencia única."
+        : null,
+
+      /* Compatibilidad: con un solo activo, de quien es el dato. */
+      accountId: conValor.length === 1 ? conValor[0].accountId : null,
+
+      capturedAt: conValor.length === 1 ? conValor[0].capturedAt : null,
+
+      provider: conValor.length === 1 ? conValor[0].provider : null,
+
+      estado: conValor.length === 1 ? conValor[0].estado : null,
+
+      observadoDesde: fechas[0] || null,
+
+      observadoHasta: fechas[fechas.length - 1] || null
+    },
+
+    porActivo
   };
 }
 
 
 /*
-  MEDICIONES HUERFANAS.
+  MEDICIONES SIN ACTIVO QUE CASE.
 
-  Snapshots de esta plataforma cuyo `accountId` no casa con
-  ningun activo de la ficha. Es un hecho observable, no una
-  reinterpretacion: existe una medicion persistida que la
-  clasificacion no puede usar porque la clave no coincide.
+  Antes de este gate eran 4 en el piloto, y todas eran
+  ARTIFICIALES: `youtube:@yakuperez4230` frente a
+  `youtube:yakuperez4230`, `x:JuanCVegaEC` frente a
+  `x:juancvegaec`, y el canal de Paul Carrasco por su alias
+  channelId/handle, que `LEGACY_ACCOUNT_ALIASES` ya conocia.
 
-  En el piloto pasa en YouTube y en X. La ficha guarda
-  `youtube:yakuperez4230` y el snapshot `youtube:@yakuperez4230`;
-  para Paul Carrasco la ficha guarda el id de canal
-  `youtube:ucxp6...` y el snapshot el handle.
-
-  Se SURFACEA en lugar de arreglarse. Normalizar la clave cambia
-  semantica de identidad y de persistencia, y eso no es de este
-  gate. Pero ocultarlo haria que la celda dijera «sin via
-  disponible» mientras hay 857 suscriptores medidos.
+  Con la clave canonica desaparecen las cuatro. El campo se
+  conserva porque un desajuste REAL —una medicion de una cuenta
+  que no esta en la ficha— sigue siendo posible y hay que verlo,
+  no descartarlo en silencio.
 */
-function medicionesHuerfanas(snapshots, activos) {
-  const ids = new Set(activos.map((a) => a.accountId));
+function medicionesSinActivo(snapsPlataforma, activosValidos) {
+  const claves = new Set(activosValidos.map((a) => a.accountId));
 
-  const huerfanas = snapshots.filter((s) => s.accountId && !ids.has(s.accountId));
+  const sueltas = snapsPlataforma.filter(
+    (s) => s.accountId && !claves.has(s.claveCanonica)
+  );
 
-  if (!huerfanas.length) return null;
-
-  const claves = [...new Set(huerfanas.map((s) => s.accountId))];
+  if (!sueltas.length) return null;
 
   return {
-    total: claves.length,
-    accountIds: claves,
-    activosDeLaFicha: [...ids],
+    total: new Set(sueltas.map((s) => s.claveCanonica)).size,
+    accountIds: [...new Set(sueltas.map((s) => s.accountId))],
+    clavesCanonicas: [...new Set(sueltas.map((s) => s.claveCanonica))],
+    activosDeLaFicha: [...claves],
     motivo:
-      "Existe medición persistida cuyo accountId no coincide con ningún activo de la ficha, así que la clasificación no puede usarla. No es ausencia de medición: es una clave que no casa."
+      "Existe medición persistida cuyo activo no está en la ficha de identidad, ni siquiera resolviendo su forma canónica. No es ausencia de medición: es una cuenta observada que nadie ha atribuido."
   };
 }
 
@@ -184,19 +397,25 @@ export function celdaDePlataforma({
 }) {
   /*
     La ficha nombra la clave del activo `id`; el clasificador la
-    espera como `accountId`. Se traduce aqui, en un solo sitio.
-  */
-  const activos = cuentas.map((c) => ({
-    accountId: c.id,
-    handle: c.handle || null,
-    url: c.url || null,
-    declaradaPorAnalista: c.declaradaPorAnalista === true,
-    descubiertaPorSentinel: c.descubiertaPorSentinel === true,
-    corroboradaPorSentinel: c.corroboradaPorSentinel === true,
-    correspondencia: c.correspondencia ?? null
-  }));
+    espera como `accountId`. Se traduce aqui, en un solo sitio, y
+    la clave que se usa es la CANONICA.
 
-  const snapsDePlataforma = snapshots.filter((s) => s.platform === plataforma);
+    Canonicalizar antes de clasificar es lo que hace que
+    `activoCubierto` encuentre la medicion: comparaba
+    `x:JuanCVegaEC` de la ficha contra `x:juancvegaec` del
+    snapshot y no casaban, asi que la celda quedaba sin cubrir
+    aunque el dato estuviera persistido.
+
+    El id crudo se conserva en `accountIdOriginal`. La evidencia
+    historica no se reescribe.
+  */
+  const activos = normalizarActivos(cuentas);
+
+  const snapsDePlataforma = normalizarSnapshots(snapshots, plataforma).map((s) => ({
+    ...s,
+    accountId: s.claveCanonica,
+    accountIdOriginal: s.accountId
+  }));
 
   /*
     `discoveryConfirmada` va SIEMPRE en false, y es deliberado.
@@ -230,6 +449,12 @@ export function celdaDePlataforma({
       identidadDeCuenta(a, conflictosConocidos) !== IDENTITY_STATES.IDENTITY_CONFLICT
   );
 
+  /*
+    AQUI ESTA EL ARREGLO: primero cada activo, despues la suma.
+    Nunca «el snapshot mas reciente de la plataforma».
+  */
+  const agregado = agregadoDeCelda(plataforma, snapsDePlataforma, activosValidos);
+
   return {
     plataforma,
 
@@ -252,21 +477,48 @@ export function celdaDePlataforma({
       motivo: cerrada.motivoCierre || celda.motivo || null
     },
 
-    activos: activosValidos.map((a) => ({
-      accountId: a.accountId,
-      handle: a.handle,
-      url: a.url,
-      identityState: identidadDeCuenta(a, conflictosConocidos)
-    })),
+    /*
+      CADA ACTIVO, CON SU PROPIA METRICA Y SU PROPIA EVIDENCIA.
+
+      La celda ya no esconde los activos detras de una cifra: cada
+      uno conserva su id canonico, su id crudo, su handle, su URL,
+      su estado de identidad, su valor, cuando se observo y por
+      que via. Un activo sin medir aparece con `valor: null`, que
+      no es cero.
+    */
+    activos: activosValidos.map((a) => {
+      const m = agregado.porActivo.find((x) => x.accountId === a.accountId);
+
+      return {
+        accountId: a.accountId,
+        accountIdOriginal: a.accountIdOriginal,
+        idsOriginales: a.idsOriginales,
+        handle: a.handle,
+        url: a.url,
+        identityState: identidadDeCuenta(a, conflictosConocidos),
+        metrica: m
+          ? {
+              nombre: ETIQUETA_SEGUIDORES[plataforma] || "seguidores",
+              valor: m.valor,
+              capturedAt: m.capturedAt,
+              provider: m.provider,
+              estado: m.estado
+            }
+          : null
+      };
+    }),
 
     activosTotal: celda.activosTotal ?? activosValidos.length,
     activosCubiertos: celda.activosCubiertos ?? 0,
 
-    metrica: metricaDeCelda(plataforma, snapsDePlataforma, activosValidos),
+    /* Cuantos activos distintos tiene la celda, ya deduplicados. */
+    assetCount: activosValidos.length,
+
+    metrica: agregado.metrica,
 
     snapshots: snapsDePlataforma.length,
 
-    medicionesHuerfanas: medicionesHuerfanas(snapsDePlataforma, activosValidos)
+    medicionesSinActivo: medicionesSinActivo(snapsDePlataforma, activosValidos)
   };
 }
 
@@ -401,19 +653,46 @@ export async function matrizDePlataformasDelProyecto(entrada = {}) {
   */
   const limitaciones = [];
 
-  const huerfanas = filas.reduce(
+  /*
+    Las 4 «huerfanas» del gate anterior eran artificiales: el
+    mismo activo escrito de dos formas. Con la clave canonica
+    desaparecen, y esta limitacion solo aparece si el desajuste
+    es REAL —una cuenta observada que nadie ha atribuido—.
+  */
+  const sinActivo = filas.reduce(
     (n, f) =>
-      n +
-      PLATAFORMAS_MATRIZ.filter((p) => f.celdas[p].medicionesHuerfanas).length,
+      n + PLATAFORMAS_MATRIZ.filter((p) => f.celdas[p].medicionesSinActivo).length,
     0
   );
 
-  if (huerfanas) {
+  if (sinActivo) {
     limitaciones.push({
-      id: "ACCOUNT_ID_SIN_CASAR",
-      celdasAfectadas: huerfanas,
+      id: "MEDICION_SIN_ACTIVO_ATRIBUIDO",
+      celdasAfectadas: sinActivo,
       texto:
-        "Hay celdas con medición persistida cuyo accountId no coincide con ningún activo de la ficha. La clasificación no puede usarla, así que esas celdas parecen menos medidas de lo que están."
+        "Hay celdas con medición persistida cuyo activo no está en la ficha de identidad, ni siquiera resolviendo su forma canónica. Es una cuenta observada que nadie ha atribuido."
+    });
+  }
+
+  /*
+    Cuantas celdas agregan mas de un activo. Se declara porque el
+    numero visible de esas celdas es una SUMA, y una suma de
+    cuentas del mismo candidato no son personas unicas.
+  */
+  const celdasAgregadas = filas.reduce(
+    (n, f) =>
+      n +
+      PLATAFORMAS_MATRIZ.filter((p) => f.celdas[p].metrica?.acumulado === true)
+        .length,
+    0
+  );
+
+  if (celdasAgregadas) {
+    limitaciones.push({
+      id: "AGREGACION_MULTI_ACTIVO",
+      celdasAfectadas: celdasAgregadas,
+      texto:
+        "En las celdas con varios activos medidos, la cifra es la suma de los seguidores de cada cuenta. Los seguidores pueden solaparse entre cuentas del mismo candidato: no son personas únicas, ni alcance, ni audiencia única."
     });
   }
 
@@ -424,7 +703,7 @@ export async function matrizDePlataformasDelProyecto(entrada = {}) {
   });
 
   limitaciones.push({
-    id: "CONFLICTOS_NO_PERSISTIDOS",
+    id: "IDENTITY_EXCLUSION_PERSISTENCE_DEBT",
     texto:
       "Los conflictos de identidad revisados por una persona no tienen almacenamiento: `conflictosConocidos` llega vacío en cualquier ejecución. Una exclusión decidida en un gate anterior no puede reproducirse hoy."
   });
@@ -449,16 +728,38 @@ export async function matrizDePlataformasDelProyecto(entrada = {}) {
     limitaciones,
 
     contrato: {
-      version: "1.0",
+      version: "1.1",
+
       fuente:
         "socialBenchmarkMatrix.clasificarCeldaConIdentidad + operationalClosure.cerrarCelda, las funciones certificadas por P-CAND-OPERATIONAL-CLOSURE-01",
+
       identidadNoEsMedicion:
         "`identidad` dice de quién es el activo; `medicion` dice si podemos medirlo. Un activo declarado por el analista tiene identidad fuerte aunque su medición esté bloqueada.",
+
+      /*
+        El orden importa y se declara, porque invertirlo es el
+        defecto que corrige CANDIDATE-MULTI-ASSET-UX-RESOLUTION-02.
+      */
+      ordenDeAgregacion: [
+        "1. resolver la clave canónica de cada activo y de cada snapshot",
+        "2. por CADA activo, quedarse con su snapshot de medición más reciente",
+        "3. DESPUÉS sumar los activos de la misma plataforma y la misma familia métrica"
+      ],
+
+      agregacion:
+        "La cifra de una celda con varios activos medidos es la SUMA de sus seguidores, no el valor del activo observado más recientemente.",
+
+      identidadCanonica:
+        "Se reutiliza accountIdentity.resolverIdentidadCanonica, la misma capa que usan digitalPresenceIndex y projectStore. El accountId crudo se conserva en accountIdOriginal: la evidencia no se reescribe.",
+
       prohibido: [
         "sumar métricas entre plataformas",
+        "sumar familias métricas distintas (seguidores + suscriptores, likes + vistas)",
         "convertir una ausencia de métrica en 0",
         "ordenar candidatos por número de celdas medidas",
-        "leer «resueltas» como «medidas»"
+        "leer «resueltas» como «medidas»",
+        "llamar audiencia única, alcance o personas a la suma de varios activos",
+        "elegir un solo snapshot de toda la plataforma en lugar de agregar por activo"
       ]
     },
 
@@ -477,6 +778,7 @@ export async function matrizDePlataformasDelProyecto(entrada = {}) {
 export default {
   PLATAFORMAS_MATRIZ,
   ETIQUETA_SEGUIDORES,
+  METODOS_AGREGACION,
   celdaDePlataforma,
   coberturaDeCandidato,
   matrizDePlataformasDelProyecto

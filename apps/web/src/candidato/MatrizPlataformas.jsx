@@ -87,8 +87,22 @@ const td = {
 };
 
 
-/* Un numero legible, o una raya. Nunca un 0 que signifique «no sé». */
-function Metrica({ metrica, activosTotal }) {
+/*
+  Un numero legible, o una raya. Nunca un 0 que signifique «no sé».
+
+  MULTI-ASSET — CANDIDATE-MULTI-ASSET-UX-RESOLUTION-02.
+
+  Cuando la celda tiene varios activos medidos, el numero es una
+  SUMA y hay que decirlo en la propia celda. «11.182 seguidores»
+  a secas se lee como una cuenta con 11.182 seguidores, y son
+  dos cuentas.
+
+  Tampoco se puede llamar audiencia ni alcance: dos cuentas del
+  mismo candidato comparten seguidores, asi que la suma NO son
+  personas unicas. Esa aclaracion viaja en el `title` y la
+  construye el backend, no esta pantalla.
+*/
+function Metrica({ metrica, activos = [] }) {
   if (!metrica || metrica.valor == null) {
     return (
       <div
@@ -105,23 +119,38 @@ function Metrica({ metrica, activosTotal }) {
     );
   }
 
+  const total = metrica.activosTotal ?? activos.length;
+
   /*
-    Si hay varios activos y solo uno medido, el numero es de UNO.
-    Decirlo evita que se lea como el total de la plataforma.
+    Hay activos sin medir. El numero es de los que SI se midieron,
+    y por si solo no describe la plataforma entera.
   */
-  const parcial =
-    activosTotal > 1 && metrica.activosConMetrica < activosTotal;
+  const parcial = total > 1 && metrica.activosConMetrica < total;
+
+  /* El desglose por activo, para que la suma sea auditable. */
+  const desglose = activos
+    .filter((a) => a.metrica?.valor != null)
+    .map(
+      (a) =>
+        `${a.handle || a.accountId}: ${a.metrica.valor.toLocaleString("es-EC")}` +
+        (a.metrica.capturedAt ? ` (${String(a.metrica.capturedAt).slice(0, 10)})` : "")
+    );
 
   return (
     <div
       title={[
-        `${metrica.valor.toLocaleString("es-EC")} ${metrica.nombre}`,
+        metrica.etiqueta ||
+          `${metrica.valor.toLocaleString("es-EC")} ${metrica.nombre}`,
+        desglose.length > 1 ? desglose.join(" + ") : null,
         metrica.accountId,
         metrica.provider ? `vía ${metrica.provider}` : null,
-        metrica.capturedAt ? `medido ${String(metrica.capturedAt).slice(0, 10)}` : null,
+        metrica.capturedAt
+          ? `medido ${String(metrica.capturedAt).slice(0, 10)}`
+          : null,
         parcial
-          ? `de ${metrica.activosConMetrica} de ${activosTotal} activos`
-          : null
+          ? `medidos ${metrica.activosConMetrica} de ${total} activos`
+          : null,
+        metrica.noEs
       ]
         .filter(Boolean)
         .join(" · ")}
@@ -147,6 +176,23 @@ function Metrica({ metrica, activosTotal }) {
         {metrica.nombre}
         {parcial ? " ·¹" : ""}
       </span>
+
+      {/*
+        LA PALABRA QUE EVITA EL MALENTENDIDO. Va en la celda, no
+        en un tooltip: es la diferencia entre leer una cuenta y
+        leer la suma de dos.
+      */}
+      {metrica.acumulado && (
+        <div
+          style={{
+            color: "var(--sentinel-texto-tenue)",
+            fontSize: "9px",
+            lineHeight: 1.4
+          }}
+        >
+          acumulados · {metrica.activosConMetrica} activos
+        </div>
+      )}
     </div>
   );
 }
@@ -187,7 +233,7 @@ function Celda({ celda }) {
         {textoDeEstado(estado)}
       </span>
 
-      <Metrica metrica={celda.metrica} activosTotal={celda.activosTotal} />
+      <Metrica metrica={celda.metrica} activos={celda.activos} />
 
       {/* EJE 2 — ¿de quién es? */}
       {ident && (
@@ -210,9 +256,9 @@ function Celda({ celda }) {
         celda diria «sin vía disponible» mientras hay una medicion
         real persistida que la clasificacion no puede usar.
       */}
-      {celda.medicionesHuerfanas && (
+      {celda.medicionesSinActivo && (
         <div
-          title={`${celda.medicionesHuerfanas.motivo} Medición: ${celda.medicionesHuerfanas.accountIds.join(", ")}. Activo de la ficha: ${celda.medicionesHuerfanas.activosDeLaFicha.join(", ")}.`}
+          title={`${celda.medicionesSinActivo.motivo} Medición: ${celda.medicionesSinActivo.accountIds.join(", ")}. Activos de la ficha: ${celda.medicionesSinActivo.activosDeLaFicha.join(", ")}.`}
           style={{
             color: "#eda100",
             fontSize: "9px",
@@ -220,7 +266,7 @@ function Celda({ celda }) {
             lineHeight: 1.4
           }}
         >
-          ⚠ medición sin activo que case
+          ⚠ medición sin activo atribuido
         </div>
       )}
     </td>

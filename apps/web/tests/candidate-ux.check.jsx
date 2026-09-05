@@ -958,7 +958,7 @@ const celda = (estado, extra = {}) => ({
   activosCubiertos: extra.activosCubiertos ?? 0,
   metrica: extra.metrica ?? null,
   snapshots: extra.snapshots ?? 0,
-  medicionesHuerfanas: extra.huerfanas ?? null
+  medicionesSinActivo: extra.huerfanas ?? null
 });
 
 const COBERTURA_3_DE_5 = {
@@ -1294,8 +1294,8 @@ t(
 );
 
 t(
-  "Z · la medición que no casa se declara en lugar de descartarse en silencio",
-  matriz.includes("medición sin activo que case")
+  "Z · la medición sin activo atribuido se declara en lugar de descartarse",
+  matriz.includes("medición sin activo atribuido")
 );
 
 t(
@@ -1367,6 +1367,338 @@ t(
       matriz={{ ok: true, plataformas: MATRIZ.plataformas, candidatos: [] }}
     />
   ).includes("Ningún candidato observado")
+);
+
+
+/*
+===========================================================
+AA · MULTI-ASSET EN LA CELDA
+CANDIDATE-MULTI-ASSET-UX-RESOLUTION-02
+===========================================================
+
+La celda mostraba el valor del snapshot mas reciente de toda la
+plataforma. Con dos activos, eso ocultaba uno.
+
+Ahora muestra la suma, y tiene que DECIR que es una suma: «11.182
+seguidores» a secas se lee como una cuenta con 11.182
+seguidores, y son dos cuentas.
+===========================================================
+*/
+
+console.log("\n== AA · MULTI-ASSET ==");
+
+const CELDA_MULTI = {
+  plataforma: "instagram",
+  identidad: {
+    estado: "ANALYST_CONFIRMED",
+    porActivo: [],
+    conflictos: [],
+    tieneConflicto: false
+  },
+  medicion: { estado: "MEDIDO", motivo: "2 de 2 activos medidos" },
+  activos: [
+    {
+      accountId: "instagram:jotalloretv",
+      accountIdOriginal: "instagram:jotalloretv",
+      handle: "jotalloretv",
+      identityState: "ANALYST_CONFIRMED",
+      metrica: {
+        nombre: "seguidores",
+        valor: 10822,
+        capturedAt: "2026-08-31T15:53:08.897Z",
+        provider: "instagram_graph",
+        estado: "OBSERVADA"
+      }
+    },
+    {
+      accountId: "instagram:lloretvaldivieso",
+      accountIdOriginal: "instagram:lloretvaldivieso",
+      handle: "lloretvaldivieso",
+      identityState: "SYSTEM_VERIFIED",
+      metrica: {
+        nombre: "seguidores",
+        valor: 360,
+        capturedAt: "2026-09-03T20:39:35.311Z",
+        provider: "scrapecreators",
+        estado: "MEDIDO_PROVEEDOR"
+      }
+    }
+  ],
+  activosTotal: 2,
+  activosCubiertos: 2,
+  assetCount: 2,
+  metrica: {
+    nombre: "seguidores",
+    valor: 11182,
+    metodo: "SUMA_DE_ACTIVOS",
+    acumulado: true,
+    activosConMetrica: 2,
+    activosTotal: 2,
+    etiqueta: "11.182 seguidores acumulados entre 2 activos observados",
+    noEs:
+      "Suma de cuentas distintas del mismo candidato. Los seguidores pueden solaparse entre cuentas: NO son personas únicas, ni alcance, ni audiencia única.",
+    accountId: null,
+    capturedAt: null,
+    provider: null,
+    estado: null,
+    observadoDesde: "2026-08-31T15:53:08.897Z",
+    observadoHasta: "2026-09-03T20:39:35.311Z"
+  },
+  snapshots: 3,
+  medicionesSinActivo: null
+};
+
+const MATRIZ_MULTI = {
+  ok: true,
+  proyectoId: "alcaldia-cuenca-2027-piloto",
+  plataformas: ["facebook", "instagram", "tiktok", "x", "youtube"],
+  totalCeldas: 5,
+  celdasResueltas: 5,
+  distribucion: { MEDIDO: 4, PARCIAL: 1 },
+  limitaciones: [
+    {
+      id: "AGREGACION_MULTI_ACTIVO",
+      celdasAfectadas: 1,
+      texto:
+        "En las celdas con varios activos medidos, la cifra es la suma de los seguidores de cada cuenta. Los seguidores pueden solaparse entre cuentas del mismo candidato: no son personas únicas, ni alcance, ni audiencia única."
+    }
+  ],
+  candidatos: [
+    {
+      candidateId: "juan-cristobal-lloret-valdivieso",
+      nombre: "Juan Cristóbal Lloret Valdivieso",
+      cobertura: {
+        medidas: 4,
+        parciales: 1,
+        resueltas: 5,
+        objetivo: 5,
+        expresionMedidas: "4 de 5 medidas",
+        expresionResueltas: "5 de 5 resueltas",
+        porcentaje: null,
+        noEs: "Resueltas NO significa medidas."
+      },
+      celdas: {
+        facebook: celda("MEDIDO", {
+          plataforma: "facebook",
+          activos: [{ accountId: "facebook:jotalloretv" }],
+          activosCubiertos: 1,
+          metrica: {
+            nombre: "seguidores",
+            valor: 55855,
+            metodo: "ACTIVO_UNICO",
+            acumulado: false,
+            activosConMetrica: 1,
+            activosTotal: 1,
+            etiqueta: "55.855 seguidores",
+            noEs: null,
+            accountId: "facebook:jotalloretv",
+            provider: "scrapecreators"
+          },
+          snapshots: 1
+        }),
+        instagram: CELDA_MULTI,
+        tiktok: celda("MEDIDO", {
+          plataforma: "tiktok",
+          activos: [{ accountId: "tiktok:jotalloretv" }],
+          activosCubiertos: 1,
+          metrica: {
+            nombre: "seguidores",
+            valor: 29100,
+            metodo: "ACTIVO_UNICO",
+            acumulado: false,
+            activosConMetrica: 1,
+            activosTotal: 1,
+            etiqueta: "29.100 seguidores",
+            noEs: null
+          },
+          snapshots: 2
+        }),
+        x: celda("MEDIDO", {
+          plataforma: "x",
+          activos: [{ accountId: "x:jotalloretv" }],
+          activosCubiertos: 1,
+          metrica: {
+            nombre: "seguidores",
+            valor: 29413,
+            metodo: "ACTIVO_UNICO",
+            acumulado: false,
+            activosConMetrica: 1,
+            activosTotal: 1,
+            etiqueta: "29.413 seguidores",
+            noEs: null
+          },
+          snapshots: 1
+        }),
+        youtube: celda("PARCIAL", {
+          plataforma: "youtube",
+          activos: [{ accountId: "youtube:jotalloretv" }],
+          activosTotal: 2,
+          activosCubiertos: 1,
+          motivo: "1 de 2 activos medidos; el resto no",
+          metrica: {
+            nombre: "suscriptores",
+            valor: 26,
+            metodo: "ACTIVO_UNICO",
+            acumulado: false,
+            activosConMetrica: 1,
+            activosTotal: 2,
+            etiqueta: "26 suscriptores",
+            noEs: null
+          },
+          snapshots: 1
+        })
+      }
+    }
+  ]
+};
+
+const multi = renderToStaticMarkup(<MatrizPlataformas matriz={MATRIZ_MULTI} />);
+
+const multiTexto = sinTags(multi);
+
+t(
+  "AA · la celda multi-activo muestra la SUMA, no el snapshot más reciente",
+  multi.includes("11.182") && !multiTexto.includes("360")
+);
+
+t(
+  "AA · y dice que es acumulado, en la celda y no solo en un tooltip",
+  multi.includes("acumulados")
+);
+
+t(
+  "AA · declara cuántos activos componen la cifra",
+  /acumulados\s*·\s*2 activos/.test(multiTexto)
+);
+
+t(
+  "AA · la etiqueta completa viaja para auditoría",
+  multi.includes("acumulados entre 2 activos observados")
+);
+
+t(
+  "AA · el desglose por activo acompaña a la suma",
+  multi.includes("jotalloretv: 10.822") &&
+    multi.includes("lloretvaldivieso: 360")
+);
+
+/*
+  El vocabulario de audiencia solo puede aparecer NEGADO. Se
+  comprueba por frase: cada aparicion tiene que convivir con la
+  negacion, en lugar de buscar la palabra a secas —que daba un
+  falso positivo sobre la propia negacion—.
+*/
+t(
+  "AA · el vocabulario de audiencia solo aparece negado",
+  multiTexto
+    .replace(/\s+/g, " ")
+    .split(/[.\u00b7]/)
+    .filter((f) => /audiencia|alcance|personas/i.test(f))
+    .every((f) => /\bno\b|solaparse/i.test(f))
+);
+
+t(
+  "AA · y la negación está presente de forma explícita",
+  multi.includes("NO son personas únicas") &&
+    multi.includes("ni alcance") &&
+    multi.includes("ni audiencia única")
+);
+
+t(
+  "AA · una celda de un solo activo NO dice acumulados",
+  (() => {
+    const sola = renderToStaticMarkup(
+      <MatrizPlataformas
+        matriz={{
+          ...MATRIZ_MULTI,
+          candidatos: [
+            {
+              ...MATRIZ_MULTI.candidatos[0],
+              celdas: {
+                ...MATRIZ_MULTI.candidatos[0].celdas,
+                instagram: MATRIZ_MULTI.candidatos[0].celdas.facebook
+              }
+            }
+          ]
+        }}
+      />
+    );
+
+    return !sola.includes("acumulados") && sola.includes("55.855");
+  })()
+);
+
+t(
+  "AA · la limitación de agregación se muestra al pie",
+  multi.includes("suma de los seguidores de cada cuenta")
+);
+
+t(
+  "AA · sigue sin aparecer ningún «0 seguidores»",
+  !/(^|[^\d.,])0\s*(seguidores|suscriptores)/.test(multiTexto)
+);
+
+t(
+  "AA · un activo sin medir no inventa un valor en la celda",
+  (() => {
+    const sinMedir = renderToStaticMarkup(
+      <MatrizPlataformas
+        matriz={{
+          ...MATRIZ_MULTI,
+          candidatos: [
+            {
+              ...MATRIZ_MULTI.candidatos[0],
+              celdas: {
+                ...MATRIZ_MULTI.candidatos[0].celdas,
+                instagram: celda("REQUIERE_PROVEEDOR", {
+                  plataforma: "instagram",
+                  activos: [{ accountId: "instagram:a" }],
+                  activosTotal: 1
+                })
+              }
+            }
+          ]
+        }}
+      />
+    );
+
+    return sinMedir.includes("—") && sinMedir.includes("Requiere proveedor");
+  })()
+);
+
+/*
+  EL READ MODEL ES LA UNICA FUENTE DE LA AGREGACION.
+
+  Se pinta un payload deliberadamente INCONSISTENTE: el agregado
+  dice 99.999 mientras los activos suman 11.182. Si la pantalla
+  mostrara 11.182, seria porque esta recalculando la suma por su
+  cuenta, y entonces habria dos verdades para el mismo dato.
+
+  Tiene que mostrar 99.999: el componente confia en el contrato.
+*/
+const inconsistente = renderToStaticMarkup(
+  <MatrizPlataformas
+    matriz={{
+      ...MATRIZ_MULTI,
+      candidatos: [
+        {
+          ...MATRIZ_MULTI.candidatos[0],
+          celdas: {
+            ...MATRIZ_MULTI.candidatos[0].celdas,
+            instagram: {
+              ...CELDA_MULTI,
+              metrica: { ...CELDA_MULTI.metrica, valor: 99999 }
+            }
+          }
+        }
+      ]
+    }}
+  />
+);
+
+t(
+  "AA · el componente no recalcula la suma: muestra la del read model",
+  inconsistente.includes("99.999") && !sinTags(inconsistente).includes("11.182")
 );
 
 
