@@ -378,7 +378,17 @@ export async function registrarPasada({
       históricos. Que hace tres días lo trajera GDELT sigue
       siendo cierto hoy.
     */
-    const deEstaPasada = ev.providersSeenBy || (ev.providerId ? [ev.providerId] : []);
+    /*
+      Los adaptadores emiten `providerId`; algunos llamadores
+      construyen `providers` directamente. Leer solo los dos
+      primeros hacia que una evidencia con `providers` perdiera
+      su procedencia al acumular, y la observacion multiproveedor
+      quedaba vacia.
+    */
+    const deEstaPasada =
+      ev.providersSeenBy ||
+      (ev.providerId ? [ev.providerId] : null) ||
+      (Array.isArray(ev.providers) ? ev.providers : []);
 
     const providers = [...new Set([...(previo?.providers || []), ...deEstaPasada])];
 
@@ -391,6 +401,22 @@ export async function registrarPasada({
       observationCount,
 
       providersSeenBy: providers,
+
+      /*
+        El proveedor que trajo la evidencia en ESTA pasada.
+
+        Hacia falta separarlo: el libro guarda un `providerId` por
+        observacion y se estaba tomando de `providersSeenBy[0]`,
+        que es el primer elemento de la union ACUMULADA. Efecto:
+        cada reobservacion volvia a anotar el proveedor original y
+        un motor nuevo sobre la misma pieza NUNCA quedaba
+        registrado.
+
+        Se detecto con una prueba que observaba la misma URL desde
+        Google News y luego desde DuckDuckGo: el libro anotaba
+        google_news dos veces.
+      */
+      providerIdDeEstaPasada: deEstaPasada[0] || null,
 
       projectId: projectId || ev.projectId || null,
 
@@ -413,7 +439,19 @@ export async function registrarPasada({
         title: ev.title || null,
         publishedAt: ev.publishedAt || null,
         sourceId: ev.sourceId || null,
-        providerId: (ev.providersSeenBy || [])[0] || ev.providerId || null,
+        /*
+          El proveedor de ESTA observacion. `providers` entra como
+          ultimo recurso por el mismo motivo que arriba: si el
+          llamador solo trae ese campo, escribir `null` aqui
+          borraba la procedencia al reconstruir.
+        */
+        /* El proveedor de ESTA observacion, no el de la union. */
+        providerId:
+          ev.providerIdDeEstaPasada ||
+          ev.providerId ||
+          (Array.isArray(ev.providers) ? ev.providers[0] : null) ||
+          (ev.providersSeenBy || [])[0] ||
+          null,
         territoryId,
         runId,
         retrievedAt,

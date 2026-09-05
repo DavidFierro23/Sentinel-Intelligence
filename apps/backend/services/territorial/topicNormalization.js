@@ -645,7 +645,25 @@ export function agrupar(documentos = [], opciones = {}) {
 
   const umbral = opciones.umbral ?? UMBRALES.BALANCEADO;
 
-  const topeAbsoluto = Math.max(3, Math.floor(documentos.length * (opciones.topeDeGrupo ?? TOPE_DE_GRUPO)));
+  /*
+    El tope de grupo protege contra mega-clusters, y con un
+    corpus diminuto no hay mega-cluster que proteger: con 4
+    documentos el suelo de 3 bloqueaba una fusion legitima de
+    similitud 0,58.
+
+    Se detecto con una prueba que anadia una pieza de un motor
+    nuevo sobre un asunto ya existente y no se fusionaba.
+
+    Por debajo de `MINIMO_PARA_TOPE` no se aplica: el concepto
+    solo significa algo cuando hay corpus suficiente para que un
+    grupo pueda comerse una parte desproporcionada.
+  */
+  const MINIMO_PARA_TOPE = 20;
+
+  const topeAbsoluto =
+    documentos.length < MINIMO_PARA_TOPE
+      ? documentos.length
+      : Math.max(3, Math.floor(documentos.length * (opciones.topeDeGrupo ?? TOPE_DE_GRUPO)));
 
   /* Orden determinista. */
   const docs = [...documentos].sort((a, b) => String(a.evidenceId).localeCompare(String(b.evidenceId)));

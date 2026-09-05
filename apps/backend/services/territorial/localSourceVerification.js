@@ -667,6 +667,21 @@ export function naturalezaPorProveedor(evidencia = {}) {
 
   if (provs.includes("x_api")) return NATURALEZA.PUBLIC_CONVERSATION;
 
+  /*
+    Descubrimiento abierto en TikTok. Los autores que devuelve una
+    busqueda por palabra clave son cuentas cualquiera —vecinos,
+    creadores, negocios pequenos— no medios ni instituciones. Es
+    conversacion publica observable.
+
+    Medido: sin esta linea, las 30 piezas del primer
+    descubrimiento abierto de TikTok caian en OTHER y la
+    conversacion publica del corpus se quedaba clavada en 143
+    teniendo 173.
+  */
+  if (provs.some((p) => /^scrapecreators_(tiktok|instagram|facebook)$/.test(p))) {
+    return NATURALEZA.PUBLIC_CONVERSATION;
+  }
+
   if (provs.includes("rss_directo") || provs.includes("gdelt_doc") || provs.includes("google_news")) {
     return NATURALEZA.MEDIA;
   }

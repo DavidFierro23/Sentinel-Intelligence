@@ -176,8 +176,55 @@ export function normalizarArticulo(item, contexto = {}) {
 }
 
 
+/*
+===========================================================
+ESPACIADO ENTRE LLAMADAS
+TERRITORIAL-OPEN-SOCIAL-COVERAGE-04
+===========================================================
+
+Diagnosticado con cinco consultas reales: GDELT devuelve
+HTTP 429 en 4 de 5 cuando las peticiones van seguidas. La que
+paso trajo 29 resultados validos, 29 de 29 con fecha y 29 de 29
+con URL canonica.
+
+Es decir: el adaptador NO estaba roto y el proveedor SI es util.
+La causa de las 0 evidencias acumuladas en todo el proyecto era
+el rate-limiting, y el 429 se registraba como «sin resultados»
+sin que nadie lo notara.
+
+El presupuesto del colector es 2 consultas por pasada y las
+disparaba una detras de otra, asi que la segunda casi siempre
+moria. De ahi el cero.
+
+Se aplica espaciado en el propio adaptador y no en el colector:
+cualquier llamador se beneficia, y ninguno tiene que acordarse.
+===========================================================
+*/
+
+/* GDELT no publica su limite. 5 s es lo que aguanto en la prueba. */
+const ESPACIADO_MINIMO_MS = 5000;
+
+let ultimaLlamadaEn = 0;
+
+async function esperarTurno() {
+  const desde = Date.now() - ultimaLlamadaEn;
+
+  if (ultimaLlamadaEn && desde < ESPACIADO_MINIMO_MS) {
+    await new Promise((r) => setTimeout(r, ESPACIADO_MINIMO_MS - desde));
+  }
+
+  ultimaLlamadaEn = Date.now();
+}
+
+
 export async function buscar(consulta, opciones = {}) {
   const inicio = Date.now();
+
+  /*
+    Turno antes de salir. `opciones.sinEspera` existe solo para
+    las pruebas, que no deben tardar 5 s por caso.
+  */
+  if (!opciones.sinEspera) await esperarTurno();
 
   const fetchImpl = opciones.fetch || globalThis.fetch;
 
@@ -218,12 +265,29 @@ export async function buscar(consulta, opciones = {}) {
     clearTimeout(temporizador);
 
     if (!respuesta.ok) {
+      /*
+        Un 429 no es «no hay noticias»: es «pregunta mas
+        despacio». Se reintenta UNA vez tras el espaciado y, si
+        vuelve a fallar, se declara el limite en lugar de
+        devolver un vacio que parece ausencia de contenido.
+      */
+      if (respuesta.status === 429 && !opciones.__reintento && !opciones.sinEspera) {
+        await new Promise((r) => setTimeout(r, ESPACIADO_MINIMO_MS));
+
+        return buscar(consulta, { ...opciones, __reintento: true });
+      }
+
       return {
         estado: respuesta.status === 429 ? "LIMITE_DE_TASA" : "ERROR",
         evidencias: [],
         recibidas: 0,
         latenciaMs: Date.now() - inicio,
-        motivo: `HTTP ${respuesta.status}`
+        motivo: `HTTP ${respuesta.status}`,
+        reintentado: Boolean(opciones.__reintento),
+        aviso:
+          respuesta.status === 429
+            ? "LIMITE_DE_TASA no significa que no haya contenido. No contar esto como cero."
+            : null
       };
     }
 
