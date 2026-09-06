@@ -718,3 +718,278 @@ conexión completa, ninguna clave de servicio (`service_role`) de Supabase.
 
 Ese mensaje autoriza además, implícitamente, a tocar `apps/backend/package.json`
 para añadir `pg` — si no es así, decirlo explícitamente al continuar.
+
+---
+
+# ADDENDUM — Continuación tras Supabase + Railway creados (commit `bb031f8`)
+
+Usuario confirmó: proyecto Supabase creado, `DATABASE_URL` configurada en
+`apps/backend/.env`; proyecto Railway creado, repo conectado, servicio
+`OFFLINE`, sin deployment. Autorización explícita para tocar
+`apps/backend/package.json` únicamente para añadir `pg`.
+
+## Dependencia
+
+`pg@^8.23.0` — no existía ninguna dependencia equivalente (reconfirmado).
+Añadida a `apps/backend/package.json` mediante `npm install pg --workspace
+apps/backend`, aislando el cambio del resto del archivo (que tenía una
+modificación ajena sin commitear en la sección `scripts.test`) con `git add
+-p`, para no incluir esa modificación ajena en el commit.
+
+## 1. Verificación de conexión PostgreSQL
+
+`DATABASE_URL=PRESENT`. Host: pooler de Supabase (`*.pooler.supabase.*`),
+puerto `:6543` → **Transaction Pooler**, no Session Pooler (discrepancia
+con lo indicado en el mensaje del usuario — se reporta tal como se
+observó, no como se asumió). Usuario en formato `postgres.<project-ref>`,
+correcto para el pooler.
+
+**Resultado de la conexión real: `CONNECT_OK=false`.**
+`ERROR_SANITIZED=password authentication failed for user "postgres"`
+(mensaje del propio Postgres, sanitizado — sin cadena de conexión, sin
+contraseña). El formato del URI se verificó estructuralmente sin leer su
+contenido (exactamente 1 `@`, exactamente 2 `:` antes del `@`, sin
+artefactos de doble-codificación) — no hay evidencia de un error de
+formato; el rechazo es a nivel de autenticación real. Reconfirmado dos
+veces en momentos distintos de este gate, mismo resultado ambas veces.
+
+**Diagnóstico más probable:** contraseña incorrecta o desactualizada (p.
+ej., copiada antes de un reseteo, o con un error de tipeo). No se puede
+determinar más sin ver el valor, lo cual este gate no hace.
+
+**Recomendación:** en el dashboard de Supabase → Project Settings →
+Database → **Reset database password** → copiar la nueva cadena de
+conexión completa (no reescribirla a mano) → pegarla directamente en
+`apps/backend/.env`, reemplazando la actual.
+
+Script permanente y reutilizable para repetir esta verificación en
+cualquier momento, sin exponer secretos:
+`apps/backend/scripts/migrations/check-postgres-connection.mjs`.
+
+## 2. Compatibilidad del pooler
+
+**Confirmada por diseño, no por conexión en vivo** (bloqueado por el punto
+1): `postgresAdapter.js` usa exclusivamente `pool.query(texto, valores)`
+con parámetros posicionales, nunca sentencias con nombre
+(`client.query({ name, text, values })`). node-postgres no cachea una
+sentencia preparada del lado del servidor a menos que se le pida
+explícitamente un `name` — el patrón usado aquí es seguro bajo PgBouncer
+en modo transacción, donde cada consulta puede caer en una conexión de
+backend distinta. El script de verificación además prueba explícitamente
+una consulta parametrizada en una SEGUNDA conexión del pool
+(`SECOND_CONNECTION_PARAM_QUERY_OK`), que es exactamente el escenario que
+fallaría si hubiera un problema real de compatibilidad — pendiente de
+poder ejecutarse hasta resolver el punto 1.
+
+## 3. Adaptador PostgreSQL — implementado
+
+`apps/backend/services/knowledgeLake/postgresAdapter.js`. Reemplazo
+directo del adaptador de fichero (misma interfaz
+`anexar/leerTodos/contar/particiones/estado`), registrado en
+`lakeAdapter.js` (`ADAPTADORES_DISPONIBLES` + `case "postgres"`), **sin
+tocar** `lakeQuery.js`, `projectStore.js`,
+`candidateObservationScheduler.js`, ni ningún código de
+Candidate/Territorial/Media. Una sola tabla genérica `lake_records`
+(JSONB + columnas promovidas para índices), no tablas tipadas por
+dominio — evita reescribir cualquier lógica existente.
+
+`lakeWriter.js` recibió un único cambio aditivo: capturar
+`VersionConflictError` (lanzado solo por el adaptador postgres) y
+traducirlo a `{escrito:false, conflictoDeVersion:true, reintentable:true}`
+— el mismo patrón que ya existe para "sin cambios". Los adaptadores
+memoria/fichero nunca lanzan este error, así que su comportamiento es
+idéntico a antes (confirmado: los 16+5+2+5 tests existentes de
+`persistencia.test.mjs` y `tests/storage/*` siguen en verde sin
+modificación).
+
+## 4. Migraciones — no destructivas
+
+`apps/backend/scripts/migrations/001_lake_records.sql`. Solo `CREATE TABLE
+IF NOT EXISTS`/`CREATE INDEX IF NOT EXISTS`. Sin `DROP`. **No aplicada
+contra ninguna base real** — bloqueado por el punto 1. Rollback lógico:
+no hay nada que deshacer en la base (nunca se ejecutó); volver atrás en
+código es simplemente no seleccionar `SENTINEL_LAKE_ADAPTER=postgres`.
+
+## 5. Importación JSONL → PostgreSQL — idempotente, validada en `--dry-run`
+
+`apps/backend/scripts/migrate-jsonl-to-postgres.mjs`. Ejecutado en modo
+`--dry-run` (sin tocar ninguna base de datos) contra los datos reales
+locales:
+
+```
+SOURCE_COUNT=914
+CLAVES_UNICAS=911
+REGISTROS_SIN_CAMPOS_OBLIGATORIOS=0
+```
+
+**Hallazgo importante, no fabricado ni ignorado:** 914 registros pero solo
+911 combinaciones únicas de `(claveEntidad, version)` — **3 colisiones
+reales de versión ya existen en el JSONL de producción actual**, la misma
+condición de carrera confirmada empíricamente (de forma sintética) en
+`SENTINEL-DATA-PERSISTENCE-01`. Investigado sin imprimir contenido:
+
+| tipoEntidad | proyectoId | version | copias | hashes distintos |
+|---|---|---|---|---|
+| persona | osint-investigacion-adhoc | 2 | 2 | 2 (contenido genuinamente distinto) |
+| persona | osint-investigacion-adhoc | 1 | 2 | 2 (contenido genuinamente distinto) |
+| documento | catalogo-proyectos | 2 | 2 | 2 (contenido genuinamente distinto) |
+
+Los tres pares tienen **hashes distintos** — no son duplicados exactos,
+son dos escrituras concurrentes reales que calcularon el mismo número de
+versión para la misma entidad, exactamente el bug ya documentado. **La
+migración, tal como está diseñada, insertaría solo la PRIMERA de cada par
+(por orden de lectura del JSONL) y trataría la segunda como
+`ALREADY_PRESENT`** vía `ON CONFLICT DO NOTHING` — lo cual es seguro
+(no corrompe nada, no lanza excepción) pero significa que el contenido de
+la segunda escritura de cada par **no llegaría a Postgres** tal como está.
+Esto no es peor que el estado actual (el lector del Lake ya tiene que
+elegir una de las dos versiones ambiguas hoy), pero se marca aquí como
+`MIGRATION_INVARIANT_WARNING` — una decisión sobre qué hacer con estos 3
+pares (¿conservar ambas bajo una clave sintética adicional? ¿investigar
+cuál es la versión "correcta"?) debe tomarse en un gate dedicado de
+integridad de datos, no improvisarse aquí.
+
+**No se ejecutó la migración real** (requiere conexión, bloqueada por el
+punto 1).
+
+## 6. Conteos e invariantes: local vs PostgreSQL
+
+**No verificable todavía** — no hay tabla creada ni datos insertados en
+ningún Postgres real. `MIGRATION_STATUS = NOT_STARTED`.
+
+## 7. Idempotencia / lock distribuido para el scheduler cloud
+
+**Diseño implementado y probado sin DB real** (`tests/storage/
+postgresAdapterContract.test.mjs`, 5/5 PASS): la restricción `UNIQUE
+(clave_entidad, version)` de la tabla `lake_records` **es** el mecanismo
+de lock distribuido — dos workers/pods/restarts que intenten crear el
+mismo `NORMAL_DAILY_RUN` para el mismo proyecto+día competirían por la
+misma fila; solo el primero en comprometer la transacción gana, el
+segundo recibe `VersionConflictError` → `{escrito:false,
+conflictoDeVersion:true}`, sin duplicar nada y sin lanzar una excepción no
+controlada.
+
+**No se modificó `candidateObservationScheduler.js`** para invocar
+explícitamente este mecanismo — por diseño de este gate (restricción
+explícita de no alterar lógica de Candidate). El mecanismo ya protege
+automáticamente cualquier escritura que pase por `escribirEnLake` una vez
+que el adaptador activo sea `postgres`, sin necesitar ningún cambio en el
+scheduler: la protección vive en la capa de almacenamiento, no en la
+lógica de negocio. Verificado con un adaptador simulado que lanza
+`VersionConflictError` (no con dos procesos reales concurrentes contra
+Postgres, porque no hay Postgres real accesible todavía).
+
+## 8. Enrollment dinámico y multi-asset
+
+**Sin cambios** — `candidateObservationScheduler.js` no fue tocado. La
+auto-inscripción de candidatos y el modelo multi-asset siguen exactamente
+como se auditaron en la Fase A original (§1.4 de este documento): releen
+el proyecto desde el Lake en cada corrida, sin listas hardcodeadas. Como
+el adaptador es transparente para ellos, seguirán funcionando igual bajo
+`postgres` que bajo `fichero` — pero esto es una inferencia de diseño, no
+`VERIFIED` en cloud, porque no hay cloud real corriendo todavía.
+
+## 9. Timezone
+
+**Sin cambios** — `TIMEZONE_OPERACIONAL = "America/Guayaquil"` para la
+lógica diaria ya estaba correcto (§1.4). El almacenamiento en
+`lake_records` usa `TIMESTAMPTZ` (UTC internamente en Postgres, como
+corresponde), y `particion`/`local_observation_date` se calculan en la
+aplicación exactamente igual que hoy — no se introdujo ninguna
+dependencia del timezone del servidor cloud.
+
+## 10. File adapter disponible para rollback
+
+**Sí, sin cambios.** `SENTINEL_LAKE_ADAPTER=fichero` (o simplemente no
+setear la variable) sigue siendo el comportamiento por defecto exacto de
+antes de este gate. El adaptador postgres es aditivo, nunca reemplaza al
+de fichero salvo que se seleccione explícitamente.
+
+## 11. Railway — configuración real determinada (no inventada)
+
+- **Root Directory recomendado: la raíz del repositorio**, NO
+  `apps/backend` — porque el proyecto usa **npm workspaces**
+  (`workspaces: ["apps/*", "packages/*"]` en el `package.json` raíz), y
+  resolver dependencias correctamente (incluyendo `pg`, recién añadido)
+  requiere que `npm install`/`npm ci` corra desde la raíz.
+- **Build Command real: `npm ci`** (usa `package-lock.json`, ya
+  actualizado con `pg` en este gate, para una instalación reproducible).
+- **Start Command real, ya existente, sin inventar nada nuevo:**
+  `npm run dev:backend` — script YA definido en el `package.json` raíz
+  (`"dev:backend": "npm run dev --workspace apps/backend"`), que a su vez
+  ejecuta `"dev": "node server.js"` de `apps/backend/package.json`. Es
+  exactamente el mismo comando que ya se usa en desarrollo local — no se
+  inventó un comando nuevo para producción.
+- **Compatibilidad de puerto confirmada:** `server.js:119` usa
+  `process.env.PORT || 3001` — compatible de fábrica con el puerto que
+  Railway inyecta automáticamente.
+
+### Variables que Railway necesitará (SOLO nombres, nunca valores)
+
+| Variable | Ya existe en `.env` local | Notas |
+|---|---|---|
+| `DATABASE_URL` | Sí (con el problema de auth del punto 1) | Debe corregirse antes de copiar a Railway |
+| `SENTINEL_LAKE_ADAPTER` | No (usa default `fichero` hoy) | Debe configurarse como `postgres` en Railway para que el cloud use la DB, no un fichero local que no existiría ahí |
+| `BRAVE_API_KEY` | Sí | proveedor |
+| `YOUTUBE_API_KEY` | Sí | proveedor |
+| `INSTAGRAM_ACCESS_TOKEN` | Sí | proveedor Meta |
+| `FACEBOOK_USER_ACCESS_TOKEN` | Sí | proveedor Meta |
+| `META_APP_ID` | Sí | proveedor Meta |
+| `META_APP_SECRET` | Sí | proveedor Meta |
+| `SCRAPECREATORS_API_KEY` | Sí | proveedor social externo |
+| `X_BEARER_TOKEN` | Sí | proveedor X |
+| `SOCIAL_EXTERNAL_PROVIDER_ENABLED` | Sí | feature flag |
+| `SERPAPI_API_KEY` | Sí | proveedor web principal |
+| `PORT` | Opcional | Railway inyecta el suyo automáticamente; no hace falta configurarlo a mano |
+
+**No se creó ningún servicio en Railway ni se desplegó nada en este
+gate.**
+
+## 12. Pruebas ejecutadas en este gate
+
+| Prueba | Resultado |
+|---|---|
+| `tests/persistencia.test.mjs` (existente, sin tocar) | 16/16 PASS, sin regresión |
+| `tests/storage/lakeRestartPersistence.test.mjs` (existente) | 5/5 PASS |
+| `tests/storage/lakeConcurrentWrites.test.mjs` (existente) | 2/2 PASS (mismo veredicto RIESGO ya documentado para el adaptador de fichero, sin cambio — este gate no modifica ese comportamiento del adaptador de fichero) |
+| `tests/storage/lakeProjectIsolation.test.mjs` (existente) | 5/5 PASS |
+| `tests/storage/postgresAdapterContract.test.mjs` (nuevo, sin DB real) | 5/5 PASS |
+| `migrate-jsonl-to-postgres.mjs --dry-run` contra datos reales | Ejecutado, ver §5 — sin escritura, sin conexión |
+| `check-postgres-connection.mjs` contra Supabase real | Ejecutado dos veces, `CONNECT_OK=false` ambas veces, error sanitizado |
+
+**Requests a proveedores externos durante todo este gate: 0** (SerpAPI,
+Meta, Brave, X, YouTube, ScrapeCreators — ninguno se invocó). **No se
+ejecutó una segunda observación Candidate real del día.**
+
+## 13. Bloqueo restante
+
+**Único bloqueo real: la contraseña de `DATABASE_URL` es rechazada por
+Supabase.** Todo el código, esquema, importador y adaptador están listos
+para correr en el momento en que esa credencial se corrija — no se
+requiere ningún cambio de código adicional para eso, solo corregir el
+valor en `.env` (o, si se prefiere, en el propio Supabase resetear la
+contraseña y pegar la nueva cadena completa).
+
+## Veredictos actualizados de este addendum
+
+```
+POSTGRES_ADAPTER          = IMPLEMENTED (no probado contra DB real)
+POSTGRES_CONNECTION       = PARTIAL (presente, alcanzable a nivel de red, credencial rechazada)
+SUPABASE_CONNECTION       = PARTIAL (mismo motivo)
+HISTORICAL_CLOUD_SCHEMA   = PARTIAL (SQL escrito, no aplicado)
+MIGRATION_TOOL            = READY (idempotente, validado en --dry-run contra datos reales)
+MIGRATION_STATUS          = NOT_STARTED (bloqueado por conexión)
+CLOUD_RUNTIME             = PARTIAL (proyecto Railway creado, repo conectado, servicio OFFLINE, sin deploy)
+CLOUD_SCHEDULER           = NOT_READY
+CLOUD_DAILY_OBSERVATION   = NOT_VERIFIED
+DYNAMIC_CANDIDATE_ENROLLMENT_CLOUD = NOT_VERIFIED
+MULTI_ASSET_CLOUD         = NOT_VERIFIED
+CLOUD_IDEMPOTENCY         = PARTIAL (mecanismo implementado y probado con adaptador simulado, no con Postgres real)
+CLOUD_CONCURRENCY_LOCK    = PARTIAL (mismo motivo -- la restricción UNIQUE es el lock, no probada en vivo)
+PROJECT_ISOLATION_CLOUD   = NOT_VERIFIED
+R2_DB_BACKUP              = PENDING
+LOCAL_RUNTIME_DEPENDENCY  = YES
+PC_CAN_BE_OFF_WITHOUT_MISSING_DAILY_CANDIDATE_OBSERVATION = NO
+```
+
+**No se hizo push. No se desplegó nada en Railway.**
