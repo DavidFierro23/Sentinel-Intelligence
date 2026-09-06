@@ -96,6 +96,23 @@ export function crearAdaptadorPostgres(opciones = {}) {
     connectionTimeoutMillis: 10000
   });
 
+  /*
+    `fechaHecho` es OPCIONAL en el modelo del Lake (lakeWriter.js ya la
+    trata como `entrada.fechaHecho ?? null`, sin validar formato) -- y en
+    datos reales existen algunos registros de piezas de media con un
+    valor no-ISO (ej. "23 ago 2023", texto extraido, no una fecha
+    parseada). Postgres rechaza eso para una columna TIMESTAMPTZ. En vez
+    de fallar el registro entero -- lo cual descartaria TODO el registro,
+    no solo la fecha -- se guarda NULL en la columna promovida y se
+    conserva el valor original intacto dentro de `registro` (JSONB), que
+    ya lo tenia de todas formas. Ningun dato se pierde: solo deja de
+    estar indexado como timestamp cuando no es genuinamente uno.
+  */
+  function fechaValidaONull(valor) {
+    if (!valor) return null;
+    return Number.isNaN(Date.parse(valor)) ? null : valor;
+  }
+
   async function anexar(registro) {
     const texto = `
       INSERT INTO lake_records (
@@ -132,7 +149,7 @@ export function crearAdaptadorPostgres(opciones = {}) {
       registro.version,
       registro.particion,
       registro.fechaDeteccion,
-      registro.fechaHecho || null,
+      fechaValidaONull(registro.fechaHecho),
       JSON.stringify(registro)
     ];
 
@@ -199,6 +216,12 @@ export function crearAdaptadorPostgres(opciones = {}) {
     // No forma parte de la interfaz estandar del Lake -- exposicion
     // deliberada para que scripts de migracion/tests puedan cerrar el
     // pool limpiamente sin mantener una referencia aparte.
-    _cerrar: cerrar
+    _cerrar: cerrar,
+
+    // Idem: acceso de bajo nivel SOLO para herramientas de migracion
+    // (ej. preservar colisiones de version en una tabla lateral). Ningun
+    // consumidor del Lake (lakeWriter/lakeQuery/projectStore/scheduler)
+    // debe usar esto -- ellos hablan solo anexar/leerTodos/etc.
+    _query: (texto, valores) => pool.query(texto, valores)
   };
 }

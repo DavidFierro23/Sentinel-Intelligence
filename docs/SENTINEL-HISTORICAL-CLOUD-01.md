@@ -993,3 +993,293 @@ PC_CAN_BE_OFF_WITHOUT_MISSING_DAILY_CANDIDATE_OBSERVATION = NO
 ```
 
 **No se hizo push. No se desplegó nada en Railway.**
+
+---
+
+# ADDENDUM 2 — Segunda corrección de credencial, todavía falla
+
+Usuario reseteó la contraseña en Supabase, volvió a copiar la cadena
+completa, y seleccionó explícitamente **Session Pooler** (no Transaction
+Pooler). No se compartió ninguna credencial.
+
+## Verificación sanitizada
+
+`DATABASE_URL=PRESENT`. **`POOLER_MODE=Session Pooler`,
+`POOLER_PORT=5432`** (confirmado por patrón: NO se encontró `:6543`, SÍ se
+encontró `:5432` y el host `pooler.supabase.*`) — el usuario corrigió
+exactamente lo que se le pidió.
+
+**Verificaciones estructurales adicionales, todas limpias** (sin ver el
+valor): exactamente 1 `@`, exactamente 2 `:` antes del `@`, sin comillas
+sobrantes al inicio/fin del valor, esquema `postgres(ql)://` correcto,
+sin CR/salto de línea residual al final de la línea, **project-ref de
+exactamente 20 caracteres** (el formato real de Supabase) presente en el
+usuario `postgres.<project-ref>`. No hay ningún indicio de error de
+formato, copiado parcial, o comillas accidentales.
+
+## Resultado de conexión
+
+**`CONNECT_OK=false`, mismo error: `password authentication failed for
+user "postgres"`.** Sanitizado, sin secretos. Esta es la TERCERA vez que
+se prueba en este gate (dos con Transaction Pooler, una con Session
+Pooler tras reseteo), con el mismo resultado exacto las tres veces.
+
+**Por regla explícita del gate, al ser `CONNECT_OK=false` no se ejecutó
+ninguno de los pasos posteriores** (migraciones, importación, conteos,
+auditoría de colisiones contra una base real, segunda importación,
+pruebas de idempotencia contra Postgres real). Esos pasos siguen listos
+para correr en cuanto la conexión funcione — no requieren ningún cambio de
+código adicional.
+
+**Diagnóstico:** dado que el formato es estructuralmente correcto en las
+tres pruebas y el error es específicamente de autenticación (no de
+resolución de host, no de TLS, no de "base de datos no existe"), las
+causas más probables, en orden: (1) la propagación del reseteo de
+contraseña en Supabase puede tardar hasta 1-2 minutos en aplicarse al
+pooler compartido — reintentar tras una espera corta; (2) posible copia
+desde un proyecto Supabase distinto al que se reseteó (si existe más de
+un proyecto); (3) un carácter especial en la contraseña que el propio
+panel de Supabase no haya URL-codificado al mostrar la cadena (esto
+ocurre si se elige una contraseña personalizada en vez de la generada
+automáticamente). No se puede diagnosticar más sin ver el valor.
+
+## Punto 5 — ¿Es `UNIQUE(clave_entidad, version)` suficiente como lock del daily run?
+
+**Hallazgo real, investigado en el código, sin necesitar conexión a
+DB:** en `candidateObservationScheduler.js:184`:
+
+```js
+const collectionRunId = `run-${projectId}-${localObservationDate}-${ahora.getTime()}`;
+```
+
+**`ahora.getTime()` es un timestamp de reloj de pared, no determinista.**
+Esto significa que el `entidad`/`claveEntidad` de un `collectionRun` en el
+Lake **no es el mismo** para dos ejecuciones del mismo proyecto en el
+mismo día — cada invocación genera una clave distinta. Consecuencia
+directa: **`UNIQUE(clave_entidad, version)` NO protege contra dos
+`NORMAL_DAILY_RUN` concurrentes del mismo proyecto+día**, porque ambos
+workers escribirían bajo claves de entidad *diferentes*, cada una con su
+propia versión 1 — la restricción nunca se activaría, porque nunca
+colisionan a nivel de clave.
+
+**Lo que hoy evita el duplicado es únicamente la comprobación de
+aplicación** `yaSeColectoHoy()` (relee `collectionRunsDe(projectId)` antes
+de empezar) — un patrón de "leer, decidir, escribir" con una ventana de
+carrera real entre el momento en que dos workers leen "todavía no
+recolectado" y el momento en que ambos empiezan a escribir. Es exactamente
+la clase de problema que un lock distribuido está pensado para cerrar, y
+hoy no está cerrado a nivel de base de datos.
+
+**`DISTRIBUTED_DAILY_LOCK_READY = NO`** — el diseño de `lake_records` por
+sí solo no lo resuelve.
+
+### Dos opciones, ninguna implementada todavía
+
+**Opción A — recomendada, no toca `candidateObservationScheduler.js`:**
+un *advisory lock* de PostgreSQL
+(`pg_try_advisory_lock(hashtext(projectId || ':' || localObservationDate))`)
+tomado por el worker cloud (en un futuro punto de integración, fuera de
+este gate) antes de decidir si corre el `NORMAL_DAILY_RUN` del día, y
+liberado al terminar. No requiere cambiar cómo se genera
+`collectionRunId` ni ningún otro campo del scheduler — es una capa
+adicional alrededor de la decisión de "¿corro hoy o no?", no un cambio a
+qué se persiste.
+
+**Opción B — más simple pero SÍ toca Candidate:** cambiar
+`collectionRunId` para que sea determinista por
+`(projectId, localObservationDate, triggerType)` **solo para
+`NORMAL_DAILY_RUN`** (ej. `run-${projectId}-${localObservationDate}-NORMAL_DAILY_RUN`,
+sin timestamp), dejando `FORCED_MANUAL_RUN` con su timestamp actual (para
+que corridas forzadas repetidas sigan siendo distinguibles, como ya exige
+el diseño existente). Esto haría que la restricción `UNIQUE(clave_entidad,
+version)` capturara el duplicado automáticamente, sin necesitar ningún
+lock adicional — pero es un cambio de una línea dentro de
+`candidateObservationScheduler.js:184`, lógica de Candidate.
+
+**No se implementó ninguna de las dos en este gate.** Por instrucción
+explícita del usuario, cualquier cambio a
+`candidateObservationScheduler.js` requiere demostrar la necesidad primero
+y detenerse a pedir autorización — esto es exactamente esa demostración.
+Recomendación: Opción A antes del cutover cloud, porque no introduce
+ningún riesgo sobre la lógica de Candidate ya validada con datos reales.
+
+## Veredictos de esta ronda
+
+```
+CONNECT_OK                     = false
+POOLER_MODE                    = Session Pooler
+POOLER_PORT                    = 5432
+MIGRATIONS_OK                  = NO_EJECUTADO (bloqueado por CONNECT_OK=false)
+TABLES_CREATED                 = ninguna
+JSONL_SOURCE_COUNT              = 914 (sin cambio, dry-run previo)
+POSTGRES_COUNT                  = N/A (no hay Postgres accesible)
+COLLISIONS_FOUND                = 3 (detectadas en el dry-run anterior contra el JSONL local)
+COLLISIONS_PRESERVED            = NO_APLICABLE_TODAVIA (no se ha corrido el importador contra una DB real; el mecanismo de preservación explícita -- ver diseño pendiente -- aún no se implementó porque no hay conexión contra la cual probarlo)
+SECOND_IMPORT_INSERTED           = N/A (no hubo primera importación real)
+IDEMPOTENCY_CERTIFIED            = NO
+APPEND_ONLY_CERTIFIED            = NO (certificado solo con adaptador simulado, no con Postgres real)
+DISTRIBUTED_DAILY_LOCK_READY      = NO (hallazgo nuevo: la clave de collectionRun no es determinista por día -- ver arriba)
+```
+
+**No se hizo push. No se hizo deploy. No se tocó
+`candidateObservationScheduler.js`.**
+
+---
+
+# ADDENDUM 3 — Conexión restablecida, migración real ejecutada y certificada
+
+Tras el Addendum 2, un reintento posterior (probablemente por demora de
+propagación del reseteo de contraseña en el pooler compartido de
+Supabase, ~horas después) tuvo éxito:
+
+```
+CONNECT_OK=true
+PG_VERSION=17.6
+PARAM_QUERY_OK=true
+SECOND_CONNECTION_PARAM_QUERY_OK=true
+```
+
+Confirmado con **Session Pooler, puerto 5432**, tal como el usuario
+configuró.
+
+## Migraciones aplicadas
+
+Ambos archivos SQL (`001_lake_records.sql`, `002_lake_records_version_conflicts.sql`)
+aplicados contra la base real. **Tablas creadas y verificadas:**
+
+```
+TABLES_CREATED = lake_migration_log, lake_records, lake_records_version_conflicts
+LAKE_RECORDS_CONSTRAINTS = lake_records_pkey, uq_lake_records_entidad_version
+```
+
+## Primera corrida real de importación
+
+```
+SOURCE_COUNT=914
+INSERTED=907
+ALREADY_PRESENT=0
+COLLISIONS_PRESERVED=3
+FAILED=4
+TARGET_COUNT=907
+```
+
+**Los 4 fallos fueron reales y se diagnosticaron con precisión**: 4
+registros de tipo `publicacion` (piezas de medios, `elmercurio.com.ec`)
+tienen `fechaHecho` almacenado como texto no-ISO (`"23 ago 2023"`, fecha
+en español sin parsear) en vez de una fecha real — un problema de calidad
+de datos **preexistente en el JSONL de origen**, no introducido por esta
+migración. Postgres, correctamente, rechazó ese valor para una columna
+`TIMESTAMPTZ`.
+
+**Corrección aplicada** (en `postgresAdapter.js`, código propio de este
+mismo gate, no en Candidate/Media): `fechaHecho` ya es un campo opcional
+en el modelo del Lake (`lakeWriter.js` lo trata como `?? null` sin validar
+formato desde siempre). Se añadió `fechaValidaONull()`, que guarda `NULL`
+en la columna promovida `fecha_hecho` cuando el valor no es una fecha
+parseable — **sin perder el dato**: el valor original completo sigue
+íntegro dentro de la columna `registro` (JSONB), que ya lo tenía. Ningún
+registro se descarta por esto.
+
+## Segunda corrida — idempotencia + los 4 corregidos
+
+```
+SOURCE_COUNT=914
+INSERTED=4
+ALREADY_PRESENT=907
+COLLISIONS_PRESERVED=3
+FAILED=0
+TARGET_COUNT=911
+```
+
+Los 907 ya importados NO se duplicaron (`ALREADY_PRESENT=907`, exacto).
+Los 4 antes fallidos ahora entraron limpio. `TARGET_COUNT=911` coincide
+**exactamente** con `CLAVES_UNICAS=911` del `--dry-run` original contra el
+JSONL — la migración está completa y es trazable 1:1 con el origen.
+
+**Hallazgo de precisión en el propio contador** (no un problema de datos):
+`COLLISIONS_PRESERVED=3` volvió a reportarse en esta segunda corrida
+aunque no se preservó nada nuevo (los 3 ya estaban preservados de la
+primera corrida) — el contador no distinguía "inserción nueva en la tabla
+de conflictos" de "ya estaba, `ON CONFLICT DO NOTHING` no hizo nada".
+**Corregido** en el propio script (`RETURNING id` + comprobar
+`rowCount`), separando `COLLISIONS_PRESERVED` (nuevas) de
+`COLLISIONS_ALREADY_PRESERVED` (ya existentes). Verificado directamente
+contra la tabla (`SELECT COUNT(*)`): **exactamente 3 filas, nunca
+duplicadas**, confirmando que el dato en sí siempre fue correcto —
+solo el mensaje de consola era impreciso.
+
+## Tercera corrida — confirma el contador corregido y cierra la certificación
+
+```
+SOURCE_COUNT=914
+INSERTED=0
+ALREADY_PRESENT=911
+COLLISIONS_PRESERVED=0
+COLLISIONS_ALREADY_PRESERVED=3
+FAILED=0
+TARGET_COUNT=911
+```
+
+Exactamente lo esperado: nada nuevo, nada duplicado, los 3 conflictos
+reconocidos correctamente como ya preservados.
+
+## Auditoría de las 3 colisiones — cómo se preservaron, explícitamente
+
+Verificado en vivo contra `lake_records_version_conflicts`:
+**exactamente 3 filas**, cada una con su `registro` completo en JSONB (el
+contenido íntegro del registro "perdedor"), más `registro_id_canonico` y
+`hash_canonico` apuntando a cuál versión quedó en `lake_records` como la
+canónica. **Ningún contenido se perdió**: ambas versiones de cada par
+colisionado existen hoy en la base — una en `lake_records` (la que "ganó"
+por orden de importación), la otra en `lake_records_version_conflicts`
+(preservada, marcada `resuelto=false`, a la espera de una decisión humana
+sobre cuál de las dos es la correcta). Esa decisión **no se tomó en este
+gate** — no es una decisión técnica de migración, es una decisión sobre
+cuál observación histórica de investigación es la válida, y corresponde a
+quien conoce el caso, no a este gate de infraestructura.
+
+## Verificación de invariantes contra la base real
+
+```
+POSTGRES_COUNT=911
+DISTINCT_PROJECTS=16
+PROJECT_A_ROWS=621  PROJECT_B_ROWS=29
+CROSS_PROJECT_KEY_LEAK=false
+DUPLICATE_ENTIDAD_VERSION_ROWS=0
+```
+
+**`PROJECT_ISOLATION_CLOUD` verificado contra datos reales** (no solo
+contra un fixture sintético): dos proyectos reales de los 16 presentes,
+cero fuga de claves entre ellos. **`APPEND_ONLY_CERTIFIED` verificado**:
+cero filas con `(clave_entidad, version)` duplicado — la restricción
+`UNIQUE` sostiene la garantía también bajo datos de producción reales, no
+solo en el test sintético del gate anterior.
+
+Suite de regresión completa (persistencia + 4 suites de storage + 2
+suites nuevas) re-ejecutada tras ambas correcciones de código: **32/32
+PASS, sin regresión.** JSONL de origen confirmado intacto (31 archivos,
+mismo tamaño, antes y después de las tres corridas de importación).
+
+## Veredictos finales certificados de este addendum
+
+```
+CONNECT_OK                       = true
+POOLER_MODE                      = Session Pooler
+POOLER_PORT                      = 5432
+MIGRATIONS_OK                    = true
+TABLES_CREATED                   = lake_migration_log, lake_records, lake_records_version_conflicts
+JSONL_SOURCE_COUNT                = 914 (911 claves únicas)
+POSTGRES_COUNT                    = 911
+COLLISIONS_FOUND                 = 3
+COLLISIONS_PRESERVED             = true (3/3, verificado en la tabla lateral, contenido íntegro, ninguno descartado)
+SECOND_IMPORT_INSERTED            = 0 (tercera corrida; la segunda corrida insertó 4 tras la corrección de fecha)
+IDEMPOTENCY_CERTIFIED             = SÍ (tres corridas, conteo estable en 911, cero duplicados)
+APPEND_ONLY_CERTIFIED             = SÍ (verificado contra Postgres real, no solo simulado)
+DISTRIBUTED_DAILY_LOCK_READY       = NO (sin cambio -- hallazgo del Addendum 2 sigue vigente, ver arriba: el collectionRunId no es determinista por día; requiere Opción A o B, ninguna implementada, pendiente de autorización)
+PROJECT_ISOLATION_CLOUD           = VERIFIED (contra datos reales, 2 de 16 proyectos probados, 0 fugas)
+```
+
+**No se hizo push. No se hizo deploy en Railway. No se tocó
+`candidateObservationScheduler.js`. No se resolvió la decisión sobre cuál
+de las 2 versiones de cada una de las 3 colisiones es la "correcta" — eso
+es una decisión humana de investigación, no de infraestructura.**
