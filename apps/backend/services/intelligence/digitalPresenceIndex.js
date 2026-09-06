@@ -199,8 +199,18 @@ export function extraerInsumosCandidato({
     conflictos, reafirmado aqui: un conflicto no debe aumentar
     artificialmente cobertura ni audiencia-.
   */
+  /*
+    HALLAZGO DE CANDIDATE-REAL-CAMPAIGN-REPORT-01: la ficha de un
+    candidato puede traer bloques de plataformas NO canonicas de
+    IPDO (LinkedIn, sitio web propio -declarados por el analista
+    como referencia, legitimos, pero fuera de las 5 plataformas de
+    este indice-). Sin filtrar por `PLATAFORMAS_IPDO`,
+    `accountCoverageCount` podia superar el denominador de 5 (se
+    vio "7/5 plataformas" en el primer informe real generado).
+  */
   const plataformasConActivoValido = new Set();
   for (const bloque of ficha?.plataformas || []) {
+    if (!PLATAFORMAS_IPDO.includes(bloque.plataformaId)) continue;
     const cuentas = bloque.cuentas || [];
     const tieneValido = cuentas.some(
       (c) => !conflictosConocidos.has(c.id) && (c.declaradaPorAnalista || c.corroboradaPorSentinel || c.descubiertaPorSentinel)
