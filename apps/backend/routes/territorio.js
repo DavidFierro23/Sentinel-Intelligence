@@ -3224,4 +3224,119 @@ router.post("/desambiguar-social", async (req, res) => {
 });
 
 
+/*
+===========================================================
+POST /territorio/trend-radar
+TERRITORIAL-TREND-RADAR-01
+
+Read-model para la futura UI territorial. Lee el almacen de
+temas y NO sale a internet: cero peticiones a proveedores.
+
+Devuelve rankings SEPARADOS a proposito. Un unico numero
+esconderia que actividad, cambio y diversidad responden
+preguntas distintas.
+===========================================================
+*/
+router.post("/trend-radar", async (req, res) => {
+  try {
+    const cuerpo = req.body || {};
+
+    const projectId = cuerpo.proyectoId || null;
+
+    if (!projectId) {
+      return res.status(400).json({
+        error:
+          "Falta `proyectoId`. El radar es project-scoped: sin proyecto mostraria temas de otra campana."
+      });
+    }
+
+    const ventana = String(cuerpo.ventana || "7D").toUpperCase();
+
+    const { VENTANAS, radar, probarSensibilidad } = await import(
+      "../services/territorial/trendRadar.js"
+    );
+
+    if (!VENTANAS.includes(ventana)) {
+      return res.status(400).json({
+        error: `Ventana no soportada: ${ventana}.`,
+        soportadas: VENTANAS
+      });
+    }
+
+    const { crearAlmacenFichero } = await import("../services/territorial/topicStore.js");
+
+    const registros = await crearAlmacenFichero().leerTodos();
+
+    const r = radar({
+      registros,
+      ventana,
+      projectId,
+      tenantId: cuerpo.tenantId || null,
+      universo: cuerpo.universo || "PRIMARY_TOPIC_CORPUS"
+    });
+
+    const sensibilidad = r.items.length ? probarSensibilidad(r.items) : null;
+
+    /* Solo lo necesario para pintar: sin cuerpos de evidencia. */
+    const ligero = (i) => ({
+      topicId: i.topicId,
+      label: i.label,
+      window: i.window,
+      activity: i.activity,
+      change: i.change,
+      diversity: i.diversity,
+      conversation: i.conversation,
+      territoriality: i.territoriality,
+      coverage: i.coverage,
+      lineage: i.lineage,
+      why: i.why,
+      evidenceRefs: i.evidenceRefs,
+      evidenceRefsTotal: i.evidenceRefsTotal,
+      providerRefs: i.providerRefs,
+      previousObservationId: i.previousObservationId,
+      currentObservationId: i.currentObservationId,
+      methodVersion: i.methodVersion,
+      limitations: i.limitations
+    });
+
+    res.json({
+      projectId,
+      window: ventana,
+      ventanasSoportadas: VENTANAS,
+      methodVersion: r.methodVersion,
+      peticionesExternas: 0,
+
+      observaciones: r.observaciones,
+      observacionesColapsadas: r.observacionesColapsadas,
+      previousObservationId: r.previousObservationId,
+      currentObservationId: r.currentObservationId,
+
+      corpus: r.corpus,
+      temas: r.temas,
+      lineage: r.lineage,
+
+      rankings: Object.fromEntries(
+        Object.entries(r.rankings).map(([k, v]) => [k, v.map(ligero)])
+      ),
+
+      items: r.items.map(ligero),
+
+      sensibilidad: sensibilidad
+        ? {
+            veredicto: sensibilidad.veredicto,
+            estabilidadDelTop5: sensibilidad.estabilidadDelTop5,
+            recomendacion: sensibilidad.recomendacion
+          }
+        : null,
+
+      declaraciones: r.declaraciones
+    });
+  } catch (e) {
+    console.error("[territorio] trend-radar fallo:", e);
+
+    res.status(500).json({ error: e?.message || "fallo el radar" });
+  }
+});
+
+
 export default router;

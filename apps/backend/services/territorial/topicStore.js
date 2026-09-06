@@ -164,6 +164,21 @@ export async function persistirTemas({
     keywords: t.keywords,
     entities: t.entities,
     evidenceCount: t.evidenceCount,
+
+    /*
+      REFERENCIAS a la evidencia, no cuerpos.
+
+      Faltaban, y sin ellas la trazabilidad del radar se rompe:
+      un item podia decir «12 evidencias» y no dejar volver a
+      ninguna. Lo detecto la inspeccion manual del tema del
+      intercambiador Monay, que reportaba evidenceRefs: 0.
+
+      Un `evidenceId` es un identificador de 26 caracteres: no
+      es el cuerpo de la evidencia y no duplica nada. El cuerpo
+      sigue viviendo solo en el libro.
+    */
+    evidenceIds: t.evidenceIds || [],
+
     uniqueSources: t.uniqueSources,
     uniqueActors: t.uniqueActors,
     providers: t.providers,
