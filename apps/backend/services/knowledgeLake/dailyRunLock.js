@@ -5,20 +5,17 @@
 LOCK DISTRIBUIDO DIARIO — SENTINEL-HISTORICAL-CLOUD-01 (OPCIÓN A)
 ===========================================================
 
-Primitiva de infraestructura, independiente de Candidate. NO se
-integró en candidateObservationScheduler.js en este gate -- por
-decisión explícita del usuario de no modificar ese archivo. Este
-módulo existe listo para que, cuando se autorice, una única línea
-en ejecutarObservacionDiaria() lo envuelva:
+Primitiva de infraestructura, independiente de Candidate. Ahora SÍ
+integrada en `candidateObservationScheduler.js` (autorización humana
+explícita, gate de continuación) — pero únicamente envolviendo la
+sección crítica del `NORMAL_DAILY_RUN`; ninguna fórmula, collector,
+IPDO, multi-asset ni enrollment de Candidate cambió.
 
-    const { ejecutado, resultado } = await conLockDiario(
-      pool, projectId, localObservationDate,
-      () => collectCandidateSnapshots(...)
-    );
-
-hasta entonces, la protección real del NORMAL_DAILY_RUN sigue
-siendo únicamente la comprobación de aplicación existente
-(`yaSeColectoHoy`), sin lock a nivel de base de datos.
+Solo se activa cuando `SENTINEL_LAKE_ADAPTER=postgres` (ver
+`obtenerPoolLockCompartido()` más abajo). Con `fichero`/`memoria`
+(desarrollo local sin Postgres real) el scheduler sigue exactamente
+igual que antes de este gate: sin lock de base de datos, protegido
+solo por `yaSeColectoHoy`.
 
 POR QUÉ pg_try_advisory_lock
 
@@ -54,6 +51,10 @@ solo libera locks de LA conexión que los adquirió). Por eso
 NO `pool.query()`) desde la adquisición hasta la liberación.
 ===========================================================
 */
+
+import pg from "pg";
+
+const { Pool } = pg;
 
 const TIMEZONE_OPERACIONAL = "America/Guayaquil";
 
@@ -148,4 +149,38 @@ export async function conLockDiario(pool, projectId, fechaOperativa, fn) {
   } finally {
     await liberarLockDiario(client, projectId, fechaOperativa);
   }
+}
+
+/*
+  Singleton perezoso: se crea la primera vez que alguien realmente
+  necesita adquirir un lock (nunca al importar este módulo), y se
+  reutiliza en todas las llamadas siguientes del mismo proceso. Evita
+  que el scheduler tenga que gestionar el ciclo de vida de un Pool de
+  `pg` por su cuenta -- ese acoplamiento es justo lo que esta función
+  existe para absorber, para que la integración en
+  `candidateObservationScheduler.js` sea una sola línea.
+
+  Requiere DATABASE_URL. Si no está definida, lanza -- llamar a esto
+  sin Postgres configurado es un error de quien integra, no un caso
+  a tolerar en silencio.
+*/
+let poolCompartido = null;
+
+export function obtenerPoolLockCompartido() {
+  if (poolCompartido) return poolCompartido;
+
+  if (!process.env.DATABASE_URL) {
+    throw new Error(
+      "obtenerPoolLockCompartido requiere DATABASE_URL. No debería llamarse cuando SENTINEL_LAKE_ADAPTER no es 'postgres'."
+    );
+  }
+
+  poolCompartido = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
+    max: 5,
+    connectionTimeoutMillis: 10000
+  });
+
+  return poolCompartido;
 }

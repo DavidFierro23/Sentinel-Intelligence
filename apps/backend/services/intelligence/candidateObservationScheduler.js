@@ -65,6 +65,16 @@ import { collectCandidateSnapshots, PLATAFORMAS_COLECCION } from "./candidateSna
 import { calcularIPDO, extraerInsumosCandidato, IPDO_METHOD_VERSION } from "./digitalPresenceIndex.js";
 import { amplificacionDeCandidato, separarConversacion } from "./candidateAmplification.js";
 
+/*
+  Lock distribuido (SENTINEL-HISTORICAL-CLOUD-01, Opcion A,
+  autorizado explicitamente para esta sola integracion). Capa de
+  infraestructura, no de logica Candidate: no cambia formulas,
+  collectors, IPDO, multi-asset ni enrollment -solo decide si esta
+  corrida NORMAL_DAILY_RUN entra o se detiene ANTES de tocar ningun
+  collector, cuando hay mas de un worker.
+*/
+import { conLockDiario, obtenerPoolLockCompartido } from "../knowledgeLake/dailyRunLock.js";
+
 export const TIMEZONE_OPERACIONAL = "America/Guayaquil";
 
 export const TIPOS_DISPARO = Object.freeze({
@@ -76,7 +86,16 @@ export const ESTADOS_RUN = Object.freeze({
   SUCCESS: "SUCCESS",
   PARTIAL: "PARTIAL",
   FAILED: "FAILED",
-  SKIPPED_ALREADY_COLLECTED: "SKIPPED_ALREADY_COLLECTED"
+  SKIPPED_ALREADY_COLLECTED: "SKIPPED_ALREADY_COLLECTED",
+  /*
+    Distinto de SKIPPED_ALREADY_COLLECTED: no es que ya se supiera
+    que hoy estaba hecho, es que OTRO worker tiene el lock
+    distribuido de este proyecto+dia en este mismo instante. No es
+    un error operativo -es la proteccion funcionando-, por eso es un
+    estado propio y no se cuenta como FAILED.
+    SENTINEL-HISTORICAL-CLOUD-01 (lock distribuido, Opcion A).
+  */
+  SKIPPED_LOCKED: "SKIPPED_LOCKED"
 });
 
 /*
@@ -184,6 +203,15 @@ export async function ejecutarObservacionDiaria(projectId, opciones = {}) {
   const collectionRunId = `run-${projectId}-${localObservationDate}-${ahora.getTime()}`;
   const startedAt = ahora.toISOString();
 
+  /*
+    Cuerpo real de la observacion -- identico, sin ningun cambio de
+    logica, al que existia antes de este gate. Se convierte en una
+    funcion interna (closure sobre las variables de arriba) unicamente
+    para poder envolverla, o no, con el lock distribuido segun el
+    adaptador activo, sin duplicar una sola linea de la logica de
+    Candidate. SENTINEL-HISTORICAL-CLOUD-01 (lock distribuido, Opcion A).
+  */
+  async function cuerpoDeLaObservacion() {
   if (triggerType === TIPOS_DISPARO.NORMAL_DAILY_RUN && !forzar) {
     const yaHecho = await yaSeColectoHoy(projectId, localObservationDate);
     if (yaHecho) {
@@ -392,6 +420,65 @@ export async function ejecutarObservacionDiaria(projectId, opciones = {}) {
   }
 
   return { ...run, ipdoObservado };
+  } // fin cuerpoDeLaObservacion()
+
+  /*
+    Lock distribuido: SOLO para NORMAL_DAILY_RUN no forzado, y SOLO
+    cuando el adaptador activo del Lake es Postgres real. Con
+    `fichero`/`memoria` (desarrollo local sin Postgres) el
+    comportamiento es EXACTAMENTE igual al de antes de este gate:
+    sin lock de base de datos, protegido solo por yaSeColectoHoy
+    (dentro de cuerpoDeLaObservacion). Una corrida FORCED_MANUAL_RUN
+    tampoco usa el lock -no compite por "el dia", es una intencion
+    explicita distinta, igual que ya distinguia el diseno existente.
+  */
+  const debeUsarLockDistribuido =
+    triggerType === TIPOS_DISPARO.NORMAL_DAILY_RUN &&
+    !forzar &&
+    process.env.SENTINEL_LAKE_ADAPTER === "postgres";
+
+  if (!debeUsarLockDistribuido) {
+    return cuerpoDeLaObservacion();
+  }
+
+  const pool = obtenerPoolLockCompartido();
+  const { ejecutado, resultado } = await conLockDiario(
+    pool,
+    projectId,
+    localObservationDate,
+    cuerpoDeLaObservacion
+  );
+
+  if (!ejecutado) {
+    /*
+      Otro worker ya tiene el lock de este projectId+fecha operativa
+      en este instante. NO se llamo a resolverCandidatosActivos, NI
+      a aplicarPresupuesto, NI a collectCandidateSnapshots -el lock
+      se adquiere antes de cualquiera de esos, por eso
+      cuerpoDeLaObservacion() ni siquiera empieza a ejecutarse-.
+      Esto no es un fallo operativo: es la proteccion funcionando
+      como se diseno. SKIPPED_LOCKED es un estado propio, distinto
+      de FAILED y de SKIPPED_ALREADY_COLLECTED.
+    */
+    return {
+      collectionRunId,
+      projectId,
+      startedAt,
+      completedAt: new Date().toISOString(),
+      localObservationDate,
+      triggerType,
+      status: ESTADOS_RUN.SKIPPED_LOCKED,
+      candidatesPlanned: 0,
+      candidatesObserved: 0,
+      requestsUsed: 0,
+      creditsUsed: 0,
+      limitations: [
+        "otro worker ya tenia el lock distribuido (projectId + fecha operativa) en este instante; no se llamo a ningun collector ni proveedor"
+      ]
+    };
+  }
+
+  return resultado;
 }
 
 /*

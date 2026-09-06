@@ -1413,3 +1413,132 @@ RAILWAY_READY_FOR_CUTOVER           = PARCIAL (ver explicación arriba)
 **No se hizo push. No se hizo deploy. No se tocó
 `candidateObservationScheduler.js`. No se declara
 `PC_CAN_BE_OFF_WITHOUT_MISSING_DAILY_CANDIDATE_OBSERVATION=YES`.**
+
+---
+
+# ADDENDUM 5 — Lock distribuido integrado en el scheduler (autorización explícita)
+
+Autorización humana explícita: tocar `candidateObservationScheduler.js`
+ÚNICAMENTE para integrar la primitiva de lock ya certificada. Ningún
+otro cambio de lógica Candidate.
+
+## Refactor — exactamente qué cambió
+
+El cuerpo completo de `ejecutarObservacionDiaria` (comprobación
+`yaSeColectoHoy`, resolución de candidatos activos, presupuesto,
+llamada a `collectCandidateSnapshots`, persistencia del
+`collectionRun`, cálculo de IPDO/ranking) se movió, **sin modificar
+una sola línea de su lógica interna**, dentro de una función anidada
+`cuerpoDeLaObservacion()` — una closure sobre las mismas variables que
+ya existían. La única lógica nueva es la que decide **si** llamar a
+esa función directamente o envolverla con el lock:
+
+```js
+const debeUsarLockDistribuido =
+  triggerType === TIPOS_DISPARO.NORMAL_DAILY_RUN &&
+  !forzar &&
+  process.env.SENTINEL_LAKE_ADAPTER === "postgres";
+
+if (!debeUsarLockDistribuido) {
+  return cuerpoDeLaObservacion();   // exactamente el comportamiento de antes
+}
+
+const { ejecutado, resultado } = await conLockDiario(
+  obtenerPoolLockCompartido(), projectId, localObservationDate, cuerpoDeLaObservacion
+);
+
+if (!ejecutado) return { ...status: ESTADOS_RUN.SKIPPED_LOCKED... };
+return resultado;
+```
+
+**Ningún cambio** a: fórmulas de IPDO, `calcularIPDO`,
+`extraerInsumosCandidato`, `collectCandidateSnapshots`, multi-asset,
+`resolverCandidatosActivos` (enrollment dinámico), aliases, identidad,
+ranking, generación de reportes, frecuencia diaria (`intervaloDeChequeoMs`/
+`horaDisparoLocal`, sin tocar), ni la semántica de `NORMAL_DAILY_RUN`
+frente a `FORCED_MANUAL_RUN`. Único añadido semántico: el estado
+`ESTADOS_RUN.SKIPPED_LOCKED`, distinto de `FAILED` y de
+`SKIPPED_ALREADY_COLLECTED` — no es un error operativo, es la
+protección funcionando.
+
+## Con `SENTINEL_LAKE_ADAPTER` distinto de `postgres`
+
+`debeUsarLockDistribuido` es `false` — `cuerpoDeLaObservacion()` se
+llama directamente, sin ningún lock, exactamente como antes de este
+gate. Confirmado por la suite existente
+`tests/candidateObservationScheduler.test.mjs` (adaptador `memoria`):
+**23/23 PASS, sin modificar ese archivo de test, sin ninguna
+regresión.**
+
+## Integración probada contra Postgres real — cero requests a proveedores
+
+Nueva suite `tests/candidateSchedulerDistributedLock.test.mjs`,
+**9/9 PASS**, con `SENTINEL_LAKE_ADAPTER=postgres` real y candidatos
+fixture **sin ninguna cuenta social declarada** (mismo patrón que la
+suite existente con memoria: cero activos que medir, cero llamadas de
+red externas).
+
+| Escenario | Resultado |
+|---|---|
+| Dos workers simultáneos, mismo proyecto+día (`Promise.all` real, dos conexiones a Postgres compitiendo de verdad) | Exactamente uno `SKIPPED_LOCKED`, exactamente uno ejecuta |
+| Worker bloqueado | 0 candidatos observados, 0 requests, **ningún `collectionRun` propio persistido** — no se creó una segunda observación |
+| Tercera llamada, ya sin contención de lock | `SKIPPED_ALREADY_COLLECTED` — la idempotencia existente (`yaSeColectoHoy`) sigue siendo la primera línea de defensa, el lock es una capa adicional, no un reemplazo |
+| Proyecto distinto, mismo día | ambos ejecutan, sin bloqueo cruzado |
+| Mismo proyecto, día distinto | `collectionRunId`/`localObservationDate` distintos, sin contención |
+| `FORCED_MANUAL_RUN` sobre un día ya colectado | ejecuta igual — el lock nunca se activa para corridas forzadas, por diseño |
+| Requests a proveedores en las 9 pruebas | **0** |
+
+**Nota de alcance, documentada explícitamente**: este fixture, al usar
+el adaptador postgres real, escribió efectivamente en la tabla de
+producción `lake_records` (2 proyectos, 2 candidatos, 4
+`collectionRun`) — no hay forma de evitarlo sin violar el principio
+append-only del Lake, y son claramente identificables por su
+`proyectoId` (`fixture-lock-scheduler-a-*`/`fixture-lock-scheduler-b-*`).
+Verificado que **no afectaron los 911 registros migrados ni los 3
+conflictos preservados**: `LAKE_RECORDS_COUNT` pasó de 911 a 919
+(exactamente +8, el fixture), `CONFLICTS_COUNT` se mantuvo en 3.
+
+## Regresión completa tras la integración
+
+```
+tests/candidateObservationScheduler.test.mjs   23/23 PASS (sin cambios, adapter=memoria)
+tests/candidateSchedulerDistributedLock.test.mjs  9/9 PASS (nuevo, adapter=postgres real)
+tests/persistencia.test.mjs                    16/16 PASS
+tests/storage/lakeRestartPersistence.test.mjs   5/5  PASS
+tests/storage/lakeConcurrentWrites.test.mjs     2/2  PASS
+tests/storage/lakeProjectIsolation.test.mjs     5/5  PASS
+tests/storage/postgresAdapterContract.test.mjs  5/5  PASS
+tests/storage/migrationCollisionPolicy.test.mjs 4/4  PASS
+tests/storage/dailyRunLock.test.mjs            17/17 PASS
+```
+
+**Total: 86/86 PASS. Cero requests a proveedores reales en toda la
+sesión de este gate. Cero observaciones Candidate reales (ningún
+candidato con cuenta social real fue tocado).**
+
+## Veredictos finales de este addendum
+
+```
+DISTRIBUTED_DAILY_LOCK_IMPLEMENTED        = true
+DISTRIBUTED_DAILY_LOCK_INTEGRATED         = true
+LOCK_ACQUIRED_BEFORE_PROVIDER_CALLS       = true (demostrado: el worker bloqueado nunca ejecutó resolverCandidatosActivos/aplicarPresupuesto/collectCandidateSnapshots)
+SECOND_WORKER_PROVIDER_CALLS              = 0
+SECOND_WORKER_RESULT                      = SKIPPED_LOCKED (estado explícito, no ambiguo, no tratado como error)
+LOCK_RELEASE_AFTER_SUCCESS                = true
+LOCK_RELEASE_AFTER_FAILURE                = true (certificado en la primitiva, Addendum 4)
+DIFFERENT_PROJECT_ALLOWED                 = true
+DIFFERENT_DAY_ALLOWED                     = true
+FILE_ADAPTER_REGRESSION                   = NINGUNA (23/23 suite existente, sin tocar)
+POSTGRES_ADAPTER_REGRESSION               = NINGUNA (86/86 en total)
+CANDIDATE_REGRESSION                      = NINGUNA
+REAL_PROVIDER_REQUESTS                    = 0
+REAL_CANDIDATE_RUNS                       = 0 (solo fixtures sin cuentas sociales)
+DISTRIBUTED_DAILY_LOCK_READY              = SÍ
+RAILWAY_READY_FOR_CUTOVER                 = SÍ, técnicamente (Postgres + migración + lock distribuido integrado y probado); el push y el deploy siguen sin hacerse, pendientes de autorización aparte
+```
+
+**No se hizo push. No se hizo deploy. No se declara
+`PC_CAN_BE_OFF_WITHOUT_MISSING_DAILY_CANDIDATE_OBSERVATION=YES`** — eso
+requiere además el push, la configuración real de Railway, el
+deployment, y la verificación de persistencia desde el propio Railway,
+ninguno de los cuales ocurrió en este gate.
