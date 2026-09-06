@@ -336,7 +336,34 @@ export function crearEscritor(adaptador, indice) {
       };
     }
 
-    const resultado = await adaptador.anexar(registro);
+    /*
+      SENTINEL-HISTORICAL-CLOUD-01: el adaptador postgres puede rechazar
+      un anexar() con VersionConflictError cuando dos escritores
+      calcularon el mismo (claveEntidad, version) -- exactamente el race
+      confirmado empiricamente en SENTINEL-DATA-PERSISTENCE-01. Se trata
+      igual que "sin cambios respecto a la version anterior": no se
+      indexa, se informa el motivo, no se lanza la excepcion hacia
+      arriba. Los adaptadores memoria/fichero nunca lanzan esto, asi que
+      este catch no cambia ningun comportamiento existente para ellos.
+    */
+    let resultado;
+
+    try {
+      resultado = await adaptador.anexar(registro);
+    } catch (error) {
+      if (error?.name === "VersionConflictError") {
+        return {
+          escrito: false,
+          motivo: error.message,
+          version: registro.version,
+          claveEntidad: registro.claveEntidad,
+          conflictoDeVersion: true,
+          reintentable: true
+        };
+      }
+
+      throw error;
+    }
 
     if (indice) await indice.indexar(registro);
 

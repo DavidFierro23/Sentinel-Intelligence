@@ -4,6 +4,8 @@ import { appendFile, readFile, mkdir, readdir, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 
+import { crearAdaptadorPostgres } from "./postgresAdapter.js";
+
 /*
 ===========================================================
 KNOWLEDGE LAKE — ADAPTADORES DE ALMACENAMIENTO
@@ -293,7 +295,8 @@ Por variable de entorno, con memoria como respaldo seguro.
 export const ADAPTADORES_DISPONIBLES = Object.freeze([
   "memoria",
   "fichero",
-  "minio"
+  "minio",
+  "postgres"
 ]);
 
 
@@ -310,6 +313,18 @@ export function crearAdaptador(tipo, opciones = {}) {
 
     case "minio":
       return crearAdaptadorMinio();
+
+    case "postgres":
+      /*
+        SENTINEL-HISTORICAL-CLOUD-01. Se mantiene `crearAdaptador`
+        SINCRONA a proposito -- `abrirLake()` en lakeQuery.js la llama
+        sin `await`, y cambiar eso rompería todo llamador existente.
+        `crearAdaptadorPostgres` en si NO abre ninguna conexión al
+        importarse ni al invocarse: el `Pool` de `pg` conecta de forma
+        perezosa en el primer query, así que no hay ningún costo de I/O
+        aquí por construir el adaptador.
+      */
+      return crearAdaptadorPostgres(opciones);
 
     default:
       console.warn(
