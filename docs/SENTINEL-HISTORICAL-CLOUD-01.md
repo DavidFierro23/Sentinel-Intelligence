@@ -1,0 +1,720 @@
+# SENTINEL-HISTORICAL-CLOUD-01 — Auditoría y diseño de histórico cloud 24/7
+
+Terminal 4 — Data / Infrastructure / Disaster Recovery. Continúa
+`SENTINEL-DR-SECRET-RECOVERY-01` (commit `ca2406c`). Modo: **auditar →
+diseñar → implementar solo lo seguro → detenerse si requiere acción
+humana.**
+
+**Resultado de este gate: `STOP_INTERVENTION_REQUIRED`.** No existe ni
+PostgreSQL/Supabase ni un runtime cloud configurado. Por regla explícita
+del gate (CASO 4), no se inventaron cuentas, no se creó ningún servicio con
+datos falsos, y no se tocó `package.json` para añadir una dependencia de
+base de datos sin autorización previa. Este documento es el plan exacto,
+más la auditoría completa que lo sustenta.
+
+No se hizo push. No se tocó `SENTINEL_PROJECT_STATE.md`. No se tocó
+Candidate/Territorial/Media/UX. Cero llamadas a proveedores externos
+durante este gate.
+
+---
+
+## 1. Arquitectura encontrada (auditoría real, Fase A)
+
+### 1.1 Variables de entorno (nombre y presencia únicamente, sin valores)
+
+| Variable | Presencia | Set/Empty | Propósito |
+|---|---|---|---|
+| `DATABASE_URL` | ABSENTE | — | — |
+| `POSTGRES_URL`/`POSTGRES_HOST`/`POSTGRES_PORT`/`POSTGRES_DATABASE`/`POSTGRES_USER`/`POSTGRES_PASSWORD` | ABSENTE (todas) | — | — |
+| `SUPABASE_URL`/`SUPABASE_ANON_KEY`/`SUPABASE_SERVICE_ROLE_KEY`/`SUPABASE_DB_URL`/`SUPABASE_DATABASE_URL` | ABSENTE (todas) | — | — |
+| `R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY`/`R2_BUCKET`/`R2_ENDPOINT`/`R2_ACCOUNT_ID` | ABSENTE (todas) | — | La autenticación de R2 vive en `rclone.conf`, fuera de `.env`, por diseño de gates anteriores |
+| `CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_ACCOUNT_ID` | ABSENTE | — | — |
+| `AWS_*`/`S3_*` | ABSENTE (todas) | — | — |
+| `SENTINEL_LAKE_ADAPTER` | ABSENTE en `.env` real | — | Solo existe en `.env.example` con default `fichero`; el código cae al default `"fichero"` si no está seteada (`lakeAdapter.js:302`) |
+| `SENTINEL_BACKUP_RCLONE_REMOTE` | ABSENTE en `.env` | — | Intencional: vive solo en el wrapper de Task Scheduler / entorno del cron, nunca en `.env` ni en el repo |
+| `CANDIDATE_SCHEDULER_ENABLED` | ABSENTE | — | El scheduler arranca por defecto; solo se desactiva con el valor literal `"false"` (`server.js:132`) |
+| `PORT` | PRESENTE | SET | Config no sensible |
+| `BRAVE_API_KEY`, `YOUTUBE_API_KEY`, `INSTAGRAM_ACCESS_TOKEN`, `FACEBOOK_USER_ACCESS_TOKEN`, `META_APP_ID`, `META_APP_SECRET`, `SCRAPECREATORS_API_KEY`, `X_BEARER_TOKEN`, `SOCIAL_EXTERNAL_PROVIDER_ENABLED` | PRESENTES | SET | Proveedores de datos (auditados por nombre en `SENTINEL-DR-SECRET-RECOVERY-01`) |
+| `SERPAPI_KEY` | ABSENTE | — | El código real usa `SERPAPI_API_KEY` (alias aceptado), ya documentado en el gate de secretos |
+| `META_API_VERSION` | ABSENTE | — | Usa el default `v23.0` del código |
+
+**Conclusión: cero variables de PostgreSQL, Supabase, R2/S3/AWS/Cloudflare
+existen en `apps/backend/.env`.** El sistema corre hoy exclusivamente sobre
+el adaptador de fichero por default de código, no por configuración
+explícita.
+
+### 1.2 Adaptadores de datos
+
+| Adaptador | Estado | Evidencia |
+|---|---|---|
+| `FILE_ADAPTER` (fichero) | **IMPLEMENTED** | `lakeAdapter.js:118-240`, JSONL append-only por partición diaria |
+| `MEMORY_ADAPTER` (memoria) | **IMPLEMENTED** (solo dev/test) | `lakeAdapter.js:55-99` |
+| `POSTGRES_ADAPTER` | **NOT_IMPLEMENTED** | No existe en `ADAPTADORES_DISPONIBLES` (`lakeAdapter.js:293-297`, solo `memoria`/`fichero`/`minio`); cero código `pg`/`Pool(` en todo `apps/backend` |
+| `SUPABASE_ADAPTER` | **NOT_IMPLEMENTED** | Cero uso de `createClient`/`@supabase/supabase-js` en todo el árbol |
+| `OBJECT_STORAGE_ADAPTER` (minio) | **PARTIAL** (stub declarado, no funcional) | `lakeAdapter.js:254-282`, cada método lanza excepción por diseño explícito |
+
+**Hallazgo relevante:** un único comentario en
+`services/media/mediaUniverseStore.js:55` dice *"T4 esta migrando a
+PostgreSQL en paralelo"* — es una nota de **otra terminal (Media)**
+escribiendo su módulo desacoplado del adaptador de almacenamiento,
+anticipando este mismo gate. **No es evidencia de que la migración ya
+empezó**: no hay ningún cliente, conexión, ni adaptador Postgres en el
+código. Confirma que otras terminales ya diseñan pensando en esta
+migración futura, lo cual es una buena señal para el diseño de la interfaz
+(§3).
+
+### 1.3 Inventario de datos locales
+
+`apps/backend/data/`: **31 archivos, ~11 MB.**
+
+| Carpeta | Archivos | Tamaño |
+|---|---|---|
+| `knowledge-lake/2026/08` | 10 | 4.3 MB |
+| `knowledge-lake/2026/09` | 5 | 1.5 MB |
+| `territorial-evidence/2026/08` | 2 | 472 KB |
+| `territorial-evidence/2026/09` | 3 | 1.5 MB |
+| `territorial-rss-rotation/2026` | 2 | 68 KB |
+| `territorial-snapshots/2026/08` | 5 | 80 KB |
+| `territorial-snapshots/2026/09` | 1 | 8 KB |
+| `territorial-sources/2026` | 2 | 480 KB |
+| `territorial-topics/2026` | 1 | 2.2 MB |
+
+**No existe una carpeta `data/candidate/` ni `data/project/` separada** —
+todo Candidate (proyectos, candidatos, expedientes, collection runs,
+observaciones IPDO, ranking snapshots) vive dentro de
+`data/knowledge-lake/`, escrito por `projectStore.js` vía `escribirEnLake`.
+El crecimiento reciente (2.2 MB solo en `territorial-topics`, gate T2
+`2093415`) confirma actividad concurrente real de otras terminales durante
+este mismo periodo.
+
+### 1.4 Candidate Scheduler — implementación real
+
+`apps/backend/services/intelligence/candidateObservationScheduler.js`
+(550 líneas, leído completo):
+
+- **Arranque:** `server.js:13` importa `iniciarSchedulerGlobal`;
+  `server.js:132-140` lo invoca dentro de `app.listen`, condicionado a que
+  `CANDIDATE_SCHEDULER_ENABLED !== "false"` — **encendido por defecto**, y
+  solo corre mientras este proceso Node de este equipo esté vivo.
+- **Auto-enrollment dinámico**, dos niveles, ninguno hardcodeado:
+  - Proyectos: `iniciarSchedulerGlobal` (línea 501) relee `listarProyectos()`
+    cada `intervaloDeDescubrimientoMs` (default 15 min).
+  - Candidatos: `resolverCandidatosActivos(projectId)` (línea 129) relee
+    `contenidoDeProyecto(projectId)` en cada corrida y filtra
+    `activo !== false` — **candidato #8 entraría sin cambiar código**.
+- **Colectores:** `ejecutarObservacionDiaria` (línea 171) llama
+  `collectCandidateSnapshots`, limitado a `PLATAFORMAS_COLECCION` menos
+  `"tiktok"` (deuda documentada, línea 207).
+- **Persistencia:** todo vía `projectStore.js` → `escribirEnLake`:
+  `guardarCollectionRun` (3707), `guardarObservacionIPDO` (3734),
+  `guardarRankingSnapshot` (3761). Sin base de datos separada.
+- **Timezone:** `TIMEZONE_OPERACIONAL = "America/Guayaquil"` (línea 68),
+  `fechaLocalObservacion` (línea 96) usa `Intl.DateTimeFormat` — **no está
+  hardcodeado a UTC**, ya respeta el requisito de este gate (§37).
+- **Idempotencia:** `yaSeColectoHoy(projectId, fecha)` (línea 112) relee
+  `collectionRunsDe(projectId)` **desde el Lake persistido**, no desde
+  memoria — sobrevive un reinicio de proceso a mitad del día. Lo que SÍ es
+  solo memoria y no sobrevive un reinicio: el `setInterval`/temporizador de
+  descubrimiento (`schedulers` Map, línea 410). La recuperación tras
+  reinicio depende de que `iniciarSchedulerGlobal` vuelva a descubrir el
+  proyecto y dispare un `tick()` inmediato (línea 455) — funciona, pero no
+  es una cola de trabajo durable.
+- **Collection run:** objeto completo (líneas 282-318) con
+  `collectionRunId`, `startedAt/completedAt`, `localObservationDate`,
+  `triggerType`, `status`, desgloses de presupuesto/activos/plataformas,
+  `methodVersion`.
+- **IPDO/ranking:** solo si `candidatosActivos.length >= 2` (línea 324);
+  persistidos por candidato (`ipdoObservation`, línea 355) y una vez por
+  corrida (`rankingSnapshot`, línea 373). Un fallo aquí no invalida el
+  collection run ya persistido (línea 389).
+- **Presupuesto:** `aplicarPresupuesto` (línea 150) tope `maxRequestsPerRun`
+  (default 500), nunca gasta crédito de proveedor pago en corridas
+  normales (línea 214-217) — coherente con el baseline real de "0
+  créditos" del gate anterior de Candidate.
+
+### 1.5 R2 / Backup — estado real
+
+Scripts ya committeados y confirmados funcionando:
+`backup-data-offsite.sh`, `restore-data-offsite.sh`,
+`run-scheduled-backup.ps1`, `create-secret-recovery-package.sh`,
+`upload-secret-package.sh`, `restore-secret-recovery-package.sh` (todos
+auditados en gates anteriores, re-confirmados aquí).
+
+Evidencia de ejecución real reciente:
+`scripts/backup/logs/scheduled-backup-20260905-032534.log` →
+`Resultado: EXITO`, 1.004.717 bytes subidos. `rclone.conf` **existe** en
+este equipo (`%APPDATA%\rclone\rclone.conf`, solo existencia verificada,
+nunca contenido). Paquete de secretos real ya presente
+(`sentinel-secrets-20260903T223600Z.tar.gpg`).
+
+**`R2_BACKUP = READY`** (evaluado por completitud de código/config y
+evidencia de logs, no por una comprobación de conectividad en vivo dentro
+de este gate, tal como exige la directiva).
+
+### 1.6 Runtime / deployment — búsqueda exhaustiva
+
+| Runtime | Config existente |
+|---|---|
+| Dockerfile / docker-compose.yml | NO ENCONTRADO |
+| GitHub Actions (`.github/workflows/*`) | NO ENCONTRADO |
+| railway.json / render.yaml / fly.toml / vercel.json | NO ENCONTRADO |
+| Cloudflare Workers | NO ENCONTRADO |
+| Supabase Edge Functions | NO ENCONTRADO |
+| cron externo (cron-job.org u otro) | NO ENCONTRADO |
+| Windows Task Scheduler | EXISTE — pero solo para el backup de datos, no para el scheduler de Candidate |
+
+**No existe contenedorización, CI/CD, ni ejecución externa de ningún tipo.**
+El único "scheduler" real fuera de este proceso Node es el backup diario de
+datos, que es un caso completamente distinto.
+
+### 1.7 Dependencias
+
+`apps/backend/package.json`: `axios`, `cors`, `dotenv`, `express`,
+`rss-parser`, `whois-json`. `apps/web/package.json`: `react`,
+`react-dom`, `lucide-react`, `react-force-graph-2d` + toolchain de build.
+**Cero** de `pg`, `postgres`, `@supabase/supabase-js`, `prisma`, `knex`,
+`drizzle-orm`, `sequelize` en ningún `package.json` ni en
+`package-lock.json` (grep completo, cero coincidencias transitivas).
+
+**Consecuencia directa:** cualquier adaptador Postgres real necesita una
+dependencia npm nueva. Por regla de este gate (§29), **esto exige detenerse
+antes de tocar `package.json`** — ver §6 (DEPENDENCY_REQUIRED).
+
+---
+
+## 2. Arquitectura objetivo
+
+```
+                    SENTINEL CLOUD (objetivo, NO desplegado)
+                         24/7
+                          |
+                 SENTINEL SCHEDULER
+                          |
+               +----------+----------+
+               |                     |
+         Candidate Jobs        futuros jobs
+         (ya implementado,     (Territorial, Media,
+          hoy solo local)       Reporting — no tocar
+                                 en este gate)
+               |
+               v
+            Collectors
+         (ya implementado)
+               |
+               v
+        Persistent Data Layer
+               |
+          PostgreSQL Cloud
+        (NO EXISTE TODAVÍA)
+               |
+      +--------+---------+
+      |                  |
+ historical state     collection runs
+ snapshots            IPDO observations
+ ranking history      provenance
+      |
+      v
+ Cloudflare R2
+ (YA EXISTE Y FUNCIONA — backup/export/recovery)
+```
+
+**Lo único nuevo en esta arquitectura respecto a hoy es el bloque
+"PostgreSQL Cloud" + un runtime que no sea este laptop.** Todo lo demás
+(scheduler, colectores, lógica IPDO/ranking, R2) ya existe y ya funciona;
+el problema es exclusivamente **dónde corre** y **dónde persiste**.
+
+---
+
+## 3. Modelo mínimo cloud (diseño, sin implementar — CASO 4)
+
+Diseño de contrato, no migración ejecutada, no dependencia instalada.
+Reutiliza exactamente los campos que ya produce
+`candidateObservationScheduler.js` — no se inventan campos nuevos.
+
+```sql
+-- Requiere extensión pgcrypto o gen_random_uuid() nativo (PG13+)
+-- para IDs, o reutilizar los IDs ya generados por el Lake (recomendado:
+-- reutilizar, para que la migración sea trazable 1:1 con el JSONL origen).
+
+CREATE TABLE IF NOT EXISTS projects (
+  project_id      TEXT PRIMARY KEY,
+  tenant_id       TEXT NOT NULL DEFAULT 'sentinel-local',
+  nombre          TEXT NOT NULL,
+  estado          TEXT NOT NULL DEFAULT 'activo',
+  creado_en       TIMESTAMPTZ NOT NULL,
+  payload         JSONB NOT NULL   -- resto de campos del proyecto, sin perder nada del original
+);
+
+CREATE TABLE IF NOT EXISTS candidates (
+  candidate_id    TEXT NOT NULL,
+  project_id      TEXT NOT NULL REFERENCES projects(project_id),
+  tenant_id       TEXT NOT NULL DEFAULT 'sentinel-local',
+  nombre          TEXT NOT NULL,
+  activo          BOOLEAN NOT NULL DEFAULT true,
+  agregado_en     TIMESTAMPTZ NOT NULL,
+  payload         JSONB NOT NULL,
+  PRIMARY KEY (project_id, candidate_id)
+);
+
+CREATE TABLE IF NOT EXISTS candidate_assets (
+  project_id        TEXT NOT NULL,
+  candidate_id      TEXT NOT NULL,
+  platform          TEXT NOT NULL,
+  asset_id          TEXT NOT NULL,       -- canonicalAccountId
+  activo            BOOLEAN NOT NULL DEFAULT true,
+  payload           JSONB NOT NULL,
+  PRIMARY KEY (project_id, candidate_id, platform, asset_id),
+  FOREIGN KEY (project_id, candidate_id) REFERENCES candidates(project_id, candidate_id)
+);
+
+-- APPEND-ONLY. Nunca UPDATE de un run existente salvo transición de estado
+-- controlada (ver "estado de un run" más abajo); nunca DELETE.
+CREATE TABLE IF NOT EXISTS collection_runs (
+  collection_run_id     TEXT PRIMARY KEY,
+  tenant_id             TEXT NOT NULL DEFAULT 'sentinel-local',
+  project_id            TEXT NOT NULL,
+  started_at            TIMESTAMPTZ NOT NULL,
+  completed_at          TIMESTAMPTZ,
+  local_observation_date DATE NOT NULL,       -- America/Guayaquil, calculado en el worker, no en la DB
+  trigger_type          TEXT NOT NULL CHECK (trigger_type IN ('NORMAL_DAILY_RUN','FORCED_MANUAL_RUN')),
+  status                TEXT NOT NULL CHECK (status IN ('SUCCESS','PARTIAL','FAILED','SKIPPED_ALREADY_COLLECTED')),
+  candidates_planned    INT,
+  candidates_observed   INT,
+  assets_planned        INT,
+  assets_observed       INT,
+  platforms_attempted   JSONB,
+  platforms_succeeded   JSONB,
+  platforms_partial     JSONB,
+  platforms_failed      JSONB,
+  requests_used         INT,
+  credits_used          INT,
+  provider_breakdown    JSONB,
+  errors                JSONB,
+  limitations           JSONB,
+  method_version        TEXT NOT NULL,
+
+  -- IDEMPOTENCIA: la restricción real. Un NORMAL_DAILY_RUN no puede
+  -- duplicarse para el mismo proyecto+día. Un FORCED_MANUAL_RUN SÍ puede
+  -- coexistir con el normal del mismo día (es una corrida manual
+  -- deliberada, distinta por diseño — igual que ya distingue el código
+  -- actual). No se inventa un uniqueness que rompa las corridas forzadas.
+  CONSTRAINT uq_normal_daily_run
+    UNIQUE NULLS NOT DISTINCT (project_id, local_observation_date, trigger_type)
+    -- Nota Postgres 15+: NULLS NOT DISTINCT. En versiones anteriores,
+    -- lograr el mismo efecto con un índice único parcial:
+    --   CREATE UNIQUE INDEX ... ON collection_runs (project_id, local_observation_date)
+    --   WHERE trigger_type = 'NORMAL_DAILY_RUN';
+);
+
+CREATE TABLE IF NOT EXISTS candidate_asset_snapshots (
+  snapshot_id       TEXT PRIMARY KEY,
+  collection_run_id TEXT NOT NULL REFERENCES collection_runs(collection_run_id),
+  project_id        TEXT NOT NULL,
+  candidate_id      TEXT NOT NULL,
+  platform          TEXT NOT NULL,
+  asset_id          TEXT NOT NULL,
+  observed_at       TIMESTAMPTZ NOT NULL,
+  local_observation_date DATE NOT NULL,
+  method_version    TEXT NOT NULL,
+  provider          TEXT,
+  coverage          JSONB,
+  evidence_refs     JSONB,
+  metrics           JSONB NOT NULL,   -- followers/views/interacciones tal como llegan, sin fusionar
+
+  -- Un mismo asset no produce dos snapshots para el mismo run.
+  UNIQUE (collection_run_id, project_id, candidate_id, platform, asset_id)
+);
+
+CREATE TABLE IF NOT EXISTS candidate_ipdo_observations (
+  observation_id    TEXT PRIMARY KEY,
+  collection_run_id TEXT NOT NULL REFERENCES collection_runs(collection_run_id),
+  project_id        TEXT NOT NULL,
+  candidate_id      TEXT NOT NULL,
+  local_observation_date DATE NOT NULL,
+  method_version    TEXT NOT NULL,
+  score             NUMERIC,
+  breakdown         JSONB,
+  coverage          JSONB,
+
+  UNIQUE (collection_run_id, project_id, candidate_id)
+);
+
+CREATE TABLE IF NOT EXISTS candidate_ranking_snapshots (
+  ranking_snapshot_id TEXT PRIMARY KEY,
+  collection_run_id   TEXT NOT NULL REFERENCES collection_runs(collection_run_id),
+  project_id          TEXT NOT NULL,
+  local_observation_date DATE NOT NULL,
+  method_version       TEXT NOT NULL,
+  universe_candidate_ids JSONB NOT NULL,
+  universe_size          INT NOT NULL,
+  ranking                JSONB NOT NULL,   -- orden ya calculado, tal como lo produce el código actual
+
+  UNIQUE (collection_run_id, project_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_runs_project_date ON collection_runs (project_id, local_observation_date);
+CREATE INDEX IF NOT EXISTS idx_snapshots_project_candidate ON candidate_asset_snapshots (project_id, candidate_id, local_observation_date);
+CREATE INDEX IF NOT EXISTS idx_ipdo_project_candidate ON candidate_ipdo_observations (project_id, candidate_id, local_observation_date);
+```
+
+**Extensibilidad futura (Territorial/Media, NO implementada ahora):**
+`territorial_observations`, `topic_observations`, `trend_radar_snapshots`,
+`source_universe`, `media_observations`, `media_source_snapshots` seguirían
+exactamente el mismo patrón (`project_id`/`tenant_id` obligatorios,
+append-only, `UNIQUE` sobre la combinación natural de claves + fecha
+operacional). No se crean estas tablas en este gate — solo se deja
+constancia de que el esquema de arriba no las bloquea.
+
+---
+
+## 4. Migración — principio y verificación (diseño)
+
+```
+JSONL (data/knowledge-lake/**)
+   |
+   v
+validar (esquema esperado por tipo de registro)
+   |
+   v
+transformar (registro Lake -> fila de tabla, reutilizando IDs existentes)
+   |
+   v
+insertar en PostgreSQL (idempotente: ON CONFLICT DO NOTHING sobre la PK/UNIQUE natural)
+   |
+   v
+verificar (SOURCE_COUNT vs INSERTED vs ALREADY_PRESENT vs TARGET_COUNT)
+   |
+   v
+habilitar adaptador cloud (SENTINEL_LAKE_ADAPTER=postgres, cuando exista ese adaptador)
+```
+
+**No destructivo:** el JSONL permanece intacto siempre; la migración solo
+lee. **Idempotente:** reintentar el importador completo no duplica nada,
+porque cada tabla tiene una restricción `UNIQUE`/PK natural derivada de
+identificadores que YA existen en el JSONL (no se generan IDs nuevos para
+registros que ya tienen uno). **No se ejecuta en este gate** — no hay
+Postgres contra el cual correrlo.
+
+---
+
+## 5. Idempotencia y concurrencia cloud (diseño)
+
+- **Un solo `NORMAL_DAILY_RUN` por `(project_id, local_observation_date)`**,
+  garantizado por la restricción `UNIQUE` de §3 — a diferencia de hoy
+  (`yaSeColectoHoy` relee y compara en aplicación, con una ventana de
+  carrera teórica entre leer y escribir), la base de datos lo haría
+  imposible aunque dos workers arrancaran al mismo tiempo.
+- **Lock de concurrencia entre workers:** recomendado un *advisory lock* de
+  PostgreSQL (`pg_try_advisory_lock(hashtext(project_id))`) tomado al
+  iniciar el ciclo de un proyecto y liberado al terminar — si un segundo
+  worker/pod/restart intenta el mismo proyecto mientras el lock está
+  tomado, se retira sin intentar escribir. Alternativa equivalente: una
+  tabla `job_leases` con `(project_id, leased_by, leased_until)` y
+  `INSERT ... ON CONFLICT DO NOTHING`. Cualquiera de las dos es
+  demostrable con una prueba de dos procesos concurrentes contra la misma
+  fila.
+- **Esto no está implementado** — es el diseño que resolvería
+  `CLOUD_CONCURRENCY_LOCK`, hoy `NOT_VERIFIED` porque no hay cloud.
+
+---
+
+## 6. `DEPENDENCY_REQUIRED` — STOP antes de tocar `package.json`
+
+Por regla explícita de este gate (§29), me detengo aquí en vez de editar
+`apps/backend/package.json`:
+
+- **Dependencia necesaria:** un cliente PostgreSQL para Node — la opción
+  más simple y estándar es `pg` (el driver oficial, sin ORM). Alternativas
+  evaluadas: `postgres` (driver más nuevo, buen soporte de tipos), `knex`
+  (query builder, añade una capa), `prisma`/`drizzle-orm` (ORMs completos,
+  más pesados de lo que este caso necesita — el modelo de arriba es simple
+  y no requiere un ORM).
+- **Recomendación: `pg`**, por ser el driver estándar de facto, mínimo,
+  ampliamente usado en Node, y suficiente para un adaptador que solo
+  necesita `INSERT ... ON CONFLICT` y `SELECT`s simples — coherente con
+  "no introducir dependencia pesada innecesaria" (§28 del gate).
+- **NO se instaló.** Requiere autorización humana explícita antes de tocar
+  `package.json`, ya marcado en gates anteriores como archivo
+  históricamente compartido/conflictivo entre terminales.
+
+---
+
+## 7. Comparación de runtime 24/7 (sin elegir ni comprar)
+
+Ninguno de los tres tiene configuración existente en el repo — comparación
+basada en compatibilidad conocida con un proceso Node de larga duración,
+sin inventar precios exactos.
+
+| Criterio | Railway | Render | Fly.io |
+|---|---|---|---|
+| Proceso Node siempre activo | Sí (worker/service) | Sí (background worker) | Sí (VM persistente) |
+| Deploy desde GitHub privado | Sí | Sí | Sí (vía `fly deploy`, típicamente con Dockerfile) |
+| Requiere Dockerfile | No obligatorio (Nixpacks detecta Node) | No obligatorio (build nativo) | Generalmente sí (o buildpack) — este repo no tiene Dockerfile hoy |
+| Variables de entorno/secrets | Sí, panel propio | Sí, panel propio | Sí, vía `fly secrets` |
+| Logs | Sí, integrados | Sí, integrados | Sí, integrados |
+| Health checks | Sí | Sí | Sí |
+| Complejidad de setup inicial | Baja | Baja | Media (requiere `fly.toml` + típicamente Docker) |
+| Lock-in | Bajo (es solo Node) | Bajo | Bajo, pero el flujo Docker-first añade fricción si no se quiere mantener un Dockerfile |
+
+**Recomendación primaria: Railway.** Menor fricción para desplegar el
+`server.js` actual tal cual, sin Dockerfile nuevo. **Alternativa: Render**,
+prácticamente equivalente en simplicidad, buena opción si Railway no
+conviene por algún motivo de cuenta/región. **Fly.io se descarta como
+primera opción** solo por requerir más trabajo de empaquetado (Docker) que
+los otros dos para el mismo resultado — no por incompatibilidad.
+
+**Cloudflare Workers explícitamente NO elegido**: no soporta un proceso
+Node de larga duración con conexión persistente a Postgres y `setInterval`
+de la forma en que el scheduler actual está escrito (modelo de ejecución
+por request, no de proceso persistente) — habría exigido reescribir el
+scheduler, que este gate explícitamente no debe hacer.
+
+**Supabase explícitamente NO elegido como runtime** — es candidato para la
+base de datos (Postgres gestionado), no para correr el worker Node.
+
+---
+
+## 8. Coste (estimación cualitativa — `PRICE_VERIFICATION_REQUIRED`)
+
+No se navegó a ningún sitio externo para verificar precios vigentes, por
+regla explícita del gate. Categorías a presupuestar cuando se verifique en
+vivo:
+
+- **PostgreSQL/Supabase**: normalmente existe un tier gratuito/de entrada
+  de bajo coste adecuado para el volumen actual (~11 MB, cientos de filas)
+  — `PRICE_VERIFICATION_REQUIRED` antes de decidir tier.
+- **Runtime worker** (Railway/Render): normalmente tienen un tier de
+  entrada de bajo coste para un solo proceso pequeño siempre activo —
+  `PRICE_VERIFICATION_REQUIRED`.
+- **R2**: ya auditado en `SENTINEL-DATA-PERSISTENCE-01` — free tier
+  generoso (10 GB, 1M/10M operaciones Clase A/B), el uso actual está muy
+  por debajo. No requiere reverificación en este gate.
+- **APIs de proveedores** (SerpAPI, Meta, etc.): sin cambio — el scheduler
+  ya opera en corridas normales con 0 créditos pagos, confirmado en el
+  baseline real de Candidate.
+
+**No se compró ni contrató nada en este gate.**
+
+---
+
+## 9. Veredictos obligatorios
+
+```
+LOCAL_FILE_PERSISTENCE           = READY
+R2_BACKUP                        = READY
+POSTGRES_ADAPTER                 = NOT_IMPLEMENTED
+POSTGRES_CONNECTION              = NOT_CONFIGURED
+SUPABASE_CONNECTION              = NOT_CONFIGURED
+HISTORICAL_CLOUD_SCHEMA          = PARTIAL   (diseñado en §3, no creado en ninguna DB real)
+MIGRATION_TOOL                   = NOT_READY (diseño en §4, no hay código ni DB destino)
+MIGRATION_STATUS                 = NOT_STARTED
+CLOUD_RUNTIME                    = NOT_CONFIGURED
+CLOUD_SCHEDULER                  = NOT_READY
+CLOUD_DAILY_OBSERVATION          = NOT_VERIFIED
+DYNAMIC_CANDIDATE_ENROLLMENT_CLOUD = NOT_VERIFIED (verificado en LOCAL, ver §1.4; no en cloud porque no existe cloud)
+MULTI_ASSET_CLOUD                = NOT_VERIFIED
+CLOUD_IDEMPOTENCY                = NOT_VERIFIED
+CLOUD_CONCURRENCY_LOCK           = NOT_VERIFIED
+PROJECT_ISOLATION_CLOUD          = NOT_VERIFIED
+R2_DB_BACKUP                     = PENDING (no hay DB todavía que respaldar)
+LOCAL_RUNTIME_DEPENDENCY         = YES
+PC_CAN_BE_OFF_WITHOUT_MISSING_DAILY_CANDIDATE_OBSERVATION = NO
+```
+
+---
+
+## 10. Respuestas literales obligatorias
+
+**A. ¿Dónde se guarda hoy el histórico vivo de Sentinel?**
+En `apps/backend/data/knowledge-lake/` (JSONL append-only), vía el
+adaptador de fichero del Knowledge Lake. Candidate, Territorial y Media
+comparten ese mismo mecanismo — no hay una base de datos separada para
+ninguno.
+
+**B. ¿Dónde quedará el histórico vivo después de este gate?**
+En el mismo lugar que antes: `apps/backend/data/knowledge-lake/`. Este
+gate no migró nada porque no existe destino cloud configurado
+(`POSTGRES_CONNECTION = NOT_CONFIGURED`).
+
+**C. ¿R2 es la base de datos principal del histórico?**
+**NO.** R2 es backup/archivo/recuperación (ya en uso, funcionando). El
+histórico vivo transaccional sigue siendo el JSONL local; el destino
+objetivo para eso es PostgreSQL, no R2, tal como esta misma directiva
+establece explícitamente (§11 del gate).
+
+**D. ¿Puedo apagar mi computador esta noche y Sentinel seguirá creando la
+observación diaria de Candidate?**
+**NO.** No existe runtime cloud ni base de datos cloud configurados; el
+scheduler de Candidate depende por completo de que `server.js` siga
+corriendo en este equipo.
+
+**E. Si el worker cloud falla durante dos días, ¿Sentinel inventará
+snapshots de esos días al volver?**
+**NO.** Ni hoy ni en el diseño propuesto. El mecanismo de idempotencia
+(§1.4, §5) solo permite recuperar el run pendiente del día actual si el
+proceso se reinicia dentro del mismo día operacional; días completos
+perdidos deben registrarse como un hueco (`OBSERVATION_GAP`), nunca
+rellenarse con valores fabricados — el propio código actual ya sigue este
+principio (no hay ninguna ruta que "rellene" un día perdido con datos
+inventados).
+
+**F. ¿El candidato #8 seguirá entrando automáticamente en cloud?**
+**TODAVÍA NO VERIFICADO** — el mecanismo de auto-enrollment ya está
+implementado y verificado en local (§1.4: `resolverCandidatosActivos` relee
+el proyecto en cada corrida, sin hardcodear candidatos), y el diseño del
+esquema cloud (§3) no introduce ninguna lista fija de candidatos que
+rompería esto. Pero no puede certificarse "en cloud" porque no hay cloud
+donde probarlo todavía.
+
+**G. ¿Los JSONL locales serán eliminados?**
+**NO.** Ni en este gate ni en el diseño de migración (§4, principio
+no-destructivo explícito).
+
+**H. ¿Ya podemos empezar Momentum?**
+**NO.** No existe histórico temporal real suficiente, y este gate no
+cambia esa realidad — solo prepara el camino para que ese histórico pueda
+acumularse sin depender de que la laptop esté encendida.
+
+---
+
+## 11. Health, alertas, cutover, rollback — diseño (no implementado)
+
+- **Health:** un endpoint simple (`/health` o script CLI) que reporte
+  `UP/DOWN` del worker, `last successful run`, `next expected run`, `last
+  failure`, conteo de candidatos/assets, requests usados — suficiente
+  según la propia directiva ("no construir dashboard grande"). No
+  implementado en este gate porque no hay worker cloud que exponga nada
+  todavía.
+- **Alertas:** hook conceptual para `daily run FAILED`, `run missing`,
+  `provider auth expires`, `credits low` — documentado como trabajo de un
+  gate futuro, sin introducir un proveedor de alertas nuevo ahora.
+- **Cutover** (cuando cloud exista de verdad): (1) DB cloud lista, (2)
+  migración verificada con conteos coincidentes, (3) worker cloud
+  desplegado y con al menos una corrida real exitosa, (4) desactivar
+  `CANDIDATE_SCHEDULER_ENABLED` local (`=false`), (5) worker cloud activo
+  como única fuente, (6) verificar health, (7) verificar que el siguiente
+  run programado ocurre, (8) conservar todos los datos locales, (9)
+  confirmar que el backup offsite sigue corriendo.
+- **Rollback:** si el cloud falla, reactivar `CANDIDATE_SCHEDULER_ENABLED`
+  local, mantener el JSONL como estaba, no perder las observaciones cloud
+  ya válidas (quedan en Postgres, se reconcilian después por
+  `collection_run_id`/IDs naturales, nunca se sobrescriben).
+
+---
+
+## 12. Runbook (comandos reales, existentes, verificados)
+
+```bash
+# Ver estado local del Lake (conteo, integridad, dimensiones)
+cd apps/backend && node -e "import('./services/knowledgeLake/lakeQuery.js').then(m => m.estadoLake().then(console.log))"
+
+# Ver backups offsite existentes (requiere rclone configurado)
+rclone lsl r2-sentinel:sentinel-backups
+
+# Ejecutar el backup manual de datos
+bash apps/backend/scripts/backup/backup-data-offsite.sh
+
+# Ejecutar un restore de prueba (NUNCA sobre apps/backend/data en producción)
+bash apps/backend/scripts/backup/restore-data-offsite.sh /tmp/algun-directorio-vacio
+
+# Crear el paquete cifrado de secretos (passphrase interactiva)
+bash apps/backend/scripts/secrets/create-secret-recovery-package.sh
+bash apps/backend/scripts/secrets/upload-secret-package.sh
+
+# Deshabilitar el scheduler local de Candidate (una vez exista alternativa cloud)
+# En apps/backend/.env:
+#   CANDIDATE_SCHEDULER_ENABLED=false
+
+# Habilitar de nuevo (rollback)
+#   CANDIDATE_SCHEDULER_ENABLED=true   (o eliminar la línea, es el default)
+```
+
+**No existen todavía** (porque no existe cloud): comandos para migrar,
+verificar conteos cloud, ver collection runs/snapshots/IPDO/ranking desde
+Postgres, ver salud del worker cloud, activar/detener el worker cloud. Se
+documentarán en el gate en que esa infraestructura exista de verdad — no
+se inventan aquí.
+
+---
+
+## 13. Limitaciones y pendientes
+
+1. Sin Postgres/Supabase configurado — bloqueante para todo lo demás.
+2. Sin runtime cloud configurado — bloqueante para "PC apagado, Sentinel
+   sigue observando".
+3. Añadir `pg` requiere tocar `apps/backend/package.json` — requiere
+   autorización humana explícita (§6).
+4. El esquema de §3 es diseño, no ha sido creado ni probado contra ninguna
+   instancia real de Postgres.
+5. El scheduler actual, aunque ya es "cloud-restart-safe" en su lógica de
+   idempotencia (lee de almacenamiento persistente, no de memoria), su
+   temporizador de descubrimiento sigue siendo un `setInterval` en memoria
+   de proceso — migrarlo a un runtime cloud con reinicios/redeploys
+   frecuentes necesitará el lock de concurrencia de §5 para ser seguro de
+   verdad.
+6. `R2_DB_BACKUP` (backup de la futura base Postgres hacia R2) queda
+   `PENDING` — no hay DB que respaldar todavía.
+
+---
+
+## STOP_INTERVENTION_REQUIRED
+
+**QUÉ FALTA:** una instancia de PostgreSQL gestionado (Supabase u
+equivalente) y un runtime cloud para correr un proceso Node de larga
+duración (Railway recomendado, Render como alternativa). Ninguno de los
+dos existe hoy.
+
+**POR QUÉ:** sin ambos, es imposible que "el PC pueda estar apagado y
+Sentinel siga observando" — es literalmente la definición del objetivo de
+este gate, y no puede lograrse sin crear cuentas/servicios reales, lo cual
+esta directiva prohíbe hacer automáticamente.
+
+**DÓNDE HACER CLICK (Supabase):**
+1. Ir a `supabase.com` → crear cuenta / iniciar sesión.
+2. "New Project" → elegir organización → nombre del proyecto (sugerido:
+   `sentinel-intelligence`) → elegir una contraseña segura para la base de
+   datos (generarla con un gestor de contraseñas, no reutilizar ninguna
+   existente) → elegir la región disponible más cercana a Ecuador/LATAM
+   que ofrezca el panel (documentar cuál se eligió realmente, no asumir
+   una).
+2.1. Confirmar tier: **Pro** como mínimo si esto va a producción real
+   (Free no tiene backups automáticos, ver `SENTINEL-DATA-PERSISTENCE-01`
+   §A.3).
+3. Una vez creado, ir a Project Settings → Database → copiar la cadena de
+   conexión (`Connection string`, modo "Session" o "Transaction pooling"
+   según se decida).
+
+**QUÉ CREAR:** el proyecto Supabase descrito arriba. Nada más — no crear
+tablas manualmente todavía, eso lo hace la migración cuando este gate
+continúe.
+
+**QUÉ VARIABLE CONFIGURAR:** `DATABASE_URL` (o `POSTGRES_URL`, a decidir en
+el siguiente gate) en `apps/backend/.env` — **nunca pegar el valor en este
+chat**, configurarla directamente en el archivo `.env` local.
+
+**CÓMO VERIFICAR:** una vez configurada, decir "ya configuré
+DATABASE_URL" — el siguiente gate la detectará por presencia (`PRESENT`),
+nunca pidiendo ver el valor.
+
+**QUÉ NO COMPARTIR:** la contraseña de la base de datos, la cadena de
+conexión completa, ninguna clave de servicio (`service_role`) de Supabase.
+
+**DÓNDE HACER CLICK (runtime, Railway recomendado):**
+1. `railway.app` → crear cuenta / iniciar sesión con GitHub.
+2. "New Project" → "Deploy from GitHub repo" → seleccionar
+   `DavidFierro23/Sentinel-Intelligence` (requiere autorizar el acceso de
+   Railway al repo privado — un permiso de GitHub, no un secreto de
+   Sentinel).
+3. **No desplegar todavía** — solo conectar el repo. El siguiente gate
+   configurará el comando de arranque, variables de entorno y el `root
+   directory` (`apps/backend`) antes de un primer deploy real.
+
+**QUÉ MENSAJE PEGAR DESPUÉS PARA CONTINUAR:**
+
+> "Ya creé el proyecto Supabase y configuré DATABASE_URL en
+> apps/backend/.env. Ya conecté el repo a Railway (sin desplegar
+> todavía). Continúa SENTINEL-HISTORICAL-CLOUD-01: implementa el
+> adaptador Postgres, corre la migración, y prepara el deploy."
+
+Ese mensaje autoriza además, implícitamente, a tocar `apps/backend/package.json`
+para añadir `pg` — si no es así, decirlo explícitamente al continuar.
