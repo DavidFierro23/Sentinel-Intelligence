@@ -16,6 +16,14 @@ import {
   resumenDeCuentas
 } from "../services/intelligence/accountIntelligence.js";
 
+/* CANDIDATE-LONGITUDINAL-FOUNDATION-01 */
+import {
+  ejecutarObservacionDiaria,
+  estadoDelScheduler,
+  estadoDelSchedulerGlobal,
+  TIPOS_DISPARO
+} from "../services/intelligence/candidateObservationScheduler.js";
+
 /* Candidate Intelligence V1 */
 import {
   resolverCuentasDelCandidato,
@@ -114,7 +122,10 @@ import {
   agregarActor,
   obtenerActor,
   activarComparativo,
-  registrarInvestigacion
+  registrarInvestigacion,
+  collectionRunsDe,
+  rankingSnapshotsDe,
+  observacionesIPDOde
 } from "../services/projects/projectStore.js";
 
 import { correlacionObservable } from "../services/projects/actorCorrelation.js";
@@ -1873,5 +1884,81 @@ router.post(
   }
 );
 
+
+/*
+===========================================================
+CANDIDATE-LONGITUDINAL-FOUNDATION-01 — OBSERVACION AUTOMATICA
+===========================================================
+
+Solo lectura + un disparo manual explicito. El scheduler
+automatico corre en proceso (server.js); estos endpoints son
+para operar y auditar, no para reemplazarlo.
+===========================================================
+*/
+
+/* Estado del scheduler para este proyecto: activo/inactivo, ultima corrida, proximo chequeo, errores. */
+router.get("/:proyectoId/scheduler/estado", (req, res) => {
+  res.json(estadoDelScheduler(req.params.proyectoId));
+});
+
+/* Estado global: todos los proyectos con scheduler activo, uno por uno. */
+router.get("/scheduler/estado", (req, res) => {
+  res.json(estadoDelSchedulerGlobal());
+});
+
+/* Historial completo de corridas de recoleccion (auditoria) para este proyecto. */
+router.get("/:proyectoId/scheduler/corridas", async (req, res) => {
+  try {
+    res.json({ corridas: await collectionRunsDe(req.params.proyectoId) });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo al leer las corridas" });
+  }
+});
+
+/* Historial de snapshots de ranking (un corte por corrida valida). */
+router.get("/:proyectoId/scheduler/ranking-historico", async (req, res) => {
+  try {
+    res.json({ snapshots: await rankingSnapshotsDe(req.params.proyectoId) });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo al leer el historico de ranking" });
+  }
+});
+
+/* Historial de observaciones IPDO de un candidato puntual. */
+router.get("/:proyectoId/candidatos/:candidatoId/ipdo-historico", async (req, res) => {
+  try {
+    res.json({ observaciones: await observacionesIPDOde(req.params.proyectoId, req.params.candidatoId) });
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo al leer el historico IPDO" });
+  }
+});
+
+/*
+  Disparo manual (FORCED_MANUAL_RUN). No requiere que ya haya
+  pasado el dia: sirve para forzar una corrida ahora mismo,
+  auditada igual que la automatica. Presupuesto de proveedor
+  explicito y opcional -nunca implicito-.
+*/
+router.post("/:proyectoId/scheduler/forzar-corrida", async (req, res) => {
+  try {
+    const {
+      proveedorInstagram = null,
+      proveedorFacebook = null,
+      maxProviderCreditsPerRun = 0
+    } = req.body || {};
+
+    const run = await ejecutarObservacionDiaria(req.params.proyectoId, {
+      triggerType: TIPOS_DISPARO.FORCED_MANUAL_RUN,
+      forzar: true,
+      proveedorInstagram,
+      proveedorFacebook,
+      maxProviderCreditsPerRun
+    });
+
+    res.json(run);
+  } catch (e) {
+    res.status(500).json({ error: e?.message || "fallo al forzar la corrida" });
+  }
+});
 
 export default router;

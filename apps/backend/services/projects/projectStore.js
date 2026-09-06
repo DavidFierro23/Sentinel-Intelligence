@@ -3682,6 +3682,110 @@ export async function registrarInvestigacion(
 }
 
 
+/*
+===========================================================
+FUNDACION LONGITUDINAL — CANDIDATE-LONGITUDINAL-FOUNDATION-01
+===========================================================
+
+Tres series nuevas, append-only, mismo patron que
+`guardarSnapshots`/`snapshotsDe`: escribirEnLake + leerSerie, sin
+motor nuevo.
+
+    collectionRun       una corrida completa de observacion diaria
+    ipdoObservation     el IPDO calculado para un corte comparable
+    rankingSnapshot     el ranking derivado de ese mismo corte
+
+Ninguna sobreescribe la anterior: la clave incluye el identificador
+de la corrida o el instante exacto, nunca solo el candidato o el
+proyecto.
+===========================================================
+*/
+const PREFIJO_COLLECTION_RUN = "collectionrun-";
+const PREFIJO_IPDO_OBS = "ipdoobs-";
+const PREFIJO_RANKING_SNAPSHOT = "rankingsnap-";
+
+export async function guardarCollectionRun(proyectoId, run) {
+  const entidad = `${PREFIJO_COLLECTION_RUN}${run.collectionRunId}`;
+
+  try {
+    const r = await escribirEnLake(
+      {
+        entidad,
+        tipoEntidad: TIPO_EXPEDIENTE,
+        tenantId: TENANT,
+        proyectoId,
+        fuente: SUBMOTOR,
+        linaje: linaje("collection_run"),
+        datos: run
+      },
+      {}
+    );
+
+    return { escrito: r?.escrito === true, entidad, motivo: r?.motivo || null };
+  } catch (e) {
+    return { escrito: false, entidad, motivo: e?.message || "fallo de escritura" };
+  }
+}
+
+export async function collectionRunsDe(proyectoId) {
+  return leerSerie(proyectoId, PREFIJO_COLLECTION_RUN);
+}
+
+export async function guardarObservacionIPDO(proyectoId, observacion) {
+  const entidad = `${PREFIJO_IPDO_OBS}${observacion.candidateId}-${observacion.observedAt}`;
+
+  try {
+    const r = await escribirEnLake(
+      {
+        entidad,
+        tipoEntidad: TIPO_EXPEDIENTE,
+        tenantId: TENANT,
+        proyectoId,
+        fuente: SUBMOTOR,
+        linaje: linaje("ipdo_observation"),
+        datos: observacion
+      },
+      {}
+    );
+
+    return { escrito: r?.escrito === true, entidad, motivo: r?.motivo || null };
+  } catch (e) {
+    return { escrito: false, entidad, motivo: e?.message || "fallo de escritura" };
+  }
+}
+
+export async function observacionesIPDOde(proyectoId, candidatoId) {
+  return leerSerie(proyectoId, `${PREFIJO_IPDO_OBS}${candidatoId}-`);
+}
+
+export async function guardarRankingSnapshot(proyectoId, snapshot) {
+  const entidad = `${PREFIJO_RANKING_SNAPSHOT}${snapshot.collectionRunId}`;
+
+  try {
+    const r = await escribirEnLake(
+      {
+        entidad,
+        tipoEntidad: TIPO_EXPEDIENTE,
+        tenantId: TENANT,
+        proyectoId,
+        fuente: SUBMOTOR,
+        linaje: linaje("ranking_snapshot"),
+        datos: snapshot
+      },
+      {}
+    );
+
+    return { escrito: r?.escrito === true, entidad, motivo: r?.motivo || null };
+  } catch (e) {
+    return { escrito: false, entidad, motivo: e?.message || "fallo de escritura" };
+  }
+}
+
+export async function rankingSnapshotsDe(proyectoId) {
+  return leerSerie(proyectoId, PREFIJO_RANKING_SNAPSHOT);
+}
+
+
 export default {
   ESTADOS,
   crearProyecto,

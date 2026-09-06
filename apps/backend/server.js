@@ -10,6 +10,7 @@ import assetRoutes from "./routes/assets.js";
 import projectRoutes from "./routes/projects.js";
 import territorioRoutes from "./routes/territorio.js";
 import mediaRoutes from "./routes/media.js";
+import { iniciarSchedulerGlobal } from "./services/intelligence/candidateObservationScheduler.js";
 
 dotenv.config();
 
@@ -119,4 +120,22 @@ const PORT = process.env.PORT || 3001;
 
 app.listen(PORT, () => {
   console.log(`Sentinel Backend ejecutándose en http://localhost:${PORT}`);
+
+  /*
+    CANDIDATE-LONGITUDINAL-FOUNDATION-01 — arranca la observacion
+    diaria automatica. Deshabilitable explicitamente con
+    CANDIDATE_SCHEDULER_ENABLED=false (por ejemplo, en tests que
+    levanten server.js directamente, cosa que hoy ningun test hace).
+    Sin este flag activo, Sentinel NO habria generado ninguna
+    observacion nueva por su cuenta.
+  */
+  if (process.env.CANDIDATE_SCHEDULER_ENABLED !== "false") {
+    iniciarSchedulerGlobal().then((estado) => {
+      console.log(
+        `Candidate Observation Scheduler activo — proyectos: ${estado.proyectosConSchedulerActivo.join(", ") || "(ninguno todavia)"}`
+      );
+    });
+  } else {
+    console.log("Candidate Observation Scheduler deshabilitado (CANDIDATE_SCHEDULER_ENABLED=false).");
+  }
 });
