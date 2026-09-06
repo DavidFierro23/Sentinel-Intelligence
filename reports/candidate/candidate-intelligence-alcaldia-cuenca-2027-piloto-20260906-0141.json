@@ -5,13 +5,13 @@
   "proyecto": {
     "nombre": "Elecciones Alcaldía Cuenca 2027"
   },
-  "generatedAt": "2026-09-06T01:45:34.575Z",
-  "dataCutoff": "2026-09-06T01:45:34.575Z",
+  "generatedAt": "2026-09-06T01:41:27.531Z",
+  "dataCutoff": "2026-09-06T01:41:27.531Z",
   "methodVersion": "IPDO_V1.1",
   "ipdoNombreCompleto": "Índice de Presencia Digital Observable (IPDO)",
   "timezonePresentacion": "America/Guayaquil",
   "periodo": {
-    "generadoEl": "2026-09-06T01:45:34.575Z",
+    "generadoEl": "2026-09-06T01:41:27.531Z",
     "datosDesde": "2026-08-26T14:30:03.719Z",
     "datosHasta": "2026-09-03T21:11:15.448Z",
     "presence": "CURRENT_PROFILE_STOCK (último snapshot real por activo)",
@@ -64,7 +64,7 @@
     "predicción de resultado"
   ],
   "resumenEjecutivo": [
-    "Juan Cristóbal Lloret Valdivieso presenta el mayor Índice de Presencia Digital Observable (IPDO) dentro del universo comparado (80,2 / 100, cobertura metodológica ALTA).",
+    "Juan Cristóbal Lloret Valdivieso presenta la mayor Presencia Digital Observable (Índice de Presencia Digital Observable (IPDO)) dentro del universo comparado (IPDO 80,2 / 100, cobertura metodológica ALTA).",
     "Yaku Perez registra la mayor interacción observable dentro del grupo (98,1 / 100, valor relativo al grupo).",
     "Juan Cristóbal Lloret Valdivieso muestra la mayor conversación pública de terceros observada dentro del grupo (100,0 / 100, valor relativo al grupo).",
     "De 35 combinaciones candidato-plataforma, 26 tienen medición real completa; ninguna quedó sin estado explícito.",

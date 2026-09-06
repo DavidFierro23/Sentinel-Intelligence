@@ -1,7 +1,7 @@
 # Informe de Candidate Intelligence
 ## Elecciones Alcaldía Cuenca 2027
 
-**Generado el:** 05/09/2026, 20:45 (hora Ecuador)  
+**Generado el:** 05/09/2026, 20:42 (hora Ecuador)  
 **Datos observados:** 26/08/2026 – 03/09/2026  
 **Versión metodológica:** IPDO_V1.1
 
@@ -305,7 +305,7 @@ _Esto es lo que este informe todavía no puede afirmar, dicho de forma explícit
 
 - Hay celdas con medición persistida cuyo activo no está en la ficha de identidad, ni siquiera resolviendo su forma canónica. Es una cuenta observada que nadie ha atribuido.
 - En las celdas con varios activos medidos, la cifra es la suma de los seguidores de cada cuenta. Los seguidores pueden solaparse entre cuentas del mismo candidato: no son personas únicas, ni alcance, ni audiencia única.
-- No se persiste evidencia de que un discovery se haya ejecutado por plataforma, así que una celda sin activos se cierra como "Identidad insuficiente para medir" y nunca como "Sin cuenta identificada". Es deliberado: lo contrario fabricaría la conclusión de que el candidato no tiene cuenta.
+- No se persiste evidencia de que un discovery se haya ejecutado por plataforma, así que una celda sin activos se cierra como IDENTIDAD_INSUFICIENTE y nunca como SIN_CUENTA. Es deliberado: lo contrario fabricaría la conclusión de que el candidato no tiene cuenta.
 - Los conflictos de identidad revisados por una persona no tienen almacenamiento: `conflictosConocidos` llega vacío en cualquier ejecución. Una exclusión decidida en un gate anterior no puede reproducirse hoy.
 - Histórico insuficiente para calcular Momentum estable. Se reportan solo señales actuales.
 - **Histórico:** Histórico insuficiente para Momentum estable. No se calcula tendencia ni score de cambio en esta versión.

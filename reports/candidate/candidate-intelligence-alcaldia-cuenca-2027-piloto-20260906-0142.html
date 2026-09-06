@@ -58,7 +58,7 @@
     <h1>Informe de Candidate Intelligence</h1>
     <div class="meta">
       Elecciones Alcaldía Cuenca 2027<br>
-      Generado el 05/09/2026, 20:45 (hora Ecuador)<br>
+      Generado el 05/09/2026, 20:42 (hora Ecuador)<br>
       Datos observados: 26/08/2026 – 03/09/2026
     </div>
   </div>
@@ -250,7 +250,7 @@
   <section class="block">
     <h2>7. Limitaciones</h2>
     <p>Esto es lo que este informe todavía no puede afirmar, dicho de forma explícita en vez de omitirlo.</p>
-    <ul><li>Hay celdas con medición persistida cuyo activo no está en la ficha de identidad, ni siquiera resolviendo su forma canónica. Es una cuenta observada que nadie ha atribuido.</li><li>En las celdas con varios activos medidos, la cifra es la suma de los seguidores de cada cuenta. Los seguidores pueden solaparse entre cuentas del mismo candidato: no son personas únicas, ni alcance, ni audiencia única.</li><li>No se persiste evidencia de que un discovery se haya ejecutado por plataforma, así que una celda sin activos se cierra como &quot;Identidad insuficiente para medir&quot; y nunca como &quot;Sin cuenta identificada&quot;. Es deliberado: lo contrario fabricaría la conclusión de que el candidato no tiene cuenta.</li><li>Los conflictos de identidad revisados por una persona no tienen almacenamiento: `conflictosConocidos` llega vacío en cualquier ejecución. Una exclusión decidida en un gate anterior no puede reproducirse hoy.</li><li>Histórico insuficiente para calcular Momentum estable. Se reportan solo señales actuales.</li>
+    <ul><li>Hay celdas con medición persistida cuyo activo no está en la ficha de identidad, ni siquiera resolviendo su forma canónica. Es una cuenta observada que nadie ha atribuido.</li><li>En las celdas con varios activos medidos, la cifra es la suma de los seguidores de cada cuenta. Los seguidores pueden solaparse entre cuentas del mismo candidato: no son personas únicas, ni alcance, ni audiencia única.</li><li>No se persiste evidencia de que un discovery se haya ejecutado por plataforma, así que una celda sin activos se cierra como IDENTIDAD_INSUFICIENTE y nunca como SIN_CUENTA. Es deliberado: lo contrario fabricaría la conclusión de que el candidato no tiene cuenta.</li><li>Los conflictos de identidad revisados por una persona no tienen almacenamiento: `conflictosConocidos` llega vacío en cualquier ejecución. Una exclusión decidida en un gate anterior no puede reproducirse hoy.</li><li>Histórico insuficiente para calcular Momentum estable. Se reportan solo señales actuales.</li>
     <li>Histórico insuficiente para Momentum estable. No se calcula tendencia ni score de cambio en esta versión.</li></ul>
   </section>
 

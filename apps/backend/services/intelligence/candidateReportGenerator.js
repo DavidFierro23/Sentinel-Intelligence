@@ -38,8 +38,14 @@ import {
 import { matrizDePlataformasDelProyecto } from "./candidatePlatformMatrix.js";
 import { calcularIPDO, extraerInsumosCandidato, IPDO_METHOD_VERSION } from "./digitalPresenceIndex.js";
 import { amplificacionDeCandidato, separarConversacion } from "./candidateAmplification.js";
+import { obtenerAvatar } from "../avatarService.js";
 
-export const REPORT_CONTRACT_VERSION = "CANDIDATE-REAL-CAMPAIGN-REPORT-01.v1";
+export const REPORT_CONTRACT_VERSION = "CANDIDATE-LONGITUDINAL-FOUNDATION-01.v2";
+
+/* Nombre completo la primera vez; "IPDO" en el resto del informe -seccion 40 del gate-. */
+export const IPDO_NOMBRE_COMPLETO = "Índice de Presencia Digital Observable (IPDO)";
+
+export const TIMEZONE_PRESENTACION = "America/Guayaquil";
 
 export const DISCLAIMER_IPDO =
   "El IPDO mide presencia digital observable dentro del universo comparado y las fuentes cubiertas. No representa intención de voto, aprobación ni predicción electoral.";
@@ -79,6 +85,22 @@ function evidenciasDestacadas(evidencias = [], max = 6) {
       tipo: e.tipo || null,
       fecha: e.fecha || null
     }));
+}
+
+/*
+  Foto: SOLO de lo ya persistido (`ficha.foto`). Nunca se resuelve
+  una foto nueva desde aqui -eso saldria a la red en cada
+  generacion de informe, y el gate lo prohibe explicitamente-. Si
+  no hay foto utilizable, se usa el placeholder Sentinel
+  (`avatarService.js`, ya existente: iniciales sobre navy/azul,
+  SVG local, cero red) en vez de un hueco o un 404.
+*/
+async function resolverFotoPersistida(ficha) {
+  if (ficha?.foto?.utilizable && ficha.foto.url) {
+    return { url: ficha.foto.url, esPlaceholder: false };
+  }
+  const avatar = await obtenerAvatar(ficha?.nombre || "");
+  return { url: avatar.avatar, esPlaceholder: true };
 }
 
 function publicacionesDestacadas(publicaciones = [], max = 4) {
@@ -126,6 +148,16 @@ export async function generateCandidateIntelligenceReport(projectId, options = {
   const filasIpdo = [];
   const porCandidato = {};
 
+  /*
+    Periodo REAL de datos observados -no el instante de generacion-.
+    Se calcula del capturedAt mas antiguo y mas reciente de TODOS
+    los snapshots del proyecto, project-wide: es la unica fecha que
+    responde "¿desde cuando hasta cuando observo Sentinel esto?".
+    `generatedAt` es cuando se corrio el generador, no lo mismo.
+  */
+  let datosDesde = null;
+  let datosHasta = null;
+
   for (const cand of candidatos) {
     const ficha = await fichaIdentidad(projectId, cand.id, "candidato");
     if (!ficha) continue;
@@ -134,6 +166,12 @@ export async function generateCandidateIntelligenceReport(projectId, options = {
     const pubsSerie = await publicacionesDe(projectId, cand.id);
     const evid = await evidenciasDe(projectId, cand.id);
     const cuentas = ficha.plataformas.flatMap((p) => p.cuentas || []);
+
+    for (const s of snapshots) {
+      if (!s.capturedAt) continue;
+      if (!datosDesde || s.capturedAt < datosDesde) datosDesde = s.capturedAt;
+      if (!datosHasta || s.capturedAt > datosHasta) datosHasta = s.capturedAt;
+    }
 
     const amplificacion = amplificacionDeCandidato({ evidencias: evid.evidencias, cuentas });
     const conversacion = separarConversacion({ evidencias: evid.evidencias, cuentas });
@@ -150,10 +188,13 @@ export async function generateCandidateIntelligenceReport(projectId, options = {
 
     filasIpdo.push(insumos);
 
+    const foto = await resolverFotoPersistida(ficha);
+
     porCandidato[cand.id] = {
       candidateId: cand.id,
       nombre: ficha.nombre || cand.nombre,
       aliases: ficha.aliases || [],
+      foto,
       evidenciasDestacadas: evidenciasDestacadas(evid.evidencias),
       publicacionesDestacadas: publicacionesDestacadas(pubsSerie.publicaciones),
       totalEvidencias: (evid.evidencias || []).length,
@@ -208,7 +249,7 @@ export async function generateCandidateIntelligenceReport(projectId, options = {
   };
 
   /* ---------- RESUMEN EJECUTIVO (5-8 hallazgos, generado de datos reales) ---------- */
-  const resumenEjecutivo = construirResumenEjecutivo({ ranking, matriz, hallazgosComparativos, candidatosTotal: candidatos.length });
+  const resumenEjecutivo = construirResumenEjecutivo({ ranking, matriz, hallazgosComparativos, candidatosTotal: candidatos.length, porCandidato });
 
   return {
     ok: true,
@@ -218,7 +259,19 @@ export async function generateCandidateIntelligenceReport(projectId, options = {
     generatedAt,
     dataCutoff: generatedAt,
     methodVersion: IPDO_METHOD_VERSION,
+    ipdoNombreCompleto: IPDO_NOMBRE_COMPLETO,
+    timezonePresentacion: TIMEZONE_PRESENTACION,
     periodo: {
+      /*
+        `generadoEl` = instante de ejecucion del generador (UTC).
+        `datosDesde`/`datosHasta` = ventana REAL de observacion,
+        del snapshot mas antiguo al mas reciente, project-wide. Si
+        todavia no hay ningun snapshot, ambos quedan null -nunca se
+        inventa una fecha-.
+      */
+      generadoEl: generatedAt,
+      datosDesde,
+      datosHasta,
       presence: "CURRENT_PROFILE_STOCK (último snapshot real por activo)",
       interaction: "OBSERVATION_WINDOW (acumulado de publicaciones observadas hasta la fecha)",
       conversation: "OBSERVATION_WINDOW (corpus de evidencias acumulado hasta la fecha)",
@@ -282,43 +335,49 @@ function decorarConCaveatDeCero(r) {
   return Object.keys(caveats).length ? { ...r, dimensionCaveats: caveats } : r;
 }
 
-function construirResumenEjecutivo({ ranking, matriz, hallazgosComparativos, candidatosTotal }) {
+function formatoComaEs(v, decimales = 1) {
+  if (v == null) return "—";
+  return Number(v).toFixed(decimales).replace(".", ",");
+}
+
+function construirResumenEjecutivo({ ranking, matriz, hallazgosComparativos, candidatosTotal, porCandidato }) {
   const hallazgos = [];
+  const nombreDe = (cid) => porCandidato[cid]?.nombre || cid;
 
   if (ranking.length) {
     const lider = ranking[0];
     hallazgos.push(
-      `${lider.candidateId} presenta la mayor Presencia Digital Observable dentro del universo comparado (IPDO ${lider.score}/100, cobertura metodológica ${lider.methodologicalCoverage}).`
+      `${nombreDe(lider.candidateId)} presenta el mayor ${IPDO_NOMBRE_COMPLETO} dentro del universo comparado (${formatoComaEs(lider.score)} / 100, cobertura metodológica ${lider.methodologicalCoverage}).`
     );
   }
 
   if (hallazgosComparativos.mayorInteraction) {
     hallazgos.push(
-      `${hallazgosComparativos.mayorInteraction.candidateId} registra mayor actividad de interacción observable dentro del grupo (${hallazgosComparativos.mayorInteraction.valor}/100 relativo).`
+      `${nombreDe(hallazgosComparativos.mayorInteraction.candidateId)} registra la mayor interacción observable dentro del grupo (${formatoComaEs(hallazgosComparativos.mayorInteraction.valor)} / 100, valor relativo al grupo).`
     );
   }
 
   if (hallazgosComparativos.mayorConversation) {
     hallazgos.push(
-      `${hallazgosComparativos.mayorConversation.candidateId} muestra la mayor conversación/amplificación de terceros observada dentro del grupo (${hallazgosComparativos.mayorConversation.valor}/100 relativo).`
+      `${nombreDe(hallazgosComparativos.mayorConversation.candidateId)} muestra la mayor conversación pública de terceros observada dentro del grupo (${formatoComaEs(hallazgosComparativos.mayorConversation.valor)} / 100, valor relativo al grupo).`
     );
   }
 
   if (matriz.ok) {
     hallazgos.push(
-      `De ${candidatosTotal * matriz.plataformas.length} celdas candidato×plataforma, ${matriz.distribucion.MEDIDO || 0} tienen medición real completa; ninguna celda quedó sin estado explícito.`
+      `De ${candidatosTotal * matriz.plataformas.length} combinaciones candidato-plataforma, ${matriz.distribucion.MEDIDO || 0} tienen medición real completa; ninguna quedó sin estado explícito.`
     );
   }
 
   hallazgos.push(
-    "Histórico insuficiente para Momentum estable: este informe reporta presencia, actividad e interacción observadas hoy, no tendencia."
+    "Histórico insuficiente todavía para calcular una tendencia (Momentum): este informe reporta presencia, actividad e interacción observadas hasta hoy, no una evolución en el tiempo."
   );
 
   if (ranking.some((r) => r.methodologicalCoverage === "BAJA")) {
-    hallazgos.push("Al menos un candidato presenta cobertura metodológica BAJA: su score debe leerse con esa limitación explícita.");
+    hallazgos.push("Al menos un candidato presenta cobertura metodológica BAJA: su puntaje debe leerse con esa limitación explícita.");
   }
 
   return hallazgos.slice(0, 8);
 }
 
-export default { generateCandidateIntelligenceReport, REPORT_CONTRACT_VERSION, DISCLAIMER_IPDO };
+export default { generateCandidateIntelligenceReport, REPORT_CONTRACT_VERSION, DISCLAIMER_IPDO, IPDO_NOMBRE_COMPLETO, TIMEZONE_PRESENTACION };

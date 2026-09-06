@@ -5,13 +5,13 @@
   "proyecto": {
     "nombre": "Elecciones Alcaldía Cuenca 2027"
   },
-  "generatedAt": "2026-09-06T01:45:34.575Z",
-  "dataCutoff": "2026-09-06T01:45:34.575Z",
+  "generatedAt": "2026-09-06T01:42:13.840Z",
+  "dataCutoff": "2026-09-06T01:42:13.840Z",
   "methodVersion": "IPDO_V1.1",
   "ipdoNombreCompleto": "Índice de Presencia Digital Observable (IPDO)",
   "timezonePresentacion": "America/Guayaquil",
   "periodo": {
-    "generadoEl": "2026-09-06T01:45:34.575Z",
+    "generadoEl": "2026-09-06T01:42:13.840Z",
     "datosDesde": "2026-08-26T14:30:03.719Z",
     "datosHasta": "2026-09-03T21:11:15.448Z",
     "presence": "CURRENT_PROFILE_STOCK (último snapshot real por activo)",
