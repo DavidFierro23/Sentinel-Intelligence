@@ -1283,3 +1283,133 @@ PROJECT_ISOLATION_CLOUD           = VERIFIED (contra datos reales, 2 de 16 proye
 `candidateObservationScheduler.js`. No se resolvió la decisión sobre cuál
 de las 2 versiones de cada una de las 3 colisiones es la "correcta" — eso
 es una decisión humana de investigación, no de infraestructura.**
+
+---
+
+# ADDENDUM 4 — Lock distribuido (Opción A): primitiva implementada y certificada, NO integrada
+
+Decisión autorizada por el usuario: implementar Opción A (advisory lock),
+sin tocar `candidateObservationScheduler.js`; las 3 colisiones históricas
+quedan preservadas sin resolver, sin bloquear el cutover.
+
+## Punto de integración real — verificado, no asumido
+
+Se leyó `candidateObservationScheduler.js:171-244`
+(`ejecutarObservacionDiaria`) línea por línea antes de escribir nada:
+
+- Líneas 187-204: la comprobación `yaSeColectoHoy` (¿ya se corrió hoy?).
+- Línea 234: la llamada a `collectCandidateSnapshots` (consumo real de
+  proveedores).
+
+**Ambas viven en la misma función, en el mismo archivo.** No existe
+ningún módulo intermedio, ningún hook, ninguna capa de infraestructura ya
+existente que se ejecute entre la decisión "¿corro hoy?" y el consumo de
+proveedores sin que sea código de `candidateObservationScheduler.js`
+mismo. **Confirmado: no existe un punto seguro de integración sin
+modificar ese archivo.** Por la decisión explícita del usuario de no
+tocarlo, la primitiva de lock se implementó y certificó de forma
+completamente aislada, lista para conectarse con un cambio mínimo (una
+línea envolviendo la llamada a `collectCandidateSnapshots`) el día que se
+autorice.
+
+## Primitiva implementada
+
+`apps/backend/services/knowledgeLake/dailyRunLock.js` — `pg_try_advisory_lock`
+de sesión (no de transacción), clave determinista
+`hashtext(projectId), hashtext(fechaOperativa)` (dos enteros derivados por
+Postgres mismo, sin memoria de proceso, sin hostname, sin timestamp
+aleatorio). `fechaOperativaGuayaquil()` duplica deliberadamente la lógica
+de `fechaLocalObservacion()` del scheduler (mismo cálculo vía
+`Intl.DateTimeFormat`) en vez de importarla, para no crear una dependencia
+de infraestructura hacia código de Candidate.
+
+**Regla de conexión única respetada**: `intentarLockDiario`/`liberarLockDiario`
+operan sobre el mismo `client` (`pool.connect()`, nunca `pool.query()`)
+desde la adquisición hasta la liberación — nunca se suelta la conexión al
+pool entre medio.
+
+## Pruebas de concurrencia — contra Postgres real, cero proveedores
+
+`tests/storage/dailyRunLock.test.mjs`, **17/17 PASS**, ejecutado contra la
+base Supabase real de este gate:
+
+| Escenario pedido | Resultado |
+|---|---|
+| Worker A adquiere, Worker B simultáneo mismo projectId+fecha | A=true, B=false |
+| A libera, B reintenta | B=true |
+| Proyecto distinto, mismo día | ambos adquieren, sin bloqueo cruzado |
+| Mismo proyecto, fecha distinta | ambos adquieren, sin bloqueo cruzado |
+| Excepción dentro de la sección crítica | se propaga, y el lock igual se libera (`finally`) — reintento posterior adquiere |
+| Éxito normal | libera y devuelve el resultado de `fn` |
+| Lock ya tomado | `fn` **nunca se ejecuta** — la protección ocurre antes de cualquier trabajo |
+| Conexión terminada abruptamente sin liberar (proceso "caído") | Postgres libera el lock de sesión automáticamente; un worker nuevo adquiere sin quedar huérfano |
+| Límite de zona horaria America/Guayaquil alrededor de medianoche UTC | `04:59Z` → día anterior, `05:00Z` → día nuevo, correcto |
+
+Verificado tras la suite: `LAKE_RECORDS_COUNT=911` y
+`CONFLICTS_COUNT=3` sin cambio (los advisory locks son estado de sesión
+de PostgreSQL, no filas — no tocan ninguna tabla de negocio),
+`ADVISORY_LOCKS_HELD_NOW=0` (ningún lock quedó tomado tras la suite).
+**Cero requests a proveedores. Cero observaciones Candidate reales.**
+
+## Estado real: primitiva lista, integración pendiente de autorización
+
+`DISTRIBUTED_DAILY_LOCK_IMPLEMENTED = true` para la **primitiva** —
+completamente construida, probada contra Postgres real, con los 9
+escenarios exigidos, todos verdes.
+
+Pero **el `NORMAL_DAILY_RUN` real de `candidateObservationScheduler.js`
+sigue protegido HOY únicamente por la comprobación de aplicación
+`yaSeColectoHoy`**, no por este lock — porque conectar ambos exige tocar
+ese archivo, y la decisión de este gate fue explícitamente no hacerlo. Es
+decir: si dos instancias del worker cloud llegaran a correr
+simultáneamente contra el mismo proyecto el mismo día (por ejemplo,
+durante un redeploy con solape, o si alguien escala a más de una réplica),
+la ventana de carrera que motivó este gate **seguiría abierta en el
+código real**, aunque la solución ya esté construida y esperando.
+
+Por eso `DISTRIBUTED_DAILY_LOCK_READY` se reporta como **NO** para el
+sistema completo (aunque la primitiva en sí está lista) — "listo" en el
+sentido del gate significa que el `NORMAL_DAILY_RUN` real está protegido,
+y hoy no lo está todavía.
+
+## ¿Estamos listos para el cutover de Railway?
+
+**Técnicamente, para un despliegue de una sola réplica: sí**, en el
+sentido de que el riesgo es exactamente el mismo que existe hoy en el
+proceso local (protección solo por aplicación, sin lock de base de
+datos) — no se empeora nada al mover el proceso a Railway, siempre que
+Railway se configure para correr **una única instancia**, no réplicas
+horizontales.
+
+**Para un despliegue con más de una réplica, o durante ventanas de
+redeploy con solape: no todavía** — ese es exactamente el escenario que
+el lock de Opción A resolvería, y no está conectado.
+
+`RAILWAY_READY_FOR_CUTOVER = PARCIAL` — listo en el sentido de que
+Postgres, migración, e idempotencia de datos están certificados; no
+"listo sin condiciones" porque el lock distribuido, ya construido, no
+protege todavía la ejecución real.
+
+## Veredictos de este addendum
+
+```
+DISTRIBUTED_DAILY_LOCK_IMPLEMENTED = true (primitiva, aislada, no integrada)
+LOCK_SCOPE                          = session-level, pg_try_advisory_lock(hashtext(projectId), hashtext(fechaOperativa))
+LOCK_BEFORE_PROVIDER_CONSUMPTION    = SÍ, por diseño y demostrado en test (LOCK-7); NO integrado en ejecutarObservacionDiaria todavía
+SAME_PROJECT_SAME_DAY_SECOND_WORKER_BLOCKED = SÍ (demostrado, LOCK-1)
+DIFFERENT_PROJECT_ALLOWED           = SÍ (demostrado, LOCK-3)
+DIFFERENT_DAY_ALLOWED               = SÍ (demostrado, LOCK-4)
+LOCK_RELEASE_AFTER_SUCCESS          = SÍ (demostrado, LOCK-6)
+LOCK_RELEASE_AFTER_FAILURE          = SÍ (demostrado, LOCK-5, vía finally)
+PROCESS_RESTART_SAFE                = SÍ (demostrado, LOCK-8, auto-liberación de sesión de PostgreSQL)
+TIMEZONE_BOUNDARY_TEST              = PASS (demostrado, LOCK-9, America/Guayaquil UTC-5)
+CANDIDATE_SCHEDULER_MODIFIED        = NO
+REAL_PROVIDER_REQUESTS              = 0
+REAL_CANDIDATE_RUNS                 = 0
+DISTRIBUTED_DAILY_LOCK_READY        = NO (la primitiva sí; el sistema real, no, hasta integrarla)
+RAILWAY_READY_FOR_CUTOVER           = PARCIAL (ver explicación arriba)
+```
+
+**No se hizo push. No se hizo deploy. No se tocó
+`candidateObservationScheduler.js`. No se declara
+`PC_CAN_BE_OFF_WITHOUT_MISSING_DAILY_CANDIDATE_OBSERVATION=YES`.**
